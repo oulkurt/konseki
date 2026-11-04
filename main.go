@@ -212,9 +212,13 @@ func (a *app) runSummary(force bool) {
 		defer cancel()
 
 		entries, err := gen.GenerateDay(ctx, blocks, ocr, key, window, force)
+		// 无论成败都把「这次遮了多少」带回去：失败时用户更需要知道
+		// 发出去的内容到底遮没遮住。
+		if m := gen.Masker(); m != nil {
+			a.sumRedactions = len(m.Hits())
+		}
 		if err != nil {
 			a.sumErr = err.Error()
-			a.stampSkill(root)
 			return
 		}
 		a.sumEntries = entries
@@ -228,6 +232,7 @@ func (a *app) runSummary(force bool) {
 // 别的工具就还是看不到。导出本身很快（纯写文件），不值得再起
 // 一个 goroutine。
 func (a *app) stampSkill(root string) {
+	_ = root // 保留参数是为了以后按数据目录分桶导出；现在 exporter 自己取路径
 	if a.cfgNow.Skill.ExportDir == "" {
 		return
 	}
@@ -1403,9 +1408,10 @@ func main() {
 	// 自动摘要。走一个独立的 ticker，和采集循环无关：
 	// 采集是 5 秒一次的热路径，摘要要跑几分钟，混在一起会让
 	// 采样被拖慢。
-	if a.cfgNow.Summary.Auto {
-		go a.autoSummaryLoop()
-	}
+	//
+	// 无条件启动，让循环自己读开关：用户在设置页打开 Auto 之后
+	// 不该要求重启 App 才生效。
+	go a.autoSummaryLoop()
 
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
@@ -1418,12 +1424,15 @@ func main() {
 // 只在「有新的采样、且距上次生成超过间隔」时才跑。空转一次要
 // 花一次模型的 token，白花钱还会让用户怀疑它在偷跑。
 func (a *app) autoSummaryLoop() {
-	interval := time.Duration(a.cfgNow.Summary.IntervalMinutes) * time.Minute
-	if interval < 5*time.Minute {
-		interval = 5 * time.Minute
-	}
-	tick := time.NewTicker(interval)
+	// tick 用固定的 1 分钟，真正该跑的间隔在循环里按设置判断。
+	//
+	// 用 Ticker 而不是 time.Sleep(interval)：用户把间隔从 30 分钟
+	// 改成 5 分钟时，睡着的 goroutine 叫不醒，得等那一觉睡完。
+	// 1 分钟一次的检查几乎不花代价（只读几个字段）。
+	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
+
+	lastRun := time.Time{}
 
 	for range tick.C {
 		a.ensureInit()
@@ -1433,14 +1442,25 @@ func (a *app) autoSummaryLoop() {
 		if a.cfgNow.CapturePaused {
 			continue
 		}
+
+		interval := time.Duration(a.cfgNow.Summary.IntervalMinutes) * time.Minute
+		if interval < 5*time.Minute {
+			interval = 5 * time.Minute
+		}
+		if !lastRun.IsZero() && time.Since(lastRun) < interval {
+			continue
+		}
+
 		a.loadDay()
 		if len(a.blocks) == 0 {
 			continue
 		}
-		// 已经覆盖到最新一块就不用再跑了。
+		// 已经覆盖到最新一块就不用再跑了 —— 没有新内容时跑一次
+		// 只是白烧 token。
 		if a.coversLatest() {
 			continue
 		}
+		lastRun = time.Now()
 		a.runSummary(false)
 	}
 }
