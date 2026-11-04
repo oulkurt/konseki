@@ -24,8 +24,12 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// providerFilterNames 是筛选器的四个档。
-var providerFilterNames = []string{"全部", "官方", "中转", "本地", "订阅"}
+// providerFilterNames 是筛选器的档位。
+//
+// magpie 的预设只分 vendor/relay/local 三类，订阅不是一种 kind ——
+// 同一家既卖按量也卖套餐，靠 RegionLabel 和区域区分。所以这里不
+// 硬造一个「订阅」分类，而是让用户按类型筛。
+var providerFilterNames = []string{"全部", "官方", "中转", "本地"}
 
 func kindLabel(k providers.Kind) string {
 	switch k {
@@ -35,8 +39,6 @@ func kindLabel(k providers.Kind) string {
 		return "中转"
 	case providers.KindLocal:
 		return "本地"
-	case providers.KindPlan:
-		return "订阅"
 	}
 	return ""
 }
@@ -83,7 +85,7 @@ func (a *app) renderConfiguredProvider(c *ui.Context, idx int, pal palette) {
 	preset, _ := providers.ByID(pc.Preset)
 	name := pc.Label
 	if name == "" {
-		name = preset.Name
+		name = providers.DisplayName(preset)
 	}
 	if name == "" {
 		name = pc.Preset
@@ -204,6 +206,60 @@ func (a *app) renderProviderEditor(c *ui.Context, idx int, pal palette, preset p
 			}
 		})
 
+		// 档位：区域 / 套餐 / 按量付费
+		if regions := providers.Endpoints(preset); len(regions) > 1 {
+			label := preset.RegionLabel
+			if label == "" {
+				label = "端点"
+			}
+			ui.Column(c).FillWidth().Gap(5).Children(func() {
+				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+					ui.Text(c, label).FontSize(12).Bold().TextColor(pal.textPrimary)
+					ui.Spacer(c)
+					ui.Text(c, "每档有自己的地址，key 的适用范围也不同").
+						FontSize(10.5).TextColor(pal.textSecondary.Alpha(0.8))
+				})
+				ui.Row(c).FillWidth().Gap(5).Wrap().Children(func() {
+					for _, r := range regions {
+						r := r
+						selected := pc.Region == r.ID || (pc.Region == "" && len(regions) > 0 && r.ID == regions[0].ID)
+						chip := ui.ButtonBase(c.Key("region-"+pc.Preset+"-"+r.ID)).
+							Padding(3, 9).Radius(7).
+							Border(1, pal.controlBorder)
+						if selected {
+							chip.Background(pal.switchOn.Alpha(0.14)).Border(1, pal.switchOn.Alpha(0.5))
+						} else {
+							chip.Background(pal.cardBg)
+						}
+						if chip.Hovered() && !selected {
+							chip.Background(pal.rowHoverBg)
+						}
+						chip.Children(func() {
+							color := pal.textPrimary
+							if selected {
+								color = pal.switchOn
+							}
+							ui.Text(c, r.Name).FontSize(11).TextColor(color)
+						})
+						if chip.Clicked() && !selected {
+							a.saveProviderField(idx, func(p *config.ProviderConfig) {
+								p.Region = r.ID
+								// 换档位就把手动覆盖的端点清掉，否则会
+								// 出现「选了新区域但还在打旧地址」。
+								p.ChatBase = ""
+								p.AnthropicBase = ""
+								if len(r.Models) > 0 {
+									p.DefaultModel = r.Models[0]
+								}
+							})
+							a.modelDraft = a.cfgNow.Providers[idx].DefaultModel
+							a.baseURLDraft = ""
+						}
+					}
+				})
+			})
+		}
+
 		// Base URL（可选）
 		ui.Column(c).FillWidth().Gap(5).Children(func() {
 			ui.Text(c, "接口地址").FontSize(12).Bold().TextColor(pal.textPrimary)
@@ -226,10 +282,46 @@ func (a *app) renderProviderEditor(c *ui.Context, idx int, pal palette, preset p
 			if a.modelDraft != pc.DefaultModel {
 				a.saveProviderField(idx, func(p *config.ProviderConfig) { p.DefaultModel = a.modelDraft })
 			}
-			// 预设里的候选模型，点一下填进去
-			if len(preset.Models) > 0 {
+			// 预设里没有模型列表的（大多数官方 API 都没有），
+			// 给一个按钮真去问对方要。这比在本地维护一份必然过期的
+			// 硬编码列表靠谱得多。
+			candidates := preset.Models
+			regions := providers.Endpoints(preset)
+			activeID := pc.Region
+			if activeID == "" && len(regions) > 0 {
+				activeID = regions[0].ID
+			}
+			for _, r := range regions {
+				if r.ID == activeID && len(r.Models) > 0 {
+					candidates = r.Models
+					break
+				}
+			}
+			ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+				fetchBtn := ui.ButtonBase(c.Key("fetch-models-"+pc.Preset)).
+					Padding(3, 9).Radius(6).Border(1, pal.controlBorder)
+				if fetchBtn.Hovered() {
+					fetchBtn.Background(pal.rowHoverBg)
+				}
+				fetchBtn.Children(func() {
+					if a.fetchingModels {
+						ui.Spinner(c).Size(10, 10)
+						ui.Text(c, " 拉取中…").FontSize(10.5).TextColor(pal.textSecondary)
+					} else {
+						ui.Text(c, "从接口拉取模型列表").FontSize(10.5).TextColor(pal.textPrimary)
+					}
+				})
+				if fetchBtn.Clicked() && !a.fetchingModels {
+					a.fetchModels(idx)
+				}
+				if a.fetchMsg != "" {
+					ui.Text(c, a.fetchMsg).FontSize(10.5).TextColor(pal.textSecondary).SingleLine().Grow(1)
+				}
+			})
+
+			if len(candidates) > 0 {
 				ui.Row(c).FillWidth().Gap(5).Wrap().Children(func() {
-					for _, m := range preset.Models {
+					for _, m := range candidates {
 						chip := ui.ButtonBase(c.Key("m-"+pc.Preset+"-"+m)).
 							Padding(3, 8).Radius(6).Background(pal.codeBg)
 						if chip.Hovered() {
@@ -563,14 +655,30 @@ func providerGlyph(p providers.Preset) string {
 // ---------- 供应商 CRUD ----------
 
 func (a *app) addProvider(p providers.Preset) {
+	// 有档位的家默认落在第一档，并把该档的地址和模型一起带进来 ——
+	// 只存预设的根地址而 region 留空，会让 Resolve 又要回退一次，
+	// 用户看到的和实际请求的不一致。
+	eps := providers.Endpoints(p)
+	region := ""
 	model := ""
-	if len(p.Models) > 0 {
+	chat := p.Chat
+	anthropic := p.Anthropic
+	if len(eps) > 0 {
+		region = eps[0].ID
+		chat = eps[0].Chat
+		anthropic = eps[0].Anthropic
+		if len(eps[0].Models) > 0 {
+			model = eps[0].Models[0]
+		}
+	}
+	if model == "" && len(p.Models) > 0 {
 		model = p.Models[0]
 	}
 	pc := config.ProviderConfig{
 		Preset:        p.ID,
-		ChatBase:      p.Chat,
-		AnthropicBase: p.Anthropic,
+		Region:        region,
+		ChatBase:      chat,
+		AnthropicBase: anthropic,
 		DefaultModel:  model,
 	}
 	a.cfg.Update(func(c *config.Config) { c.Providers = append(c.Providers, pc) })
@@ -700,4 +808,82 @@ func firstNonEmptyStr(vals ...string) string {
 // withGlass 是个小助手，统一那几个"浮起来"的按钮质感。
 func withGlass(el ui.Element, clarity float32) ui.Element {
 	return el.Material(glass.Glass{Style: glass.Clear, Interactive: true, Clarity: clarity})
+}
+
+// fetchModels 真的去问供应商要模型列表。
+//
+// 为什么不在本地维护：模型 id 每周都在变（deepseek-flash 这种名字
+// 跟文档里写的 v4.1-flash 完全对不上），硬编码一份必然过期，
+// 而过期的表现是「配好了但请求 400」。
+//
+// 拿到的列表同时写回设置里的 EnabledModels，这样下次打开还是新的。
+func (a *app) fetchModels(idx int) {
+	if a.llmc == nil || idx < 0 || idx >= len(a.cfgNow.Providers) {
+		return
+	}
+	pc := a.cfgNow.Providers[idx]
+	a.fetchingModels = true
+	a.fetchMsg = ""
+
+	go func() {
+		defer func() { a.fetchingModels = false }()
+
+		resolved, err := llm.Resolve(pc, false)
+		if err != nil {
+			a.fetchMsg = err.Error()
+			return
+		}
+		key := pc.APIKey
+		if pc.Auth == "oauth" && pc.AccessToken != "" {
+			key = pc.AccessToken
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		ids, err := a.llmc.ListModels(ctx, resolved.BaseURL, key, headersFor(pc, resolved))
+		if err != nil {
+			a.fetchMsg = "拉取失败：" + err.Error()
+			return
+		}
+		if len(ids) == 0 {
+			a.fetchMsg = "接口返回了空列表"
+			return
+		}
+
+		// 只保留看起来像对话模型的。拉回来的列表里常常混着
+		// embedding、tts、rerank —— 它们填进摘要模型的选项里只会误导。
+		var chat []string
+		for _, id := range ids {
+			low := strings.ToLower(id)
+			if strings.Contains(low, "embed") || strings.Contains(low, "rerank") ||
+				strings.Contains(low, "whisper") || strings.Contains(low, "tts") ||
+				strings.Contains(low, "moderation") || strings.Contains(low, "dall-e") ||
+				strings.Contains(low, "image") {
+				continue
+			}
+			chat = append(chat, id)
+		}
+		if len(chat) == 0 {
+			chat = ids
+		}
+
+		preset, _ := providers.ByID(pc.Preset)
+		a.cfg.Update(func(c *config.Config) {
+			for i := range c.Providers {
+				if c.Providers[i].Preset == pc.Preset && c.Providers[i].Label == pc.Label {
+					c.Providers[i].EnabledModels = chat
+					if c.Providers[i].DefaultModel == "" && len(chat) > 0 {
+						c.Providers[i].DefaultModel = chat[0]
+					}
+					return
+				}
+			}
+		})
+		a.cfgNow = a.cfg.Get()
+		if idx < len(a.cfgNow.Providers) {
+			a.modelDraft = a.cfgNow.Providers[idx].DefaultModel
+		}
+		_ = preset
+		a.fetchMsg = fmt.Sprintf("拉到 %d 个模型", len(chat))
+	}()
 }

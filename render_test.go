@@ -99,7 +99,7 @@ func TestAddProvider(t *testing.T) {
 	a.tab = 1
 
 	before := len(a.cfg.Get().Providers)
-	a.addProvider(providers.MustByIDForTest("deepseek"))
+	a.addProvider(mustPreset(t, "deepseek"))
 	if got := len(a.cfg.Get().Providers); got != before+1 {
 		t.Fatalf("添加后供应商数 = %d，期望 %d", got, before+1)
 	}
@@ -127,6 +127,16 @@ func TestSummaryEmptyState(t *testing.T) {
 	if !tt.HasText("生成摘要") && !tt.HasText("先配置供应商") {
 		t.Error("应该显示生成按钮或配置提示")
 	}
+}
+
+// mustPreset 取一个预设，取不到就让测试失败。
+func mustPreset(t *testing.T, id string) providers.Preset {
+	t.Helper()
+	p, ok := providers.ByID(id)
+	if !ok {
+		t.Fatalf("预设 %q 不存在", id)
+	}
+	return p
 }
 
 func savePNG(t *testing.T, path string, tt *ui.Tester) {

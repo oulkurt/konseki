@@ -71,6 +71,8 @@ type app struct {
 	testOK          bool
 	detected        []providers.Credential
 	detectDone      bool
+	fetchingModels  bool
+	fetchMsg        string
 
 	// ---- 摘要 ----
 	// 视图切换：0 = 设置（Capture/Summaries/Providers/Skill），1 = 时间轴

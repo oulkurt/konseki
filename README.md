@@ -20,7 +20,13 @@
 
 `internal/summary` 按整点切窗口，把窗口内的窗口标题 + OCR 交给模型，拿回结构化的结论：在做什么、进展到哪、什么没做完、做了什么决定。
 
-模型由你自己配。`internal/providers` 里有 30 多家预设（Anthropic / OpenAI / Gemini / DeepSeek / Kimi / GLM / MiniMax / Qwen / 火山方舟 …），也可以接中转站或本地 Ollama。
+模型由你自己配。`internal/providers` 的预设表和 [magpie](https://github.com/yetone/magpie) 对齐：**55 家**（Anthropic / OpenAI / Gemini / Vertex / DeepSeek / xAI / Kimi / Kimi Code / GLM / Z.ai / MiniMax / StepFun / 小米 MiMo / LongCat / 百度千帆 / 腾讯云 / 华为云 / 火山方舟 / Qwen / 百炼 / Mistral / Groq / Bedrock / Azure / OpenRouter / 硅基流动 / Ollama …），也可以接中转站或本地服务。
+
+预设表是**从 magpie 的源码导出生成的**，不是手抄。这样 URL 和端点不会漂移 —— 手抄出来的表迟早会出现「测试连得上、真用 404」这种最难查的问题。
+
+有区域/套餐档位的家（小米三个区域、火山方舟 Coding/Agent/按量、Bedrock 十个 region、Qwen Cloud 六个区域）会在面板里列成可选项，选了哪档就用哪档的地址和模型。
+
+模型列表不用手动填：预设里没有的话，点「从接口拉取模型列表」真去问对方要。
 
 也可以直接从本机已登录的 Claude Code / Codex 导入凭据，直接用你已有的订阅。
 
@@ -80,7 +86,7 @@ internal/
   capture/       采集与聚合
   config/        设置存储
   llm/           模型调用（OpenAI 兼容 / Anthropic Messages）
-  providers/     供应商目录 + 本机凭据导入
+  providers/     供应商目录（对齐 magpie）+ 本机凭据导入
   redact/        脱敏
   summary/       摘要生成
   skill/         导出给外部 Agent

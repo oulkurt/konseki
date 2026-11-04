@@ -53,8 +53,23 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		name = pc.Preset
 	}
 
-	chatBase := firstNonEmpty(pc.ChatBase, preset.Chat)
-	anthropicBase := firstNonEmpty(pc.AnthropicBase, preset.Anthropic)
+	// 先找用户选的档位。档位里的端点可能只覆盖了一部分
+	// （比如某区域只给了 Chat 没给 Anthropic），缺的字段落回预设。
+	var region providers.Region
+	for _, r := range providers.Endpoints(preset) {
+		if r.ID == pc.Region {
+			region = r
+			break
+		}
+	}
+	if region.ID == "" && len(preset.Regions) > 0 {
+		// 没选或选了不存在的档位，用第一档。magpie 的约定是
+		// 第一个 region 就是预设的默认端点。
+		region = providers.Endpoints(preset)[0]
+	}
+
+	chatBase := firstNonEmpty(pc.ChatBase, region.Chat, preset.Chat)
+	anthropicBase := firstNonEmpty(pc.AnthropicBase, region.Anthropic, preset.Anthropic)
 
 	r := Resolved{
 		ProviderName:      name,
@@ -67,9 +82,14 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		r.Model = firstOf(preset.Models)
 	}
 
-	// 模型列表：预设 + 用户在设置里启用的。去重保序。
+	// 模型列表：档位的模型 + 用户启用的，都没有才退到预设全集。
+	// 档位优先是因为某区域的模型列表才是那把 key 真能调的。
+	base := region.Models
+	if len(base) == 0 {
+		base = preset.Models
+	}
 	seen := map[string]bool{}
-	for _, m := range append(append([]string{}, preset.Models...), pc.EnabledModels...) {
+	for _, m := range append(append([]string{}, base...), pc.EnabledModels...) {
 		if m != "" && !seen[m] {
 			seen[m] = true
 			r.Models = append(r.Models, m)

@@ -1,67 +1,92 @@
-// Package providers 是模型供应商目录：把用户能接入的每一家模型服务，
-// 统一描述成 Preset（预设），供上层在「选模型 / 配 key / 生成代理 URL」
-// 时直接查表，而不是到处散落 if/switch。
+// Package providers 是模型供应商目录。
 //
-// 为什么拆成 providers.go / presets.go / local.go 三个文件：
-//   - providers.go 只放对外的类型和纯查询函数（All/ByID/Models），
-//     方便一眼看清 API 边界；
-//   - presets.go 放那一大张预设表，数据长、且以后会频繁增删，单独放
-//     避免淹没逻辑；
-//   - local.go 放 DetectLocal，它依赖本机文件系统与 macOS 的 security
-//     命令，和「静态目录」是两种完全不同的职责。
+// 这张表直接跟 magpie 对齐（62 个预设），不手抄 URL —— 各家的端点和
+// 模型名散落在不同文档里，手抄必然漂移，而漂移的表现是「测试连接
+// 通过、摘要时 404」这种最难查的问题。
+//
+// 三种取用方式：
+//   - All() 按 UI 顺序列出全部
+//   - ByID() 按 id 查具体一家
+//   - Endpoints() 把一家展开成「可选的端点组合」（区域、套餐、按量付费）
+//
+// 为什么要有 Endpoints：像小米 MiMo 有中国/新加坡/欧洲三个区域，
+// 火山方舟有 Coding/Agent/按量三个套餐，每个都有自己的 host 和 key
+// 适用范围。用户要选的是「哪一档」，不是「哪一家」。
 package providers
 
 import "time"
 
-// Kind 描述一个预设接入的是哪一类服务：
-//   - vendor：官方直连的模型厂商（如 OpenAI、Anthropic）；
-//   - relay：中转/聚合服务（如 OpenRouter、SiliconFlow），走 OpenAI 兼容协议；
-//   - local：跑在本机的推理服务（如 Ollama、LM Studio），默认不需要 key；
-//   - plan：订阅套餐，通常按周期付费、有独立的限额窗口和专属 base url。
+// Kind 描述预设属于哪一类服务。
 type Kind string
 
 const (
-	KindVendor Kind = "vendor"
-	KindRelay  Kind = "relay"
-	KindLocal  Kind = "local"
-	KindPlan   Kind = "plan"
+	KindVendor Kind = "vendor" // 官方直连
+	KindRelay  Kind = "relay"  // 中转/聚合
+	KindLocal  Kind = "local"  // 本机推理服务
 )
 
-// Plan 描述一个订阅套餐。价格查不到就填 0，并在 Notes 里写清楚。
-type Plan struct {
-	Name        string  // 套餐名，如 "Pro"
-	PriceUSD    float64 // 价格（美元）；0 表示未知或需另行确认
-	Period      string  // "month" / "year"
-	WindowHours float64 // 限额窗口小时数；0 表示未知
-	Notes       string  // 套餐补充说明，必须写清「价格未知」等不确定信息
-}
-
-// Preset 是模型供应商目录里的一条记录。
-type Preset struct {
-	ID        string // 内部唯一标识，用 kebab-case
-	Name      string // 显示名
-	Short     string // 短名/代码里常用的简称
-	Kind      Kind
-	Icon      string // 前端图标名
-	Chat      string // OpenAI 兼容 base url（/v1 之前的根路径，按需拼 /v1）
-	Anthropic string // Anthropic Messages base url；不支持则留空
-	Note      string // 一句人话说明
+// Region 是一家供应商的一个可选端点组合。
+//
+// isTheOne 说这个 region 是预设的默认档：没有区域概念的家只有一个，
+// 有区域的家里第一个就是默认。
+type Region struct {
+	ID        string
+	Name      string
+	Chat      string
+	Responses string
+	Anthropic string
 	Website   string
-	KeysURL   string // 去拿 API key 的页面
+	KeysURL   string
 	Models    []string
-	NoKey     bool  // 为 true 表示本地服务通常不需要 API key
-	Plan      *Plan // 订阅套餐；非 nil 表示这是按套餐付费的入口
 }
 
-// All 返回全部预设。为什么直接返回切片而不是 map：
-// 上层通常要按顺序渲染列表，切片保序、无额外依赖；需要按 ID 查找时用 ByID。
-func All() []Preset {
-	return presets()
+// Preset 是供应商目录里的一条记录。
+//
+// Chat 是 OpenAI 兼容端点，Anthropic 是原生 Messages 端点。两者都有
+// 说明这家两种协议都支持，让用户选走哪条 —— 原生协议才能用上 thinking
+// 和 prompt cache。
+type Preset struct {
+	ID           string
+	Name         string
+	Short        string
+	Kind         Kind
+	Icon         string
+	Chat         string
+	Responses    string
+	Anthropic    string
+	Note         string
+	Website      string
+	KeysURL      string
+	Models       []string
+	NoKey        bool   // 本地服务通常不需要 key
+	NoList       bool   // 这家没有 /models 可拉，Models 就是它的列表
+	KeyHint      string // 输入框下的提示，如「可选：免费模型不需要 key」
+	Only         string // 套餐 key 只能用的模型前缀
+	Endpoint     string // 用户自己的地址，如 Azure 的 <resource>.openai.azure.com
+	EndpointHint string
+	RegionLabel  string
+	HeaderHints  []string
+	Regions      []Region
+	// Plan 是订阅套餐的说明。magpie 的预设里没有结构化的价格，
+	// 所以这里保持 nil，靠 Note 和 RegionLabel 表达「这档是订阅」。
+	Plan *Plan
 }
 
-// ByID 按 ID 查预设。第二个返回值表示是否命中，避免零值误判。
+// Plan 描述一个订阅套餐。
+type Plan struct {
+	Name        string
+	PriceUSD    float64
+	Period      string  // "month" / "year"
+	WindowHours float64 // 限额窗口小时数，0 未知
+	Notes       string
+}
+
+// All 返回全部预设。
+func All() []Preset { return presets }
+
+// ByID 按 id 查预设。
 func ByID(id string) (Preset, bool) {
-	for _, p := range presets() {
+	for _, p := range presets {
 		if p.ID == id {
 			return p, true
 		}
@@ -69,8 +94,7 @@ func ByID(id string) (Preset, bool) {
 	return Preset{}, false
 }
 
-// Models 返回某个预设支持的模型列表；ID 不存在时返回空切片，
-// 绝不为「查不到」而 panic——调用方可以安全地 range。
+// Models 返回某个预设的候选模型。
 func Models(id string) []string {
 	p, ok := ByID(id)
 	if !ok {
@@ -79,38 +103,75 @@ func Models(id string) []string {
 	return p.Models
 }
 
-// Credential 是 DetectLocal 从本机发现的一组凭证。
-// 为什么用「发现」而不是「解析所有」：这些文件/钥匙串的格式会随 CLI
-// 版本变化，DetectLocal 只做最保守的字段提取，读不到就跳过。
+// Endpoints 把一家展开成用户可选的具体档位。
+//
+// 没有 regions 的家返回它自己这一条；有的家里每个 region 一条，
+// 并且把 region 的模型并到预设的模型后面（预设的模型是全集，
+// region 的模型是这一档能用的）。
+func Endpoints(p Preset) []Region {
+	if len(p.Regions) == 0 {
+		return []Region{{
+			ID:        p.ID,
+			Name:      displayName(p),
+			Chat:      p.Chat,
+			Responses: p.Responses,
+			Anthropic: p.Anthropic,
+			Website:   p.Website,
+			KeysURL:   p.KeysURL,
+			Models:    p.Models,
+		}}
+	}
+	out := make([]Region, 0, len(p.Regions))
+	for _, r := range p.Regions {
+		if r.Name == "" {
+			r.Name = r.ID
+		}
+		if r.Chat == "" {
+			r.Chat = p.Chat
+		}
+		if r.Anthropic == "" {
+			r.Anthropic = p.Anthropic
+		}
+		if r.Responses == "" {
+			r.Responses = p.Responses
+		}
+		if r.Website == "" {
+			r.Website = p.Website
+		}
+		if r.KeysURL == "" {
+			r.KeysURL = p.KeysURL
+		}
+		if len(r.Models) == 0 {
+			r.Models = p.Models
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// DisplayName 返回给人看的名字。
+func DisplayName(p Preset) string { return displayName(p) }
+
+func displayName(p Preset) string {
+	if p.Short != "" {
+		return p.Short
+	}
+	if p.Name != "" {
+		return p.Name
+	}
+	return p.ID
+}
+
+// Credential 是从本机已登录的 CLI 里读到的凭据。
 type Credential struct {
-	Source       string // 凭证来源，如 "claude" / "codex"
-	Label        string // 给人看的标签
-	Kind         string // 凭证类型，如 "api_key" / "oauth"
+	Source       string
+	Label        string
+	Kind         string // "oauth" / "api_key"
 	AccessToken  string
 	RefreshToken string
 	AccountID    string
 	ExpiresAt    time.Time
 }
 
-// DetectLocal 扫描本机已知的凭证存放位置，返回能读到的凭证。
-// 设计约束：
-//   - 绝不 panic：任何文件缺失、JSON 结构不符、命令失败都返回空结果；
-//   - 绝不打日志打印 token 明文：这里不引入日志，调用方拿到 token 后自行负责；
-//   - 不做网络请求、不引入第三方依赖。
-func DetectLocal() []Credential {
-	return detectLocal()
-}
-
-// MustByIDForTest 是给测试用的取预设入口。
-//
-// 生产代码用 ByID 拿 (Preset, bool)，测试里写 `if !ok { t.Fatal }`
-// 会让每个用例多三行噪音，而测试里预设不存在就是纯粹的写错了。
-// 导出它而不是在测试包里复制一份查找逻辑，是为了让两边查的
-// 是同一张表。
-func MustByIDForTest(id string) Preset {
-	p, ok := ByID(id)
-	if !ok {
-		panic("unknown preset: " + id)
-	}
-	return p
-}
+// DetectLocal 扫描本机凭据，读不到就跳过，绝不 panic。
+func DetectLocal() []Credential { return detectLocal() }

@@ -47,8 +47,11 @@ type ProviderConfig struct {
 	AccountID    string    `json:"accountId,omitempty"`
 	ExpiresAt    time.Time `json:"expiresAt,omitempty"`
 
-	// 订阅套餐：用户选的是哪个 plan（只影响展示，不影响请求）。
-	Plan string `json:"plan,omitempty"`
+	// Region 是用户在这一家里选的档位 id。
+	//
+	// 像小米 MiMo 的中国/新加坡/欧洲、火山方舟的 Coding/Agent/按量，
+	// 每档有自己的 host 和 key 适用范围。空表示用预设的默认档。
+	Region string `json:"region,omitempty"`
 
 	// 用户启用/禁用了哪些模型。空表示全用预设给的。
 	EnabledModels []string `json:"enabledModels,omitempty"`
