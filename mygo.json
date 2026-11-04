@@ -1,0 +1,9 @@
+{
+  "name": "Konseki",
+  "identifier": "app.konseki.desktop",
+  "version": "0.1.0",
+  "out": "build",
+  "macos": {
+    "minimumSystemVersion": "13.0"
+  }
+}

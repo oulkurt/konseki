@@ -1,0 +1,8 @@
+/build/
+/.mygo/
+mygo_windows_*.syso
+
+# 本地数据（永不入库）
+/data/
+*.log
+.alma-snapshots
