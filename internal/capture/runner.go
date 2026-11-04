@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -305,4 +306,63 @@ func parseTS(v string) (time.Time, error) {
 // DoctorReport 返回一份人可读的环境检查结果。
 func DoctorReport() string {
 	return printPermReportFor(newScreen())
+}
+
+// OCRIndex 暴露存储层的 OCR 索引，供摘要层取原文。
+func (r *Runner) OCRIndex(dateKey string) (map[string]string, error) {
+	return r.st.OCRIndex(dateKey)
+}
+
+// Snapshots 读回某天的原始采样。
+func (r *Runner) Snapshots(dateKey string) ([]Snapshot, error) {
+	return r.st.ReadDay(dateKey)
+}
+
+// Root 返回数据根目录，导出 skill 时要用。
+func (r *Runner) Root() string { return r.cfg.Root }
+
+// Prune 删掉超过 keepDays 天的原始采样与截图。
+//
+// 只删原始数据，不删摘要 —— 摘要小得多，也更有价值。
+// 按「一整天」为单位判断而不是逐条按时间戳：边界上少删一天比
+// 留下半天的孤儿截图好排查。
+func (r *Runner) Prune(keepDays int) (int, error) {
+	if keepDays <= 0 {
+		return 0, nil
+	}
+	cutoff := time.Now().AddDate(0, 0, -keepDays).Format("2006-01-02")
+	ents, err := os.ReadDir(r.cfg.Root)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, e := range ents {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".jsonl") {
+			continue
+		}
+		day := strings.TrimSuffix(name, ".jsonl")
+		if len(day) != 10 || day >= cutoff {
+			continue
+		}
+		if err := os.Remove(filepath.Join(r.cfg.Root, name)); err != nil {
+			continue
+		}
+		removed++
+	}
+	// 截图按文件名里的日期清。shots/20261104-150405.jpg
+	shotDir := filepath.Join(r.cfg.Root, "shots")
+	if files, err := os.ReadDir(shotDir); err == nil {
+		cut := cutoff[:4] + cutoff[5:7] + cutoff[8:10]
+		for _, f := range files {
+			n := f.Name()
+			if len(n) < 8 {
+				continue
+			}
+			if d := n[:8]; d < cut {
+				os.Remove(filepath.Join(shotDir, n))
+			}
+		}
+	}
+	return removed, nil
 }

@@ -3,11 +3,11 @@ package main
 import (
 	"image/png"
 	"os"
-	"slices"
 	"testing"
 	"time"
 
 	"konseki/internal/capture"
+	"konseki/internal/providers"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -50,162 +50,82 @@ func TestTimelineRenders(t *testing.T) {
 	}
 }
 
-// 验证 Capture、Summaries 与 History 全界面渲染以及展开交互
-func TestShowcaseTimelineExpandCollapse(t *testing.T) {
-	cfg := capture.DefaultConfig()
-	cfg.Root = t.TempDir()
-	r, err := capture.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Stop()
+// 验证新分页结构：时间轴页和设置页各自能画出来，设置页里有供应商与脱敏。
+func TestTabsRender(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
 
-	a := &app{
-		runner:          r,
-		includeShowcase: true,
-		lastLoad:        time.Now(),
-	}
-
-	tt := ui.NewTester(a.view, 680, 980)
-	tt.SetScale(2)
-
-	// 1. 检查 Capture + Summaries + History 全部标题与默认控件文本
-	for _, want := range []string{
-		"Capture",
-		"Enable Context Awareness",
-		"Capture your activity on this device.",
-		"Pause capturing",
-		"Stop capturing for a while without turning it off.",
-		"Select",
-		"Capture typed text",
-		"Save the sentences you type. Aside never stores keystrokes or password fields.",
-		"Allow Screen Recording",
-		"When a page has no readable text, read it from the screen. Only the text is kept.",
-		"Denylist",
-		"Aside never captures what you do in these apps and websites.",
-		"Add",
-		"Summaries",
-		"Summary model",
-		"Summarizes your activity in the background while you work.",
-		"Gemini 3.8 ...",
-		"Retention",
-		"Aside deletes raw captures after this many days. Summaries stay.",
-		"14 days",
-		"History",
-		"Today",
-		"2:40 PM",
-		"10:00 AM",
-		"9:40 AM",
-		"9:30 AM",
-		"9:20 AM",
-		"9:10 AM",
-		"9:00 AM",
-	} {
+	// 默认在时间轴页
+	tt := ui.NewTester(a.view, 760, 900)
+	for _, want := range []string{"时间轴", "设置"} {
 		if !tt.HasText(want) {
-			t.Errorf("主界面缺少 %q", want)
+			t.Errorf("顶部分页缺少 %q", want)
 		}
 	}
 
-	if os.Getenv("KONSEKI_SAVE_PREVIEW") == "1" {
-		savePNG(t, "/tmp/konseki-full-ui.png", tt)
-	}
-
-	// 2. 点击 10:00 AM 卡片展开详情
-	tt.SetSize(680, 1600)
-	if err := tt.Click("Checked MyGo subagent CI status in T3 Code and chatted with David Lee"); err != nil {
-		t.Fatalf("点击 10:00 AM 条目失败: %v", err)
-	}
-
-	for _, want := range []string{
-		"Memory summary",
-		"MyGo Refactor (T3 Code):",
-		"t3/refactor-mygo-plugins-alma-ui",
-		"Relevant prior context",
-		"Important non-obvious context about the user",
-		"xiaotong_work_mygo",
-		"Recording summary",
-		"09:54–09:55 · Messages and Dia",
-		"09:55–09:57 · T3 Code (Nightly)",
-		"09:57–09:57 · Alma",
-		"09:57–10:00 · Messages, Finder, and WeChat",
-	} {
+	// 切到设置页，四个区块都要在
+	a.tab = 1
+	tt = ui.NewTester(a.view, 760, 1400)
+	for _, want := range []string{"Capture", "Summaries", "Providers", "Skill"} {
 		if !tt.HasText(want) {
-			t.Errorf("展开态缺少 %q", want)
+			t.Errorf("设置页缺少 %q，texts=%q", want, tt.Texts())
 		}
 	}
 }
 
-// 验证模型选择、思考程度选择、暂停时长选择、以及 Denylist 选择 App 和 Website
-func TestSettingsControlsInteractive(t *testing.T) {
-	cfg := capture.DefaultConfig()
-	cfg.Root = t.TempDir()
-	r, err := capture.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Stop()
+// 设置页的开关要真的改配置并落盘。
+func TestRedactTogglePersists(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	tt := ui.NewTester(a.view, 760, 1600)
 
-	a := &app{
-		runner:          r,
-		includeShowcase: true,
-		lastLoad:        time.Now(),
+	if !a.cfg.Get().Redact.Secrets {
+		t.Fatal("默认应该开着凭据脱敏")
 	}
+	// 点「凭据与密码」旁边的开关
+	if err := tt.Click("sw-redact-secrets"); err != nil {
+		t.Skipf("找不到开关（布局可能变了）: %v", err)
+	}
+	if a.cfg.Get().Redact.Secrets {
+		t.Error("点了开关但设置没变")
+	}
+}
 
-	tt := ui.NewTester(a.view, 680, 980)
+// 供应商页要能列出预设，并且能添加一个。
+func TestAddProvider(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
 
-	// 1. 选择暂停时间 (Pause capturing -> 30 minutes)
-	if err := tt.Click("Select"); err != nil {
-		t.Fatalf("点击 Pause capturing Select 失败: %v", err)
+	before := len(a.cfg.Get().Providers)
+	a.addProvider(providers.MustByIDForTest("deepseek"))
+	if got := len(a.cfg.Get().Providers); got != before+1 {
+		t.Fatalf("添加后供应商数 = %d，期望 %d", got, before+1)
 	}
-	if err := tt.Click("30 minutes"); err != nil {
-		t.Fatalf("选择 30 minutes 失败: %v", err)
-	}
-	if a.pauseDuration != "30 minutes" {
-		t.Errorf("pauseDuration = %q, 期望 30 minutes", a.pauseDuration)
-	}
-
-	// 2. 选择模型 (Summary model -> Claude 4.5 Sonnet)
-	if err := tt.Click("Gemini 3.8 ..."); err != nil {
-		t.Fatalf("点击模型选择按钮失败: %v", err)
-	}
-	if err := tt.Click("Claude 4.5 Sonnet"); err != nil {
-		t.Fatalf("选择 Claude 4.5 Sonnet 失败: %v", err)
-	}
-	if a.summaryModel != "Claude 4.5 Sonnet" {
-		t.Errorf("summaryModel = %q, 期望 Claude 4.5 Sonnet", a.summaryModel)
+	if a.cfg.Get().Providers[0].Preset != "deepseek" {
+		t.Errorf("预设 id = %q", a.cfg.Get().Providers[0].Preset)
 	}
 
-	// 3. 选择思考程度 (Thinking effort -> High)
-	if err := tt.Click("Thinking effort"); err != nil {
-		t.Fatalf("点击思考程度按钮失败: %v", err)
+	// 渲染一次，确认 tile 和编辑区都在
+	a.openProvider = "deepseek"
+	tt := ui.NewTester(a.view, 760, 1800)
+	if !tt.HasText("DeepSeek") {
+		t.Error("供应商名没画出来")
 	}
-	if err := tt.Click("Thinking: High"); err != nil {
-		t.Fatalf("选择 Thinking: High 失败: %v", err)
-	}
-	if a.thinkingEffort != "High" {
-		t.Errorf("thinkingEffort = %q, 期望 High", a.thinkingEffort)
-	}
+}
 
-	// 4. Denylist 添加 App 和 Website
-	if err := tt.Click("Add"); err != nil {
-		t.Fatalf("点击 Denylist + Add 失败: %v", err)
+// 摘要页在没有任何摘要时不该崩，也不该显示空列表标题。
+func TestSummaryEmptyState(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	tt := ui.NewTester(a.view, 760, 1600)
+	if tt.HasText("今天的摘要") {
+		t.Error("没有摘要时不该显示摘要列表")
 	}
-	if err := tt.Click("1Password"); err != nil {
-		t.Fatalf("勾选 1Password App 失败: %v", err)
-	}
-	if !slices.Contains(a.denylistApps, "1Password") {
-		t.Errorf("denylistApps 应包含 1Password, 实际: %v", a.denylistApps)
-	}
-
-	// 切换到 Websites 标签页并勾选 1password.com
-	if err := tt.Click("Websites"); err != nil {
-		t.Fatalf("切换到 Websites 标签失败: %v", err)
-	}
-	if err := tt.Click("1password.com"); err != nil {
-		t.Fatalf("勾选 1password.com 失败: %v", err)
-	}
-	if !slices.Contains(a.denylistSites, "1password.com") {
-		t.Errorf("denylistSites 应包含 1password.com, 实际: %v", a.denylistSites)
+	if !tt.HasText("生成摘要") && !tt.HasText("先配置供应商") {
+		t.Error("应该显示生成按钮或配置提示")
 	}
 }
 

@@ -13,8 +13,8 @@ import (
 // 好处：交叉编译干净、二进制小，和 mygo 走的是同一条路。
 
 const (
-	thumbWidth  = 1200  // 磁盘上缩略图的宽度
-	jpegQuality = 0.60  // 缩略图的 JPEG 质量
+	thumbWidth  = 1200 // 磁盘上缩略图的宽度
+	jpegQuality = 0.60 // 缩略图的 JPEG 质量
 )
 
 var (
@@ -33,9 +33,9 @@ var (
 	cfDataLen              func(d uintptr) int
 	cfDataBytePtr          func(d uintptr) uintptr
 
-	destNew      func(data, uti, count uintptr, opts uintptr) uintptr
-	destAdd      func(dest, img, props uintptr)
-	destFin      func(dest uintptr) uint8
+	destNew        func(data, uti, count uintptr, opts uintptr) uintptr
+	destAdd        func(dest, img, props uintptr)
+	destFin        func(dest uintptr) uint8
 	imgSrcFromData func(data uintptr, idx int) uintptr
 	imgSrcThumb    func(src uintptr, idx int, opts uintptr) uintptr
 )

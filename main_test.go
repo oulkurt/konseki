@@ -5,6 +5,9 @@ import (
 	"time"
 
 	"konseki/internal/capture"
+	"konseki/internal/config"
+	"konseki/internal/llm"
+	"konseki/internal/summary"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -14,13 +17,30 @@ import (
 
 func newTestApp(t *testing.T) (*app, func()) {
 	t.Helper()
-	cfg := capture.DefaultConfig()
-	cfg.Root = t.TempDir()
-	r, err := capture.New(cfg)
+	ccfg := capture.DefaultConfig()
+	ccfg.Root = t.TempDir()
+	r, err := capture.New(ccfg)
 	if err != nil {
 		t.Fatalf("capture.New: %v", err)
 	}
-	return &app{runner: r}, func() { r.Stop() }
+	cs, err := config.Open(ccfg.Root)
+	if err != nil {
+		t.Fatalf("config.Open: %v", err)
+	}
+	sums, err := summary.NewStore(ccfg.Root)
+	if err != nil {
+		t.Fatalf("summary.NewStore: %v", err)
+	}
+	a := &app{
+		runner:   r,
+		cfg:      cs,
+		cfgNow:   cs.Get(),
+		sums:     sums,
+		llmc:     llm.New(time.Second),
+		expanded: map[string]bool{},
+	}
+	a.rebuildGenerator()
+	return a, func() { r.Stop() }
 }
 
 func TestViewBuilds(t *testing.T) {

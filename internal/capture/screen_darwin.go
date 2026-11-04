@@ -13,8 +13,9 @@ import (
 )
 
 // macOS 的屏幕录制权限没有「标准请求 API」可用，只有这两个 C 函数：
-//   CGPreflightScreenCaptureAccess  —— 只查询，永不弹框
-//   CGRequestScreenCaptureAccess    —— 会弹框，但仅在用户没明确拒绝过时有效
+//
+//	CGPreflightScreenCaptureAccess  —— 只查询，永不弹框
+//	CGRequestScreenCaptureAccess    —— 会弹框，但仅在用户没明确拒绝过时有效
 //
 // 关键行为（实测 + 文档确认）：
 //   - 用户点过「拒绝」后，Request 不会再次弹框，直接返回 false
@@ -79,7 +80,6 @@ func probeCapture() (ok bool, blank bool) {
 	}
 	return true, false
 }
-
 
 type darwinScreen struct{}
 

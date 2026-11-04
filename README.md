@@ -1,89 +1,91 @@
 # 痕跡 Konseki
 
-本机优先的个人时间轴。记录你这一天在哪些 App 里做了什么，**数据全部留在本机，不上传任何东西。**
+本机优先的个人时间轴。记录你在电脑上做了什么，用你自己的模型把它压成人话，再让别的 Agent 读到它。
 
-## 当前状态：v0.1.0 可运行
+## 它解决什么
 
-能跑，能真采集，界面能用。还是个骨架，缺摘要和理解层。
+「我今天到底干了什么？」
 
-```
-build/darwin-arm64/Konseki.app     9.2 MB
-build/darwin-arm64/*.dmg           3.0 MB
-```
+这不是一个需要你手动打卡的工具。它截屏、OCR、聚合，然后让模型替你写下来。数据全在本机，只有摘要请求会出门 —— 而且出门前会脱敏。
 
-## 跑起来
+## 三个组成部分
 
-```sh
-go tool mygo dev      # 开发（热重载）
-go test               # 跑测试（界面测试不需要开窗口）
-go tool mygo build    # 打包 App + dmg
-```
+### 1. 采集
 
-## 项目结构
+`internal/capture` 每 5 秒看一眼前台窗口，变了就抓一帧、OCR、落盘。z 磁盘上只存缩略图和文字，原图不保留。
 
-```
-konseki/
-├── main.go                    界面 + 生命周期（约 200 行）
-├── internal/capture/          采集层，平台无关
-│   ├── collector.go             接口定义：Screen / OCREngine / Frame
-│   ├── runner.go                采样循环 + 时间轴聚合
-│   ├── store.go                 JSONL 存储
-│   ├── perms.go                 权限报告
-│   ├── macos.go                 macOS: CGDisplayCreateImage + Vision OCR
-│   ├── screen_darwin.go         macOS 平台实现
-│   ├── screen_windows.go        Windows 骨架（TODO 标注了要调的 API）
-│   └── screen_linux.go          Linux 骨架（TODO 标注了 portal/PipeWire）
-├── docs/
-│   ├── README.md               文档索引
-│   ├── architecture.md         分层与数据流
-│   ├── decisions.md            技术选型记录
-│   └── mygo/                   mygo v0.7.4 文档（107 篇，离线可查）
-└── mygo.json                   打包配置
-```
+三平台共用一套聚合逻辑，平台差异被收敛到 `Screen` / `OCREngine` 两个接口后面（macOS 用 purego 直调系统 API，Windows 用 BitBlt，Linux 用 PipeWire）。
 
-## 设计要点
+### 2. 摘要
 
-### 1. OCR 用全分辨率，磁盘只存缩略图
+`internal/summary` 按整点切窗口，把窗口内的窗口标题 + OCR 交给模型，拿回结构化的结论：在做什么、进展到哪、什么没做完、做了什么决定。
 
-这是整个设计里唯一真正重要的决定。
+模型由你自己配。`internal/providers` 里有 30 多家预设（Anthropic / OpenAI / Gemini / DeepSeek / Kimi / GLM / MiniMax / Qwen / 火山方舟 …），也可以接中转站或本地 Ollama。
+
+也可以直接从本机已登录的 Claude Code / Codex 导入凭据，直接用你已有的订阅。
+
+### 3. Skill
+
+`internal/skill` 把痕迹导出成一个 Agent 能读的目录：
 
 ```
-CGDisplayCreateImage → 全分辨率 CGImage（内存，不落盘）
-                       ├→ Vision OCR（全分辨率，识别准）
-                       └→ 缩到 1200px → JPEG → 存盘（~42KB）
+~/.claude/skills/konseki/
+  SKILL.md              # 入口，Agent 读它决定要不要用
+  KONSEKI.md            # 跨天画像：时间花在哪、反复出现的主题、悬着没做完的
+  days/2026-11-04.md    # 一天的人话版
+  days/2026-11-04.json  # 同一份数据的机器可读版
 ```
 
-实测：中文界面缩到 1400px 再 OCR 就废了（40 行 → 11 行）。
-但 OCR 不需要落盘那张图，两个目标就不冲突。
+Claude Code、Codex、Cursor 都能读。装好之后，你不需要再向 Agent 解释「我昨天在干什么」。
 
-体积：42KB × 每天约 500 张 ≈ **20MB/天**，对比全存原图 547MB/天，省 27 倍。
+## 脱敏
 
-### 2. 不是定时盲截，是「有信息量才截」
+`internal/redact` 在把文本递给模型之前，把不该出门的东西换成占位符：
 
-- 前台 App 或窗口标题变了 → 立刻截
-- 没变 → 每 2 分钟补一张（保证长任务有时间轴）
-- 闲置超过 5 分钟 → 不截
-- 采到黑帧（锁屏/休眠）→ 跳过，不写记录
+```
+DB_PASSWORD=hunter2        →  DB_PASSWORD={{PASSWORD_k3v9x2mq}}
+alice@example.com          →  {{EMAIL_7f2jd8sl}}
+```
 
-轮询 5 秒查一次窗口信息，**不截屏**，CPU 几乎为零。
+模型返回的文本再换回去，你看到的仍是原文。占位符对同一个值是稳定的（HMAC），所以模型看到的前后文是一致的，cache 不会失效。
 
-### 3. 平台抽象
+能遮的：API key、私钥、密码、Bearer token、邮箱、手机号、身份证、银行卡，以及可选的 IP、家目录用户名、MAC。白名单和自定义词也在设置里。
 
-`Frame` 用统一的 RGBA 表示，各平台自己转。代价是一次内存拷贝（1-2ms），
-换来 OCR / 缩略图 / 存储三套逻辑跨平台共用。
+**默认只遮四类核心个人数据 + 全部凭据。** IP 和家目录默认不遮 —— 开发者的时间轴里到处是 `127.0.0.1` 和 `/Users/xxx`，全遮掉会让摘要没法读。
 
-三平台都能编译：Windows 3.81 MB / Linux 3.80 MB / macOS 4.29 MB。
+## 隐私边界
 
-## 已知问题
+- 原始截屏和 OCR 只存在 `~/Library/Application Support/Konseki/`
+- 只有「摘要请求」会出门，出门前经过脱敏
+- API key 单独存 `secrets.json`，权限 `0600`
+- 有 denylist：某些 App、某些域名完全不采集
+- 可以随时暂停采集
 
-- **首次授权要重启 App**。macOS 在「已授权但进程是授权前启动的」情况下，
-  截出来的仍是全黑图。系统会弹框提示「Quit & Reopen」，按它做即可。
-  这个问题在 `docs/` 里有详细记录。
-- Windows / Linux 只有骨架，`Grab()` 返回 nil，需要按 TODO 填充。
-- 还没有摘要层（Aside 那种 Memory summary），只有原始时间轴。
-- ad-hoc 签名，分发前需要 Developer ID + 公证。
+## 开发
 
-## 相关文档
+```bash
+go build ./...
+go test ./...
+go run .
+```
 
-- `docs/README.md` —— 文档索引，mygo 的 107 篇文档在 `docs/mygo/`
-- `../aside-lite/README.md` —— 立项时的调研：Aside 内部结构、踩坑、全平台分析
+`mygo` v0.7.4，native 模板（Go 自绘 UI，不用 WebView）。
+
+```
+main.go          界面与生命周期
+timeline.go      时间轴渲染
+ui_provider.go   供应商设置
+ui_summary.go    摘要与 Skill 设置
+internal/
+  capture/       采集与聚合
+  config/        设置存储
+  llm/           模型调用（OpenAI 兼容 / Anthropic Messages）
+  providers/     供应商目录 + 本机凭据导入
+  redact/        脱敏
+  summary/       摘要生成
+  skill/         导出给外部 Agent
+```
+
+## License
+
+MIT

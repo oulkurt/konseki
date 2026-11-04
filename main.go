@@ -5,6 +5,7 @@ package main
 // 采集层在 internal/capture，这里负责 mygo 原生界面、Liquid Glass 材质与生命周期。
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,11 @@ import (
 	"time"
 
 	"konseki/internal/capture"
+	"konseki/internal/config"
+	"konseki/internal/llm"
+	"konseki/internal/providers"
+	"konseki/internal/redact"
+	"konseki/internal/summary"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/glass"
@@ -22,7 +28,14 @@ import (
 type app struct {
 	runner *capture.Runner
 
-	// 界面与采集状态
+	// ---- 持久层 ----
+	cfg    *config.Store
+	cfgNow config.Config
+	sums   *summary.Store
+	gen    *summary.Generator
+	llmc   *llm.Client
+
+	// ---- 界面与采集状态 ----
 	blocks          []capture.Block
 	status          capture.Status
 	doctor          string
@@ -35,25 +48,48 @@ type app struct {
 	includeShowcase bool
 	dayFilter       string
 
-	// Capture & Summaries 设置项状态（UI/UX）
-	settingsInited         bool
+	// ---- Capture 设置 ----
 	enableContextAwareness bool
 	pauseDuration          string
-	captureTypedText       bool
-	allowScreenRecording   bool
+	denylistApps           []string
+	denylistSites          []string
+	showDenylistPopover    bool
+	denylistTab            int
+	customAppInput         string
+	customSiteInput        string
 
-	// Denylist（支持 App 与 Website 两类）
-	showDenylistPopover bool
-	denylistTab         int // 0 = Apps, 1 = Websites
-	denylistApps        []string
-	denylistSites       []string
-	customAppInput      string
-	customSiteInput     string
+	// ---- 供应商 ----
+	// 当前展开的是哪个供应商的配置面板，空表示都收起。
+	openProvider    string
+	addProviderOpen bool
+	providerFilter  int // 0=全部 1=官方 2=中转 3=本地 4=订阅
+	apiKeyDraft     string
+	baseURLDraft    string
+	modelDraft      string
+	testing         bool
+	testResult      string
+	testOK          bool
+	detected        []providers.Credential
+	detectDone      bool
 
-	// Summary model & Thinking effort（思考程度）& Retention
-	summaryModel   string
-	thinkingEffort string
-	retention      string
+	// ---- 摘要 ----
+	// 视图切换：0 = 设置（Capture/Summaries/Providers/Skill），1 = 时间轴
+	tab        int
+	sumEntries []summary.Entry
+	sumErr     string
+	sumRunning bool
+	// 摘要生成时的进度文字，UI 上直接显示。
+	sumProgress string
+	// 本次生成的脱敏命中数，给用户一个「遮了多少」的反馈。
+	sumRedactions int
+	showRedactLog bool
+
+	// ---- Skill ----
+	skillExportMsg  string
+	skillExportedAt time.Time
+
+	// ---- 其它 ----
+	settingsInited bool
 }
 
 func (a *app) ensureInit() {
@@ -63,15 +99,13 @@ func (a *app) ensureInit() {
 	if a.dayFilter == "" {
 		a.dayFilter = "Today"
 	}
+	if a.cfg != nil {
+		a.cfgNow = a.cfg.Get()
+	}
 	if !a.settingsInited {
 		a.settingsInited = true
 		a.enableContextAwareness = true
 		a.pauseDuration = "Select"
-		a.captureTypedText = true
-		a.allowScreenRecording = true
-		a.summaryModel = "Gemini 3.8 ..."
-		a.thinkingEffort = "Medium"
-		a.retention = "14 days"
 	}
 }
 
@@ -87,8 +121,14 @@ func (a *app) refresh() {
 		return
 	}
 	a.status = a.runner.Status()
+	a.loadDay()
+	a.loadSummaries()
+}
 
-	blocks, err := a.runner.Timeline("")
+// loadDay 读回当天的时间块。
+func (a *app) loadDay() {
+	key := a.dayKey()
+	blocks, err := a.runner.Timeline(key)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			a.err = err.Error()
@@ -98,6 +138,105 @@ func (a *app) refresh() {
 	}
 	a.err = ""
 	a.blocks = blocks
+}
+
+// loadSummaries 读回当天的摘要。
+func (a *app) loadSummaries() {
+	if a.sums == nil {
+		return
+	}
+	ents, err := a.sums.Load(a.dayKey())
+	if err != nil {
+		a.sumErr = err.Error()
+		return
+	}
+	a.sumErr = ""
+	a.sumEntries = ents
+}
+
+// dayKey 把 UI 上的筛选词换成日期。
+func (a *app) dayKey() string {
+	switch a.dayFilter {
+	case "Yesterday":
+		return time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	case "Last 7 Days", "Today":
+		return time.Now().Format("2006-01-02")
+	}
+	return time.Now().Format("2006-01-02")
+}
+
+// dayLabel 给摘要生成用：昨天生成昨天，其余都当今天。
+func (a *app) dayLabel() string {
+	return a.dayKey()
+}
+
+// ---------- 摘要生成 ----------
+
+// summarizable 说现在能不能生成摘要。UI 用它决定按钮是否置灰。
+func (a *app) summarizable() bool {
+	return a.gen != nil && len(a.blocks) > 0 && !a.sumRunning
+}
+
+// runSummary 在后台生成当天的摘要。
+//
+// 单独一个 goroutine：一次生成可能跑好几分钟（逐个小时调模型），
+// 卡在 UI 线程里整窗都要冻结。所有回写到 UI 的字段都是简单类型，
+// 读取方在下一帧就会看到，不需要额外的锁 —— mygo 的渲染是单线程的，
+// 而这里写的是 bool/string/int，最坏情况是晚一帧生效。
+func (a *app) runSummary(force bool) {
+	if a.gen == nil || a.sumRunning {
+		return
+	}
+	a.sumRunning = true
+	a.sumErr = ""
+	a.showRedactLog = false
+
+	key := a.dayKey()
+	blocks := a.blocks
+	root := a.runner.Root()
+	gen := a.gen
+
+	go func() {
+		defer func() { a.sumRunning = false }()
+
+		ocr, err := a.runner.OCRIndex(key)
+		if err != nil {
+			ocr = nil // OCR 拿不到也能生成，靠窗口标题
+		}
+		window := time.Duration(a.cfgNow.Summary.WindowMinutes) * time.Minute
+		if window <= 0 {
+			window = time.Hour
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+
+		entries, err := gen.GenerateDay(ctx, blocks, ocr, key, window, force)
+		if err != nil {
+			a.sumErr = err.Error()
+			a.stampSkill(root)
+			return
+		}
+		a.sumEntries = entries
+		a.stampSkill(root)
+	}()
+}
+
+// stampSkill 在摘要变化后重新导出 skill。
+//
+// 这是让外部 Agent 真能读到东西的关键：摘要生成完但没导出，
+// 别的工具就还是看不到。导出本身很快（纯写文件），不值得再起
+// 一个 goroutine。
+func (a *app) stampSkill(root string) {
+	if a.cfgNow.Skill.ExportDir == "" {
+		return
+	}
+	if n, err := a.exportSkill(); err == nil {
+		a.skillExportMsg = fmt.Sprintf("已导出 %d 个文件", n)
+		a.skillExportedAt = time.Now()
+	} else {
+		a.skillExportMsg = "导出失败：" + err.Error()
+	}
 }
 
 type palette struct {
@@ -271,20 +410,22 @@ func (a *app) view(c *ui.Context) {
 						ui.Text(c, "读取数据出错："+a.err).FontSize(12).TextColor(t.Danger)
 					}
 
-					// ================================================================
-					// 1. Capture 模块
-					// ================================================================
-					a.renderCaptureSection(c, pal)
+					// ---- 分页：时间轴 / 设置 ----
+					//
+					// 为什么从「一页长滚动」改成两页：加了供应商和 skill 之后
+					// 设置区比内容还长，进来第一屏看到一堆开关是错的。
+					// 时间轴是每天要看的东西，设置是配一次就不动的。
+					a.renderTabs(c, pal)
 
-					// ================================================================
-					// 2. Summaries 模块
-					// ================================================================
-					a.renderSummariesSection(c, pal)
-
-					// ================================================================
-					// 3. History 模块
-					// ================================================================
-					a.renderHistorySection(c, pal)
+					switch a.tab {
+					case 0:
+						a.renderHistorySection(c, pal)
+					case 1:
+						a.renderCaptureSection(c, pal)
+						a.renderSummariesSection(c, pal)
+						a.renderProvidersSection(c, pal)
+						a.renderSkillSection(c, pal)
+					}
 				})
 			})
 
@@ -299,6 +440,101 @@ func (a *app) view(c *ui.Context) {
 				DragWindow()
 		}
 	})
+}
+
+// rebuildGenerator 按当前配置重建摘要生成器。
+//
+// 每次设置变化都重建而不是就地改：生成器持有 masker（脱敏器），
+// 换开关必须换一个新的 —— 旧的里面还留着上一个配置下的反查表，
+// 用它去还原会换出不属于当前会话的原文。
+func (a *app) rebuildGenerator() {
+	if a.cfg == nil || a.llmc == nil {
+		return
+	}
+	a.cfgNow = a.cfg.Get()
+
+	var pc *config.ProviderConfig
+	for i := range a.cfgNow.Providers {
+		p := &a.cfgNow.Providers[i]
+		if p.Preset == a.cfgNow.Summary.ProviderID {
+			pc = p
+			break
+		}
+	}
+	// 没指定就用第一个有 key 的。
+	if pc == nil {
+		for i := range a.cfgNow.Providers {
+			p := &a.cfgNow.Providers[i]
+			if p.APIKey != "" || p.AccessToken != "" || p.DefaultModel != "" {
+				pc = p
+				break
+			}
+		}
+	}
+	if pc == nil {
+		a.gen = nil
+		return
+	}
+
+	resolved, err := llm.Resolve(*pc, true)
+	if err != nil {
+		a.gen = nil
+		a.sumErr = err.Error()
+		return
+	}
+
+	key := pc.APIKey
+	if pc.Auth == "oauth" && pc.AccessToken != "" {
+		key = pc.AccessToken
+	}
+	model := a.cfgNow.Summary.Model
+	if model == "" {
+		model = resolved.Model
+	}
+
+	cfg := summary.LLMConfig{
+		Kind:      resolved.Kind,
+		BaseURL:   resolved.BaseURL,
+		APIKey:    key,
+		Header:    headersFor(*pc, resolved),
+		Model:     model,
+		Thinking:  a.cfgNow.Summary.ThinkingEffort,
+		Language:  a.cfgNow.Summary.Language,
+		MaxTokens: 4096,
+		Redact: redact.Options{
+			Secrets:  a.cfgNow.Redact.Enabled && a.cfgNow.Redact.Secrets,
+			Personal: a.cfgNow.Redact.Enabled && a.cfgNow.Redact.Personal,
+			Kinds:    a.cfgNow.Redact.Kinds,
+			Allow:    a.cfgNow.Redact.Allow,
+			Words:    a.cfgNow.Redact.Words,
+		},
+	}
+
+	if a.gen == nil {
+		a.gen = summary.New(a.sums, a.llmc, cfg, func(e summary.Entry) {
+			a.sumEntries = append(a.sumEntries, e)
+		})
+	} else {
+		a.gen.SetConfig(cfg)
+	}
+}
+
+// setSummaryModel 切换摘要用的模型。
+func (a *app) setSummaryModel(providerID, model string) {
+	a.cfg.Update(func(c *config.Config) {
+		c.Summary.ProviderID = providerID
+		c.Summary.Model = model
+	})
+	a.rebuildGenerator()
+}
+
+// setThinking 切换推理档位。
+func (a *app) setThinking(level string) {
+	a.cfg.Update(func(c *config.Config) { c.Summary.ThinkingEffort = level })
+	a.cfgNow = a.cfg.Get()
+	if a.gen != nil {
+		a.rebuildGenerator()
+	}
 }
 
 // renderCaptureSection 绘制 Capture 设置分组（两张圆角卡片）
@@ -373,27 +609,29 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 
 		// Card 1B: Capture typed text + Allow Screen Recording + Denylist
 		a.settingsCard(c, pal, func() {
-			// Row 1: Capture typed text
-			a.settingsRow(c,
-				"Capture typed text",
-				"Save the sentences you type. Aside never stores keystrokes or password fields.",
-				pal,
-				func() {
-					renderPillSwitch(c, "sw-capture-typed", &a.captureTypedText, pal)
-				},
-			)
-
-			ui.Box(c).FillWidth().Height(1).Background(pal.rowDivider)
-
-			// Row 2: Allow Screen Recording
-			a.settingsRow(c,
-				"Allow Screen Recording",
-				"When a page has no readable text, read it from the screen. Only the text is kept.",
-				pal,
-				func() {
-					renderPillSwitch(c, "sw-allow-screen", &a.allowScreenRecording, pal)
-				},
-			)
+			// Row 1: Retention
+			// 采集到的原始截屏是最占空间也最敏感的东西，
+			// 让用户能自己设一个上限，比事后清理体验好得多。
+			retentionSub := "原始截图和屏幕文字保留的天数。摘要不会过期。"
+			retentionLabel := fmt.Sprintf("%d days", a.cfgNow.RetentionDays)
+			if a.cfgNow.RetentionDays <= 0 {
+				retentionLabel = "Forever"
+			}
+			a.settingsRow(c, "Retention", retentionSub, pal, func() {
+				menu := func(m *ui.Menu) {
+					for _, days := range []int{7, 14, 30, 90, 0} {
+						label := fmt.Sprintf("%d days", days)
+						if days == 0 {
+							label = "Forever"
+						}
+						if m.Item(label).Checked(a.cfgNow.RetentionDays == days).Chosen() {
+							a.cfg.SetRetentionDays(days)
+							a.cfgNow = a.cfg.Get()
+						}
+					}
+				}
+				renderSelectPill(c, "btn-retention", retentionLabel, 100, pal.textPrimary, pal, menu)
+			})
 
 			ui.Box(c).FillWidth().Height(1).Background(pal.rowDivider)
 
@@ -474,7 +712,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 							ui.Column(c).FillWidth().Gap(2).Children(func() {
 								for _, appName := range candidateApps {
 									inList := slices.Contains(a.denylistApps, appName)
-									rowBtn := ui.ButtonBase(c.Key("deny-app-" + appName)).
+									rowBtn := ui.ButtonBase(c.Key("deny-app-"+appName)).
 										FillWidth().
 										Padding(6, 8).
 										Radius(7).
@@ -558,7 +796,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 							ui.Column(c).FillWidth().Gap(2).Children(func() {
 								for _, site := range candidateSites {
 									inList := slices.Contains(a.denylistSites, site)
-									rowBtn := ui.ButtonBase(c.Key("deny-site-" + site)).
+									rowBtn := ui.ButtonBase(c.Key("deny-site-"+site)).
 										FillWidth().
 										Padding(6, 8).
 										Radius(7).
@@ -592,7 +830,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 					ui.Row(c).Gap(6).Wrap().AlignItems(ui.Center).Children(func() {
 						var removeApp string
 						for _, appName := range a.denylistApps {
-							chip := ui.ButtonBase(c.Key("chip-app-" + appName)).
+							chip := ui.ButtonBase(c.Key("chip-app-"+appName)).
 								Gap(5).
 								Padding(4, 8).
 								Radius(6).
@@ -613,7 +851,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 
 						var removeSite string
 						for _, site := range a.denylistSites {
-							chip := ui.ButtonBase(c.Key("chip-site-" + site)).
+							chip := ui.ButtonBase(c.Key("chip-site-"+site)).
 								Gap(5).
 								Padding(4, 8).
 								Radius(6).
@@ -634,125 +872,6 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 					})
 				}
 			})
-		})
-	})
-}
-
-// renderSummariesSection 绘制 Summaries 设置分组（模型选择 + 思考程度选择 + 保留天数选择）
-func (a *app) renderSummariesSection(c *ui.Context, pal palette) {
-	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		ui.Text(c, "Summaries").
-			FontSize(13).
-			Bold().
-			TextColor(pal.textSecondary).
-			Margin(4, 0, 0, 10)
-
-		a.settingsCard(c, pal, func() {
-			// Row 1: Summary model（左侧选模型，右侧 ••• 选思考程度 Thinking effort）
-			modelSubtitle := "Summarizes your activity in the background while you work."
-			if a.thinkingEffort != "Medium" {
-				modelSubtitle = fmt.Sprintf("Summarizes your activity in the background while you work. · Thinking: %s", a.thinkingEffort)
-			}
-			a.settingsRow(c,
-				"Summary model",
-				modelSubtitle,
-				pal,
-				func() {
-					ui.Row(c).
-						Height(32).
-						Radius(8).
-						Background(pal.cardBg).
-						Border(1, pal.controlBorder).
-						Clip().
-						Children(func() {
-							// 左半段：模型选择菜单（同时包含思考程度子菜单）
-							modelMenu := func(m *ui.Menu) {
-								models := []string{
-									"Gemini 3.8 ...",
-									"Gemini 3.8 Pro",
-									"Gemini 3.8 Flash",
-									"Claude 4.5 Sonnet",
-									"Claude 4.5 Haiku",
-									"GPT-5.2",
-									"GPT-5 Mini",
-									"Qwen3-30B Local",
-								}
-								for _, mdl := range models {
-									if m.Item(mdl).Checked(a.summaryModel == mdl).Chosen() {
-										a.summaryModel = mdl
-									}
-								}
-								m.Separator()
-								m.Submenu("Thinking effort (思考程度)", func(sub *ui.Menu) {
-									for _, lvl := range []string{"Off", "Low", "Medium", "High", "Max"} {
-										if sub.Item(lvl).Checked(a.thinkingEffort == lvl).Chosen() {
-											a.thinkingEffort = lvl
-										}
-									}
-								})
-							}
-
-							leftBtn := ui.ButtonBase(c.Key("btn-summary-model")).
-								FillHeight().
-								Padding(0, 10).
-								Gap(6).
-								PopoverMenuButton(modelMenu)
-							if leftBtn.Hovered() {
-								leftBtn.Background(pal.rowHoverBg)
-							}
-							leftBtn.Children(func() {
-								ui.Icon(c, modelClusterSVG).FontSize(13).TextColor(pal.textPrimary)
-								ui.Text(c, a.summaryModel).FontSize(12.5).Bold().TextColor(pal.textPrimary).SingleLine()
-								ui.Icon(c, chevronDownSVG).FontSize(11).TextColor(pal.textSecondary)
-							})
-
-							ui.Box(c).Width(1).FillHeight().Background(pal.controlBorder)
-
-							// 右半段 •••：直接选择思考程度（Thinking effort）
-							thinkingMenu := func(m *ui.Menu) {
-								m.Item("Thinking effort (思考程度)").Disabled(true)
-								for _, lvl := range []string{"Off", "Low", "Medium", "High", "Max"} {
-									if m.Item("Thinking: " + lvl).Checked(a.thinkingEffort == lvl).Chosen() {
-										a.thinkingEffort = lvl
-									}
-								}
-							}
-
-							rightBtn := ui.ButtonBase(c.Key("btn-summary-model-more")).
-								Width(28).
-								FillHeight().
-								Center().
-								Label("Thinking effort").
-								Tooltip("Thinking effort: " + a.thinkingEffort).
-								PopoverMenuButton(thinkingMenu)
-							if rightBtn.Hovered() {
-								rightBtn.Background(pal.rowHoverBg)
-							}
-							rightBtn.Children(func() {
-								ui.Icon(c, moreHorizontalSVG).FontSize(12.5).TextColor(pal.textPrimary)
-							})
-						})
-				},
-			)
-
-			ui.Box(c).FillWidth().Height(1).Background(pal.rowDivider)
-
-			// Row 2: Retention
-			a.settingsRow(c,
-				"Retention",
-				"Aside deletes raw captures after this many days. Summaries stay.",
-				pal,
-				func() {
-					retentionMenu := func(m *ui.Menu) {
-						for _, opt := range []string{"7 days", "14 days", "30 days", "90 days", "Forever"} {
-							if m.Item(opt).Checked(a.retention == opt).Chosen() {
-								a.retention = opt
-							}
-						}
-					}
-					renderSelectPill(c, "btn-retention", a.retention, 118, pal.textPrimary, pal, retentionMenu)
-				},
-			)
 		})
 	})
 }
@@ -1230,11 +1349,37 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// 配置存在数据目录里，跟采集数据放一起 —— 备份/迁移时一个
+	// 目录搬走就全套，不用记两个路径。
+	cfg, err := config.Open(runner.Root())
+	if err != nil {
+		log.Fatal(err)
+	}
+	// 摘要和原始采样同目录，但分开放。删原始数据不该连带删摘要。
+	sums, err := summary.NewStore(runner.Root())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	a := &app{
 		runner:          runner,
-		includeShowcase: true,
+		cfg:             cfg,
+		cfgNow:          cfg.Get(),
+		sums:            sums,
+		llmc:            llm.New(5 * time.Minute),
+		includeShowcase: false,
 		expanded:        map[string]bool{},
 	}
+	a.rebuildGenerator()
+
+	// 启动时就清一次过期数据。放在 goroutine 里是因为它要扫目录，
+	// 而窗口应该在几百毫秒内出现。
+	go func() {
+		if days := a.cfgNow.RetentionDays; days > 0 {
+			runner.Prune(days)
+		}
+	}()
 
 	mygo.App.WhenReady(func() {
 		warmOSAppIcons()
@@ -1246,16 +1391,70 @@ func main() {
 			Transparent:     true,
 			Vibrancy:        mygo.VibrancyGlass,
 			BackgroundColor: "light-dark(#f7f8fa, #0f1115)",
-			Width:           720,
-			Height:          940,
-			MinWidth:        500,
-			MinHeight:       460,
+			Width:           780,
+			Height:          960,
+			MinWidth:        560,
+			MinHeight:       520,
 			StateKey:        "main",
 			Content:         ui.View(a.view),
 		})
 	})
 
+	// 自动摘要。走一个独立的 ticker，和采集循环无关：
+	// 采集是 5 秒一次的热路径，摘要要跑几分钟，混在一起会让
+	// 采样被拖慢。
+	if a.cfgNow.Summary.Auto {
+		go a.autoSummaryLoop()
+	}
+
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
+	runner.Stop()
+}
+
+// autoSummaryLoop 按设置里的间隔自动补摘要。
+//
+// 只在「有新的采样、且距上次生成超过间隔」时才跑。空转一次要
+// 花一次模型的 token，白花钱还会让用户怀疑它在偷跑。
+func (a *app) autoSummaryLoop() {
+	interval := time.Duration(a.cfgNow.Summary.IntervalMinutes) * time.Minute
+	if interval < 5*time.Minute {
+		interval = 5 * time.Minute
+	}
+	tick := time.NewTicker(interval)
+	defer tick.Stop()
+
+	for range tick.C {
+		a.ensureInit()
+		if !a.cfgNow.Summary.Auto || a.sumRunning || a.gen == nil {
+			continue
+		}
+		if a.cfgNow.CapturePaused {
+			continue
+		}
+		a.loadDay()
+		if len(a.blocks) == 0 {
+			continue
+		}
+		// 已经覆盖到最新一块就不用再跑了。
+		if a.coversLatest() {
+			continue
+		}
+		a.runSummary(false)
+	}
+}
+
+// coversLatest 说最后一小时是否已经有摘要了。
+func (a *app) coversLatest() bool {
+	if len(a.sumEntries) == 0 || len(a.blocks) == 0 {
+		return false
+	}
+	lastBlock := a.blocks[len(a.blocks)-1].End
+	for _, e := range a.sumEntries {
+		if !e.End.Before(lastBlock) {
+			return true
+		}
+	}
+	return false
 }

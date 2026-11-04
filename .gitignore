@@ -6,3 +6,10 @@ mygo_windows_*.syso
 /data/
 *.log
 .alma-snapshots
+
+# macOS
+.DS_Store
+
+# 本地导出（skill 输出、临时产物）
+/dist/
+*.tmp

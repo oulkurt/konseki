@@ -76,3 +76,25 @@ func (s *Store) ReadDay(dateKey string) ([]Snapshot, error) {
 	}
 	return out, sc.Err()
 }
+
+// OCRIndex 把某天的 OCR 文本按窗口标题收拢，给摘要用。
+//
+// 同一个标题会出现很多次（一个文件开着半小时），只留最长的那份 ——
+// OCR 长的那份通常信息更多（加载完了、滚动到了正文）。这里不做去重
+// 或清洗，摘要把关那一步自己会截断。
+func (s *Store) OCRIndex(dateKey string) (map[string]string, error) {
+	snaps, err := s.ReadDay(dateKey)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(snaps))
+	for _, sn := range snaps {
+		if sn.Title == "" || len(sn.OCR) < 40 {
+			continue
+		}
+		if len(sn.OCR) > len(out[sn.Title]) {
+			out[sn.Title] = sn.OCR
+		}
+	}
+	return out, nil
+}
