@@ -9,8 +9,10 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 )
 
@@ -162,30 +164,17 @@ func (s *Store) saveLocked() error {
 	return s.writeSecrets()
 }
 
+// clone 深拷贝，并保留 nil 与空切片的区别：空切片落盘是 []，表示用户清空了列表。
 func (c Config) clone() Config {
 	out := c
-	out.Recorder.SensitiveApps = append([]string(nil), c.Recorder.SensitiveApps...)
-	out.Recorder.OCR.Languages = append([]string(nil), c.Recorder.OCR.Languages...)
-	if c.Providers != nil {
-		out.Providers = make([]ProviderConfig, len(c.Providers))
-		for i, p := range c.Providers {
-			out.Providers[i] = p
-			if p.EnabledModels != nil {
-				out.Providers[i].EnabledModels = append([]string(nil), p.EnabledModels...)
-			}
-		}
+	out.Recorder.SensitiveApps = slices.Clone(c.Recorder.SensitiveApps)
+	out.Recorder.OCR.Languages = slices.Clone(c.Recorder.OCR.Languages)
+	out.Providers = slices.Clone(c.Providers)
+	for i := range out.Providers {
+		out.Providers[i].EnabledModels = slices.Clone(out.Providers[i].EnabledModels)
 	}
-	if c.Redact.Kinds != nil {
-		out.Redact.Kinds = make(map[string]bool, len(c.Redact.Kinds))
-		for k, v := range c.Redact.Kinds {
-			out.Redact.Kinds[k] = v
-		}
-	}
-	if c.Redact.Allow != nil {
-		out.Redact.Allow = append([]string(nil), c.Redact.Allow...)
-	}
-	if c.Redact.Words != nil {
-		out.Redact.Words = append([]string(nil), c.Redact.Words...)
-	}
+	out.Redact.Kinds = maps.Clone(c.Redact.Kinds)
+	out.Redact.Allow = slices.Clone(c.Redact.Allow)
+	out.Redact.Words = slices.Clone(c.Redact.Words)
 	return out
 }

@@ -26,6 +26,7 @@ func openFixture(t *testing.T, data string) (*Store, string) {
 	}
 	return s, dir
 }
+
 func TestMigration(t *testing.T) {
 	for _, tc := range []struct {
 		extra string
@@ -62,6 +63,7 @@ func TestMigration(t *testing.T) {
 		})
 	}
 }
+
 func TestPresenceAndRoundTrip(t *testing.T) {
 	s, _ := openFixture(t, `{"version":2,"recorder":{"enabled":false,"screenPollMs":0,"retentionDays":0},"redact":{"enabled":false,"secrets":false,"personal":false,"showHits":false}}`)
 	c := s.Get()
@@ -89,6 +91,7 @@ func TestPresenceAndRoundTrip(t *testing.T) {
 		t.Fatalf("默认值往返不一致: %#v", s.Get())
 	}
 }
+
 func TestNormalization(t *testing.T) {
 	cases := []struct {
 		key    string
@@ -138,5 +141,19 @@ func TestNormalization(t *testing.T) {
 	t.Setenv("KONSEKI_HOME", "/tmp/konseki-test")
 	if AppDir() != "/tmp/konseki-test" {
 		t.Fatal(AppDir())
+	}
+}
+
+func TestClearedSensitiveAppsSurviveReload(t *testing.T) {
+	s, dir := openFixture(t, `{"version":2}`)
+	if err := s.Update(func(c *Config) { c.Recorder.SensitiveApps = nil }); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Get().Recorder.SensitiveApps; len(got) != 0 {
+		t.Fatalf("清空的敏感应用重启后又回来了: %q", got)
 	}
 }

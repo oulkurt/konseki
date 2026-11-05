@@ -112,6 +112,9 @@ type Config struct {
 	Summary   SummaryConfig    `json:"summary"`
 	Skill     SkillConfig      `json:"skill"`
 }
+
+// Recorder 是采集设置。时间字段一律是毫秒整数，和 Alma 一致，方便手改文件。
+// 运行时由 package main 换成 capture.Settings，capture 不依赖本包。
 type Recorder struct {
 	Enabled       bool      `json:"enabled"`
 	PausedUntil   time.Time `json:"pausedUntil,omitzero"`
@@ -128,6 +131,7 @@ type Recorder struct {
 	RetentionDays int       `json:"retentionDays"`
 	OutputDir     string    `json:"outputDir,omitempty"`
 }
+
 type OCRConfig struct {
 	Enabled   bool     `json:"enabled"`
 	Languages []string `json:"languages"`
@@ -135,12 +139,41 @@ type OCRConfig struct {
 }
 
 func Default() Config {
-	return Config{Version: 2, Language: "zh-Hans", Recorder: Recorder{
-		Enabled: true, DebounceMs: 4000, HeartbeatMs: 120000, IdleMs: 30000, TypingPauseMs: 1200, ScreenPollMs: 12000, JPEGQuality: 55,
-		OCR: OCRConfig{Enabled: true, Languages: []string{"en-US", "zh-Hans", "zh-Hant", "ja"}, EveryN: 3}, InputMonitor: true,
-		SensitiveApps: []string{"com.apple.keychainaccess", "com.1password.1password", "com.agilebits.onepassword7", "org.bitwarden.desktop", "com.lastpass.LastPass", "com.dashlane.dashlanephonefinal", "com.apple.Passwords"}, MaxStorageMB: 10240, RetentionDays: 30},
-		Redact: RedactConfig{Enabled: true, Secrets: true, Personal: true, ShowHits: true}, Summary: SummaryConfig{IntervalMinutes: 30, ThinkingEffort: "medium", WindowMinutes: 60}, Skill: SkillConfig{Days: 7, RedactOnExport: true}}
+	return Config{
+		Version:  2,
+		Language: "zh-Hans",
+		Recorder: Recorder{
+			Enabled:       true,
+			DebounceMs:    4000,
+			HeartbeatMs:   120000,
+			IdleMs:        30000,
+			TypingPauseMs: 1200,
+			ScreenPollMs:  12000,
+			JPEGQuality:   55,
+			OCR: OCRConfig{
+				Enabled:   true,
+				Languages: []string{"en-US", "zh-Hans", "zh-Hant", "ja"},
+				EveryN:    3,
+			},
+			InputMonitor: true,
+			SensitiveApps: []string{
+				"com.apple.keychainaccess",
+				"com.1password.1password",
+				"com.agilebits.onepassword7",
+				"org.bitwarden.desktop",
+				"com.lastpass.LastPass",
+				"com.dashlane.dashlanephonefinal",
+				"com.apple.Passwords",
+			},
+			MaxStorageMB:  10240,
+			RetentionDays: 30,
+		},
+		Redact:  RedactConfig{Enabled: true, Secrets: true, Personal: true, ShowHits: true},
+		Summary: SummaryConfig{IntervalMinutes: 30, ThinkingEffort: "medium", WindowMinutes: 60},
+		Skill:   SkillConfig{Days: 7, RedactOnExport: true},
+	}
 }
+
 func AppDir() string {
 	if d := os.Getenv("KONSEKI_HOME"); d != "" {
 		return d
@@ -148,6 +181,7 @@ func AppDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, "Library", "Application Support", "Konseki")
 }
+
 func (r Recorder) Dir(appDir string) string {
 	if r.OutputDir != "" {
 		return r.OutputDir
@@ -166,6 +200,7 @@ type wireConfig struct {
 	LegacyPaused    *bool           `json:"capturePaused,omitempty"`
 	LegacyRetention *int            `json:"retentionDays,omitempty"`
 }
+
 type wireRecorder struct {
 	Enabled       *bool      `json:"enabled,omitempty"`
 	PausedUntil   *time.Time `json:"pausedUntil,omitempty"`
@@ -182,11 +217,13 @@ type wireRecorder struct {
 	RetentionDays *int       `json:"retentionDays,omitempty"`
 	OutputDir     *string    `json:"outputDir,omitempty"`
 }
+
 type wireOCR struct {
 	Enabled   *bool     `json:"enabled,omitempty"`
 	Languages *[]string `json:"languages,omitempty"`
 	EveryN    *int      `json:"everyN,omitempty"`
 }
+
 type wireProvider struct {
 	Preset        *string    `json:"preset,omitempty"`
 	Label         *string    `json:"label,omitempty"`
@@ -199,6 +236,7 @@ type wireProvider struct {
 	EnabledModels *[]string  `json:"enabledModels,omitempty"`
 	DefaultModel  *string    `json:"defaultModel,omitempty"`
 }
+
 type wireRedact struct {
 	Enabled  *bool            `json:"enabled,omitempty"`
 	Secrets  *bool            `json:"secrets,omitempty"`
@@ -208,6 +246,7 @@ type wireRedact struct {
 	Words    *[]string        `json:"words,omitempty"`
 	ShowHits *bool            `json:"showHits,omitempty"`
 }
+
 type wireSummary struct {
 	Auto            *bool   `json:"auto,omitempty"`
 	IntervalMinutes *int    `json:"intervalMinutes,omitempty"`
@@ -217,6 +256,7 @@ type wireSummary struct {
 	WindowMinutes   *int    `json:"windowMinutes,omitempty"`
 	LegacyLanguage  *string `json:"language,omitempty"`
 }
+
 type wireSkill struct {
 	ExportDir      *string `json:"exportDir,omitempty"`
 	IncludeOCR     *bool   `json:"includeOCR,omitempty"`
@@ -229,6 +269,8 @@ func parse(data []byte) (Config, bool, error) {
 	if err := json.Unmarshal(data, &w); err != nil {
 		return Config{}, false, err
 	}
+	// 线上结构的字段全是指针，文件里没写的字段是 nil，编码时被 omitempty 略去。
+	// 再把它解到默认值上，没写的字段保留默认值，写了的 false 和 0 照常覆盖。
 	c := Default()
 	b, err := json.Marshal(w)
 	if err != nil {
@@ -255,6 +297,7 @@ func parse(data []byte) (Config, bool, error) {
 	normalize(&c)
 	return c, legacy, nil
 }
+
 func clamp(n, lo, hi int) int {
 	if n < lo {
 		return lo
@@ -264,8 +307,11 @@ func clamp(n, lo, hi int) int {
 	}
 	return n
 }
+
+// clean 去空白、去重并保序。结果总是非 nil：nil 落盘是 null，重读时等同字段缺失，
+// 用户清空的列表会被默认值顶回来。
 func clean(in []string, fold bool) []string {
-	var out []string
+	out := []string{}
 	seen := map[string]bool{}
 	for _, v := range in {
 		v = strings.TrimSpace(v)
@@ -280,6 +326,7 @@ func clean(in []string, fold bool) []string {
 	}
 	return out
 }
+
 func normalize(c *Config) {
 	c.Version = 2
 	if strings.HasPrefix(strings.ToLower(c.Language), "en") {
