@@ -8,6 +8,7 @@ package capture
 
 import (
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -213,5 +214,52 @@ func TestRunnerClearAllRestarts(t *testing.T) {
 	}
 	if status := r.Status(); status.Phase != PhaseWaiting || status.Session != nil {
 		t.Fatal(status)
+	}
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.initialized })
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	day := c.Now().Format("2006-01-02")
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 1 })
+	rows, err := r.Snapshots(day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(r.st.ShotFile(rows[0].ID)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRunnerCleansOldCaptureTemps(t *testing.T) {
+	d, c, _ := fakeDependencies()
+	root := t.TempDir()
+	dir := filepath.Join(root, "shots")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".capture-old.jpg", ".capture-new.jpg", "other.jpg"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := c.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(filepath.Join(dir, ".capture-old.jpg"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	r, err := newRunner(Settings{Root: root}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	if _, err := os.Stat(filepath.Join(dir, ".capture-old.jpg")); !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".capture-new.jpg", "other.jpg"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

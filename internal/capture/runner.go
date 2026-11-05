@@ -177,10 +177,38 @@ func (r *Runner) start() {
 	stop, done, enforce := r.stop, r.done, r.enforce
 	st, storage := r.st, r.storage
 	r.mu.Unlock()
+	if err := cleanCaptureTemps(st.root, r.deps.clock.Now()); err != nil {
+		r.setError(err)
+	}
 	if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
 		r.setError(err)
 	}
 	go r.loop(stop, done, enforce)
+}
+func cleanCaptureTemps(root string, now time.Time) error {
+	dir := filepath.Join(root, "shots")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), ".capture-") || !strings.HasSuffix(entry.Name(), ".jpg") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if now.Sub(info.ModTime()) > time.Minute {
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !os.IsNotExist(err) {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func (r *Runner) Stop() { r.lifecycle.Lock(); defer r.lifecycle.Unlock(); r.stopLoop() }
 func (r *Runner) stopLoop() {
@@ -302,6 +330,10 @@ func (r *Runner) grab(job captureJob) captureResult {
 		return result
 	}
 	dir := filepath.Join(job.store.root, "shots")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		result.err = err
+		return result
+	}
 	file, err := os.CreateTemp(dir, ".capture-*.jpg")
 	if err != nil {
 		result.err = err
