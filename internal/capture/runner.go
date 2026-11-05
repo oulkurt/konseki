@@ -38,14 +38,16 @@ func NewWithDependencies(cfg Settings, d Dependencies) (*Runner, error) {
 }
 
 type dependencies struct {
-	screen Screen
-	ocr    OCREngine
-	input  InputSource
-	front  FrontSource
-	lock   LockSource
-	clock  Clock
-	perms  PermissionSource
-	save   func(*Frame, string, int) bool
+	screen         Screen
+	ocr            OCREngine
+	input          InputSource
+	front          FrontSource
+	lock           LockSource
+	clock          Clock
+	perms          PermissionSource
+	save           func(*Frame, string, int) bool
+	appendSnapshot func(*Store, Snapshot) error
+	maintenanceOps *maintenanceOps
 }
 type Runner struct {
 	mu             sync.Mutex
@@ -63,6 +65,7 @@ type Runner struct {
 	front          Front
 	lastShot       time.Time
 	lastErr        error
+	perms          Perms
 	baseline       *fingerprint
 	generation     uint64
 	flightSession  string
@@ -130,7 +133,7 @@ func (r *Runner) Status() Status {
 		dropped = r.queue.dropped
 		r.queue.mu.Unlock()
 	}
-	return Status{OCRDropped: dropped, Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: r.front, Session: session, Usage: r.storage.Usage(), Perms: Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}, LastShot: r.lastShot, LastErr: r.lastErr}
+	return Status{OCRDropped: dropped, Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: r.front, Session: session, Usage: r.storage.Usage(), Perms: r.perms, LastShot: r.lastShot, LastErr: r.lastErr}
 }
 func (r *Runner) RecentSessions(n int) []Session {
 	if n <= 0 {
@@ -372,13 +375,14 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 	var inFlight bool
 	var front Front
 	var locked bool
-	var lastSystem, previousTick time.Time
+	var lastSystem, previousTick, lastPermissions time.Time
+	var perms Perms
 	finish := func(res captureResult, now time.Time, stopping bool) {
 		inFlight = false
 		defer releaseFrame(res.frame)
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		o := Observation{Now: now, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
+		o := Observation{Now: now, Front: front, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
 		if res.blank {
 			r.blankFrames++
 			if r.blankFrames >= 3 {
@@ -417,7 +421,9 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 			}
 		}
 		if res.tmp != "" {
-			os.Remove(res.tmp)
+			r.mu.Unlock()
+			_ = os.Remove(res.tmp)
+			r.mu.Lock()
 		}
 		r.finishClosed(res.job.session)
 		r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
@@ -439,12 +445,15 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 			r.queue = nil
 			r.mu.Unlock()
 			q.close()
-			<-maintenanceDone
 			return
 		case res := <-results:
 			finish(res, r.deps.clock.Now(), false)
 		case now := <-ticks:
 			key, click, scroll := r.deps.input.Intervals()
+			if lastPermissions.IsZero() || now.Sub(lastPermissions) >= 5*time.Second {
+				perms = Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}
+				lastPermissions = now
+			}
 			if lastSystem.IsZero() || now.Sub(lastSystem) >= time.Second {
 				front = r.deps.front.Front()
 				locked = r.deps.lock.Locked()
@@ -452,10 +461,11 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 			}
 			r.mu.Lock()
 			r.front = front
+			r.perms = perms
 			if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
 				r.pausedUntil = time.Time{}
 			}
-			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil, PreviousTick: previousTick, Slept: !previousTick.IsZero() && now.Round(0).Sub(previousTick.Round(0)) > 5*time.Second}
+			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, PreviousTick: previousTick, Slept: !previousTick.IsZero() && now.Round(0).Sub(previousTick.Round(0)) > 5*time.Second}
 			previousTick = now
 			r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
 			r.mu.Unlock()
@@ -472,7 +482,10 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 		case ActionOpenSession:
 			root, _ := filepath.Abs(r.cfg.Root)
 			if r.st.root != root {
-				st, err := NewStore(r.cfg.Root)
+				root := r.cfg.Root
+				r.mu.Unlock()
+				st, err := NewStore(root)
+				r.mu.Lock()
 				if err != nil {
 					r.lastErr = err
 				} else {
@@ -513,10 +526,14 @@ func (r *Runner) writeSession(c closedSession) {
 		delete(r.queue.counts, c.session.ID)
 		r.queue.mu.Unlock()
 	}
-	if err := c.store.AppendSession(*c.session); err != nil {
-		r.lastErr = err
-	} else {
+	r.mu.Unlock()
+	err := c.store.AppendSession(*c.session)
+	if err == nil {
 		c.storage.CountSession()
+	}
+	r.mu.Lock()
+	if err != nil {
+		r.lastErr = err
 	}
 }
 func (r *Runner) finishClosed(id string) {
@@ -531,42 +548,58 @@ func (r *Runner) persist(res captureResult) error {
 	path := r.lastPath
 	size := int64(0)
 	w, h := res.frame.W, res.frame.H
-	if !res.duplicate {
-		dest := job.store.ShotFile(id)
-		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
-			return err
-		}
-		if err := os.Rename(res.tmp, dest); err != nil {
-			return err
-		}
-		info, err := os.Stat(dest)
-		if err != nil {
-			return err
-		}
-		size = info.Size()
-		path, err = filepath.Rel(job.store.root, dest)
-		if err != nil {
-			return err
-		}
-		if w > screenshotMaxDimension || h > screenshotMaxDimension {
-			if w >= h {
-				h = h * screenshotMaxDimension / w
-				w = screenshotMaxDimension
-			} else {
-				w = w * screenshotMaxDimension / h
-				h = screenshotMaxDimension
-			}
-		}
-	} else if path == "" {
-		return nil
-	}
-	snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: res.title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, ImgKB: int(size / 1024)}
-	if err := job.store.Append(snap); err != nil {
+	r.mu.Unlock()
+	err := func() error {
 		if !res.duplicate {
-			_ = os.Remove(job.store.ShotFile(id))
+			dest := job.store.ShotFile(id)
+			if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+				return err
+			}
+			if err := os.Rename(res.tmp, dest); err != nil {
+				return err
+			}
+			info, err := os.Stat(dest)
+			if err != nil {
+				return err
+			}
+			size = info.Size()
+			path, err = filepath.Rel(job.store.root, dest)
+			if err != nil {
+				return err
+			}
+			if w > screenshotMaxDimension || h > screenshotMaxDimension {
+				if w >= h {
+					h = h * screenshotMaxDimension / w
+					w = screenshotMaxDimension
+				} else {
+					w = w * screenshotMaxDimension / h
+					h = screenshotMaxDimension
+				}
+			}
+		} else if path == "" {
+			return nil
 		}
+		snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: res.title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, ImgKB: int(size / 1024)}
+		appendSnapshot := r.deps.appendSnapshot
+		if appendSnapshot == nil {
+			appendSnapshot = (*Store).Append
+		}
+		if err := appendSnapshot(job.store, snap); err != nil {
+			if !res.duplicate {
+				_ = os.Remove(job.store.ShotFile(id))
+			}
+			return err
+		}
+		return nil
+	}()
+	r.mu.Lock()
+	if err != nil {
 		return err
 	}
+	if res.duplicate && path == "" {
+		return nil
+	}
+
 	if !res.duplicate {
 		r.baseline = res.fingerprint
 		r.lastPath = path

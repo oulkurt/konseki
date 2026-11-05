@@ -8,8 +8,31 @@ package capture
 
 import "time"
 
+type maintenanceOps struct {
+	rescan  func(*Storage) error
+	prune   func(*Storage, int, time.Time) (int, error)
+	degrade func(*Storage, time.Time) (int, error)
+	enforce func(*Storage, int64) (int64, error)
+}
+
+func defaultMaintenanceOps() maintenanceOps {
+	return maintenanceOps{(*Storage).Rescan, (*Storage).Prune, (*Storage).Degrade, (*Storage).Enforce}
+}
+
 func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce <-chan struct{}) {
 	defer close(done)
+	ops := defaultMaintenanceOps()
+	if r.deps.maintenanceOps != nil {
+		ops = *r.deps.maintenanceOps
+	}
+	stopped := func() bool {
+		select {
+		case <-stop:
+			return true
+		default:
+			return false
+		}
+	}
 	initial := time.NewTimer(time.Minute)
 	defer initial.Stop()
 	var five, half, six *time.Ticker
@@ -28,12 +51,21 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			return
 		case <-initial.C:
 			st, cfg := settings()
-			r.setError(st.Rescan())
-			_, err := st.Prune(cfg.RetentionDays, time.Now())
+			r.setError(ops.rescan(st))
+			if stopped() {
+				return
+			}
+			_, err := ops.prune(st, cfg.RetentionDays, time.Now())
 			r.setError(err)
-			_, err = st.Degrade(time.Now())
+			if stopped() {
+				return
+			}
+			_, err = ops.degrade(st, time.Now())
 			r.setError(err)
-			_, err = st.Enforce(cfg.MaxStorage)
+			if stopped() {
+				return
+			}
+			_, err = ops.enforce(st, cfg.MaxStorage)
 			r.setError(err)
 			five = time.NewTicker(5 * time.Minute)
 			half = time.NewTicker(30 * time.Minute)
@@ -41,20 +73,23 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			fiveC, halfC, sixC = five.C, half.C, six.C
 		case <-fiveC:
 			st, cfg := settings()
-			_, err := st.Enforce(cfg.MaxStorage)
+			_, err := ops.enforce(st, cfg.MaxStorage)
 			r.setError(err)
 		case <-halfC:
 			st, _ := settings()
-			_, err := st.Degrade(time.Now())
+			_, err := ops.degrade(st, time.Now())
 			r.setError(err)
-			r.setError(st.Rescan())
+			if stopped() {
+				return
+			}
+			r.setError(ops.rescan(st))
 		case <-sixC:
 			st, cfg := settings()
-			_, err := st.Prune(cfg.RetentionDays, time.Now())
+			_, err := ops.prune(st, cfg.RetentionDays, time.Now())
 			r.setError(err)
 		case <-enforce:
 			st, cfg := settings()
-			_, err := st.Enforce(cfg.MaxStorage)
+			_, err := ops.enforce(st, cfg.MaxStorage)
 			r.setError(err)
 			r.mu.Lock()
 			r.enforcePending = false

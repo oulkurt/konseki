@@ -308,3 +308,58 @@ func TestRunnerBlankBackoff(t *testing.T) {
 		t.Fatalf("退避失效: %d", got)
 	}
 }
+
+func TestRunnerStopDoesNotWaitForMaintenance(t *testing.T) {
+	d, _, _ := fakeDependencies()
+	started, release := make(chan struct{}), make(chan struct{})
+	ops := defaultMaintenanceOps()
+	ops.enforce = func(*Storage, int64) (int64, error) { close(started); <-release; return 0, nil }
+	d.maintenanceOps = &ops
+	r, err := newRunner(Settings{Root: t.TempDir()}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	r.mu.Lock()
+	r.requestEnforce()
+	r.mu.Unlock()
+	<-started
+	done := make(chan struct{})
+	go func() { r.Stop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		close(release)
+		<-done
+		t.Fatal("Stop 等待维护")
+	}
+	close(release)
+}
+
+func TestRunnerStatusDoesNotWaitForDisk(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	started, release := make(chan struct{}), make(chan struct{})
+	d.appendSnapshot = func(st *Store, snap Snapshot) error { close(started); <-release; return st.Append(snap) }
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Hour}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	<-started
+	done := make(chan struct{})
+	go func() { _ = r.Status(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		close(release)
+		t.Fatal("Status 等待磁盘")
+	}
+	close(release)
+}
