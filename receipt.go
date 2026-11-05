@@ -62,6 +62,7 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 					key := d.Format("2006-01-02")
 					if m.Item(dayName(d)).Checked(a.dayKey() == key).Chosen() {
 						a.dayFilter = key
+						a.scrollState.Y = 0
 						a.lastLoad = time.Time{}
 						a.refresh()
 					}
@@ -104,10 +105,16 @@ func (a *app) renderPaper(c *ui.Context, width float32) {
 		a.feedRevision = a.receiptRevision
 		a.feedStart = c.Now()
 		a.feedDistance = -1
+		a.feedMeasure = false
 	} else if a.feedRevision != a.receiptRevision {
 		a.feedRevision = a.receiptRevision
 		a.feedStart = c.Now()
 		a.feedDistance = max(a.receiptLineHandle.Bounds(c).H, 60)
+		a.feedMeasure = true
+	}
+	if a.feedMeasure && c.Now().After(a.feedStart) {
+		a.feedDistance = max(a.receiptLineHandle.Bounds(c).H, 1)
+		a.feedMeasure = false
 	}
 	h := a.paperHandle.Bounds(c).H
 	if a.feedDistance < 0 && h > 0 {

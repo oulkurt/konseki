@@ -56,6 +56,7 @@ type app struct {
 	feedRevision      int
 	feedStart         time.Time
 	feedDistance      float32
+	feedMeasure       bool
 	paperHandle       ui.Handle
 	receiptLineHandle ui.Handle
 

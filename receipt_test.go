@@ -32,13 +32,13 @@ func TestReceiptExpansion(t *testing.T) {
 	if tt.HasText("+ 决定") {
 		t.Fatal("条目默认展开")
 	}
-	if err := tt.Click("起草小票时间轴的出纸动画"); err != nil {
+	if err := tt.Click("起草小票时间轴的出纸动画并检查长标题在纸面上的换行方式"); err != nil {
 		t.Fatal(err)
 	}
 	if !tt.HasText("+ 决定") || !tt.HasText("+ 未完成") || !tt.HasText("+ 主题") {
 		t.Fatalf("展开详情缺失：%q", tt.Texts())
 	}
-	if err := tt.Click("起草小票时间轴的出纸动画"); err != nil {
+	if err := tt.Click("起草小票时间轴的出纸动画并检查长标题在纸面上的换行方式"); err != nil {
 		t.Fatal(err)
 	}
 	if tt.HasText("+ 决定") {

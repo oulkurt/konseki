@@ -72,7 +72,7 @@ func buildReceiptWindow(day time.Time, sums []summary.Entry, blocks []capture.Bl
 	appDur := map[string]time.Duration{}
 	pending := map[int64]*ReceiptLine{}
 	for _, b := range blocks {
-		if !b.Start.Before(end) || b.End.Before(start) {
+		if !b.Start.Before(end) || (b.End.Before(start) || (b.End.Equal(start) && b.Start.Before(start))) {
 			continue
 		}
 		bs, be := maxTime(b.Start, start), minTime(b.End, end)
@@ -129,7 +129,7 @@ func buildReceiptWindow(day time.Time, sums []summary.Entry, blocks []capture.Bl
 		result.Totals.Active = 0
 		result.Totals.HasActive = false
 		for _, s := range sessions {
-			if !s.Start.Before(end) || s.End.Before(start) {
+			if !s.Start.Before(end) || (s.End.Before(start) || (s.End.Equal(start) && s.Start.Before(start))) {
 				continue
 			}
 			result.Totals.Sessions++
@@ -138,7 +138,7 @@ func buildReceiptWindow(day time.Time, sums []summary.Entry, blocks []capture.Bl
 		}
 		if !result.Totals.HasActive && len(blocks) > 0 {
 			for _, b := range blocks {
-				if b.Start.Before(end) && !b.End.Before(start) {
+				if b.Start.Before(end) && !(b.End.Before(start) || (b.End.Equal(start) && b.Start.Before(start))) {
 					result.Totals.HasActive = true
 					result.Totals.Active += max(minTime(b.End, end).Sub(maxTime(b.Start, start)), 0)
 				}

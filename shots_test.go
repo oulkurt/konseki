@@ -47,7 +47,7 @@ func shotDay(t *testing.T, a *app) {
 			Topics: []string{"Konseki", "脱敏"}, Open: []string{"等 P0-A 交付"}, Redactions: 2},
 		{ID: "2026-11-04-1000", Day: "2026-11-04", Start: at(10, 0), End: at(11, 0), Headline: "对照 Alma 的活动记录器设置页",
 			Summary: "逐项核对 Alma 的采集参数和清除流程。", Apps: []string{"微信", "Alma"}, Topics: []string{"Alma"}},
-		{ID: "2026-11-04-1300", Day: "2026-11-04", Start: at(13, 0), End: at(14, 0), Headline: "起草小票时间轴的出纸动画",
+		{ID: "2026-11-04-1300", Day: "2026-11-04", Start: at(13, 0), End: at(14, 0), Headline: "起草小票时间轴的出纸动画并检查长标题在纸面上的换行方式",
 			Summary: "写了出纸口和送纸动画，长标题的换行还没看过。", Apps: []string{"Editor"},
 			Topics: []string{"MyGo", "动画"}, Open: []string{"长标题换行观感未验证"}, Decisions: []string{"使用悬挂式小票"}, Files: []string{"receipt.go"}},
 	}
