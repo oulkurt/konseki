@@ -116,7 +116,13 @@ func readJSON[T any](path string) ([]T, error) {
 	return out, sc.Err()
 }
 
-func (s *Store) Append(v Snapshot) error { return appendJSON(s.dayFile(time.Now()), v) }
+func (s *Store) Append(v Snapshot) error {
+	t, err := parseTS(v.TS)
+	if err != nil {
+		t = time.Now()
+	}
+	return appendJSON(s.dayFile(t.In(time.Local)), v)
+}
 func (s *Store) ShotPath(t time.Time) string {
 	return filepath.Join(s.root, "shots", t.Format("20060102-150405")+".jpg")
 }

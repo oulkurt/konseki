@@ -93,3 +93,181 @@ func requireAction(t *testing.T, a []Action, k ActionKind, tr Trigger) {
 		t.Fatalf("缺少动作 %v %s: %+v", k, tr, a)
 	}
 }
+
+type machineScenario struct {
+	m                  Machine
+	s                  Settings
+	o                  Observation
+	key, click, scroll time.Time
+}
+
+func newMachineScenario() *machineScenario {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	x := &machineScenario{s: Settings{Idle: 10 * time.Second, TypingPause: time.Second, Debounce: time.Second, Heartbeat: time.Hour}, o: Observation{Now: now, Front: Front{Bundle: "a"}, ScreenPermission: PermGranted}, key: now.Add(-time.Hour), click: now.Add(-time.Hour), scroll: now.Add(-time.Hour)}
+	x.step(0)
+	return x
+}
+func (x *machineScenario) step(d time.Duration) []Action {
+	x.o.Now = x.o.Now.Add(d)
+	x.o.SinceKey = x.o.Now.Sub(x.key)
+	x.o.SinceClick = x.o.Now.Sub(x.click)
+	x.o.SinceScroll = x.o.Now.Sub(x.scroll)
+	a := x.m.Step(x.o, x.s)
+	x.o.CaptureDone = false
+	x.o.CaptureFailed = false
+	x.o.CaptureSaved = false
+	x.o.ProbeDone = false
+	return a
+}
+func TestMachineTypingPauseAndClick(t *testing.T) {
+	x := newMachineScenario()
+	x.key = x.o.Now.Add(250 * time.Millisecond)
+	requireAction(t, x.step(250*time.Millisecond), ActionOpenSession, "")
+	if a := x.step(750 * time.Millisecond); hasAction(a, ActionCapture, "") {
+		t.Fatal(a)
+	}
+	requireAction(t, x.step(250*time.Millisecond), ActionCapture, TriggerTypingPause)
+	x.o.CaptureDone = true
+	x.o.CaptureSaved = true
+	x.step(0)
+	x.click = x.o.Now.Add(250 * time.Millisecond)
+	if a := x.step(250 * time.Millisecond); hasAction(a, ActionCapture, "") {
+		t.Fatal(a)
+	}
+	requireAction(t, x.step(750*time.Millisecond), ActionCapture, TriggerClick)
+}
+func TestMachineHeartbeatWithoutSession(t *testing.T) {
+	x := newMachineScenario()
+	x.s.Heartbeat = time.Second
+	a := x.step(time.Second)
+	requireAction(t, a, ActionCapture, TriggerHeartbeat)
+	if hasAction(a, ActionOpenSession, "") {
+		t.Fatal(a)
+	}
+}
+func TestMachineProbeBackoffAndReset(t *testing.T) {
+	x := newMachineScenario()
+	x.s.ScreenPoll = time.Second
+	requireAction(t, x.step(time.Second), ActionProbe, "")
+	x.o.ProbeDone = true
+	x.o.ProbeDuplicate = true
+	x.step(0)
+	if a := x.step(time.Second); hasAction(a, ActionProbe, "") {
+		t.Fatal(a)
+	}
+	requireAction(t, x.step(time.Second), ActionProbe, "")
+	x.o.ProbeDone = true
+	x.o.ProbeDuplicate = false
+	requireAction(t, x.step(0), ActionCapture, TriggerVisual)
+	x.o.CaptureDone = true
+	x.o.CaptureSaved = true
+	x.step(0)
+	requireAction(t, x.step(time.Second), ActionProbe, "")
+}
+func TestMachineProbeBackoffMaximumAndInputReset(t *testing.T) {
+	x := newMachineScenario()
+	x.s.ScreenPoll = time.Second
+	for _, delay := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		requireAction(t, x.step(delay), ActionProbe, "")
+		x.o.ProbeDone = true
+		x.o.ProbeDuplicate = true
+		x.step(0)
+	}
+	if x.m.probeFactor != 8 {
+		t.Fatal(x.m.probeFactor)
+	}
+	x.scroll = x.o.Now.Add(time.Second)
+	x.step(time.Second)
+	if x.m.probeFactor != 1 {
+		t.Fatal(x.m.probeFactor)
+	}
+}
+func TestMachineBlockedAndResume(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*machineScenario)
+		phase  Phase
+		block  BlockReason
+	}{{"sensitive", func(x *machineScenario) {
+		x.s.SensitiveApps = []string{"COM.EXAMPLE.SECRET"}
+		x.o.Front.Bundle = "com.example.secret"
+	}, PhaseBlocked, BlockSensitiveApp}, {"permission", func(x *machineScenario) { x.o.ScreenPermission = PermDenied }, PhaseBlocked, BlockNoScreenPermission}, {"locked", func(x *machineScenario) { x.o.Locked = true }, PhaseBlocked, BlockScreenLocked}, {"pause", func(x *machineScenario) { x.o.PausedUntil = x.o.Now.Add(time.Second) }, PhasePaused, BlockNone}} {
+		t.Run(tc.name, func(t *testing.T) {
+			x := newMachineScenario()
+			x.s.Heartbeat = time.Millisecond
+			x.s.ScreenPoll = time.Millisecond
+			tc.change(x)
+			a := x.step(250 * time.Millisecond)
+			if x.m.Phase != tc.phase || x.m.Block != tc.block || hasAction(a, ActionCapture, "") || hasAction(a, ActionProbe, "") {
+				t.Fatal(x.m, a)
+			}
+			if tc.name == "pause" {
+				x.step(time.Second)
+				if x.m.Phase != PhaseWaiting {
+					t.Fatal(x.m.Phase)
+				}
+			}
+			if tc.name == "locked" {
+				x.o.Locked = false
+				requireAction(t, x.step(time.Second), ActionResetBaseline, "")
+			}
+		})
+	}
+}
+func TestMachinePendingPriorityAndSingleFlight(t *testing.T) {
+	x := newMachineScenario()
+	x.click = x.o.Now.Add(250 * time.Millisecond)
+	requireAction(t, x.step(250*time.Millisecond), ActionCapture, TriggerClick)
+	x.o.Front.Bundle = "b"
+	a := x.step(250 * time.Millisecond)
+	if hasAction(a, ActionCapture, "") {
+		t.Fatal(a)
+	}
+	x.o.CaptureDone = true
+	x.o.CaptureSaved = true
+	if a = x.step(250 * time.Millisecond); hasAction(a, ActionCapture, "") {
+		t.Fatal(a)
+	}
+	requireAction(t, x.step(500*time.Millisecond), ActionCapture, TriggerAppFocus)
+}
+func TestMachineFailureBackoff(t *testing.T) {
+	x := newMachineScenario()
+	x.s.Debounce = 0
+	x.click = x.o.Now.Add(250 * time.Millisecond)
+	requireAction(t, x.step(250*time.Millisecond), ActionCapture, TriggerClick)
+	for _, delay := range []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second, 4 * time.Second} {
+		x.o.CaptureDone = true
+		x.o.CaptureFailed = true
+		x.step(0)
+		if a := x.step(delay - time.Millisecond); hasAction(a, ActionCapture, "") {
+			t.Fatal(a)
+		}
+		requireAction(t, x.step(time.Millisecond), ActionCapture, TriggerClick)
+	}
+	x.o.CaptureDone = true
+	x.o.CaptureSaved = true
+	x.step(0)
+	if x.m.failures != 0 || !x.m.retryAt.IsZero() {
+		t.Fatal(x.m.failures, x.m.retryAt)
+	}
+	x.m.failures = 15
+	x.o.CaptureDone = true
+	x.o.CaptureFailed = true
+	x.step(0)
+	if x.m.failures != 16 || x.m.retryAt.Sub(x.o.Now) != 30*time.Second {
+		t.Fatal(x.m.failures, x.m.retryAt)
+	}
+}
+func TestMachineIdleAppliesNextSession(t *testing.T) {
+	x := newMachineScenario()
+	x.s.Idle = 2 * time.Second
+	x.scroll = x.o.Now.Add(250 * time.Millisecond)
+	x.step(250 * time.Millisecond)
+	x.s.Idle = 10 * time.Second
+	requireAction(t, x.step(3*time.Second), ActionCloseSession, "")
+	x.scroll = x.o.Now.Add(250 * time.Millisecond)
+	requireAction(t, x.step(250*time.Millisecond), ActionOpenSession, "")
+	if a := x.step(3 * time.Second); hasAction(a, ActionCloseSession, "") {
+		t.Fatal(a)
+	}
+}

@@ -1,20 +1,27 @@
 # capture/
 > L2 | 父级: ../CLAUDE.md
 CLAUDE.md: 描述本模块的成员与职责边界。
-collector.go: 定义屏幕与 OCR 接口，隔离平台实现。
+collector.go: 定义屏幕、OCR、系统观测与时钟接口。
 dedup.go: 比较帧的亮度哈希、直方图和像素。
 dedup_test.go: 用合成画面验证去重阈值。
+input_darwin_test.go: 冒烟验证 macOS 只读系统观测。
 input_darwin.go: 读取 macOS 输入间隔、前台应用和锁屏状态。
 input_other.go: 为其他平台提供观测桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
+maintenance.go: 在后台调度用量对账、保留和容量清理。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。
 macos.go: 连接 macOS 原生屏幕与文字识别能力。
+ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
+ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和诊断信息。
-runner.go: 协调采集循环与时间轴聚合。
+runner_test.go: 用假依赖验证采集、识别和会话落盘。
+runner.go: 协调采集生命周期、异步抓帧与时间轴聚合。
 screen_darwin.go: 提供 macOS 平台采集适配。
 screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。
+sessions.go: 根据最近两天的磁盘记录恢复崩溃会话。
+sessions_test.go: 验证崩溃恢复与幂等性。
 session.go: 定义会话关闭记录与结束原因。
 settings.go: 定义采集运行参数，不依赖应用设置。
 status.go: 定义采集状态和权限快照。

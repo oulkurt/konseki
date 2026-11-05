@@ -99,7 +99,8 @@ func TestStoragePrune(t *testing.T) {
 
 func TestRunnerPauseAndSessions(t *testing.T) {
 	root := t.TempDir()
-	r, err := New(Settings{Root: root, Heartbeat: time.Minute})
+	deps, _, _ := fakeDependencies()
+	r, err := newRunner(Settings{Root: root, Heartbeat: time.Minute}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,11 +112,11 @@ func TestRunnerPauseAndSessions(t *testing.T) {
 		t.Fatal(got)
 	}
 	r.Resume()
-	if r.Status().Phase != PhaseActive {
+	if r.Status().Phase != PhaseWaiting {
 		t.Fatal(r.Status())
 	}
 	r.Pause(time.Now().Add(-time.Second))
-	if r.Status().Phase != PhaseActive {
+	if r.Status().Phase != PhaseWaiting {
 		t.Fatal(r.Status())
 	}
 	now := time.Now()

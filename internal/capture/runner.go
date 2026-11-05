@@ -1,17 +1,13 @@
 /*
- * [INPUT]: 依赖平台采集接口、运行设置和事实存储。
+ * [INPUT]: 依赖状态机、平台观测、后台工作器和事实存储。
  * [OUTPUT]: 提供 Runner、状态快照与时间轴聚合。
- * [POS]: 采集循环的协调边界，隔离平台与界面。
+ * [POS]: 采集生命周期的协调边界；状态机不执行 IO。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture
 
-// 采样循环与时间轴聚合。
-//
-// 这一层是平台无关的：它只依赖 Screen / OCREngine 两个接口。
-// App 启动时调 Start() 起一个 goroutine，退出时调 Stop()。
-
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,103 +17,111 @@ import (
 	"time"
 )
 
-// Runner 是采集循环的运行实例。
+type dependencies struct {
+	screen Screen
+	ocr    OCREngine
+	input  InputSource
+	front  FrontSource
+	lock   LockSource
+	clock  Clock
+	perms  PermissionSource
+	save   func(*Frame, string, int) bool
+}
 type Runner struct {
-	cfg         Settings
-	st          *Store
-	storage     *Storage
-	pausedUntil time.Time
-	scr         Screen
-	ocr         OCREngine
-
-	mu      sync.Mutex
-	running bool
-	stop    chan struct{}
-	done    chan struct{}
-
-	// 最近一次采集的摘要，给 UI 轮询显示
-	lastLastApp   string
-	lastLastTitle string
-	lastPID       int
-	lastShotAt    time.Time
-	sampleCount   int
-	blankStreak   int
+	mu            sync.Mutex
+	lifecycle     sync.Mutex
+	cfg           Settings
+	st            *Store
+	storage       *Storage
+	deps          dependencies
+	running       bool
+	stop          chan struct{}
+	done          chan struct{}
+	pausedUntil   time.Time
+	machine       Machine
+	session       *Session
+	front         Front
+	lastShot      time.Time
 	lastErr       error
+	baseline      *fingerprint
+	generation    uint64
+	flightSession string
+	closed        map[string]closedSession
+	lastPath      string
+	queue         *ocrQueue
+	enforce       chan struct{}
 }
 
-// New 创建采集循环和存储句柄。
 func New(cfg Settings) (*Runner, error) {
+	native := nativeObservations{}
+	return newRunner(cfg, dependencies{screen: newScreen(), ocr: newOCR(), input: native, front: native, lock: native, clock: systemClock{}, perms: native, save: platformSaveJPEG})
+}
+func newRunner(cfg Settings, d dependencies) (*Runner, error) {
 	st, err := NewStore(cfg.Root)
 	if err != nil {
 		return nil, err
 	}
-	r := &Runner{st: st, storage: NewStorage(cfg.Root), scr: newScreen(), ocr: newOCR()}
+	if d.save == nil {
+		d.save = platformSaveJPEG
+	}
+	r := &Runner{st: st, storage: NewStorage(cfg.Root), deps: d}
 	r.Apply(cfg)
 	return r, nil
 }
-
 func (r *Runner) Apply(s Settings) {
 	s.SensitiveApps = append([]string(nil), s.SensitiveApps...)
 	s.OCR.Languages = append([]string(nil), s.OCR.Languages...)
 	r.mu.Lock()
 	r.cfg = s
+	enforce := r.enforce
 	r.mu.Unlock()
+	if enforce != nil {
+		select {
+		case enforce <- struct{}{}:
+		default:
+		}
+	}
 }
-
-func (r *Runner) Storage() *Storage     { return r.storage }
+func (r *Runner) Storage() *Storage     { r.mu.Lock(); defer r.mu.Unlock(); return r.storage }
 func (r *Runner) Pause(until time.Time) { r.mu.Lock(); r.pausedUntil = until; r.mu.Unlock() }
 func (r *Runner) Resume()               { r.Pause(time.Time{}) }
-func (r *Runner) paused(now time.Time) bool {
-	if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
-		r.pausedUntil = time.Time{}
-	}
-	return !r.pausedUntil.IsZero()
-}
-
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	phase := PhaseOff
-	block := BlockNone
-	if r.running {
-		if r.paused(time.Now()) {
-			phase = PhasePaused
-		} else if r.blankStreak >= 3 {
-			phase = PhaseBlocked
-			block = BlockScreenLocked
-		} else {
-			phase = PhaseActive
-		}
+	phase, block := r.machine.Phase, r.machine.Block
+	if !r.running {
+		phase = PhaseOff
+		block = BlockNone
+	} else if !r.pausedUntil.IsZero() && r.deps.clock.Now().Before(r.pausedUntil) {
+		phase = PhasePaused
+		block = BlockNone
 	}
-	return Status{
-		Phase:       phase,
-		Block:       block,
-		PausedUntil: r.pausedUntil,
-		Front:       Front{App: r.lastLastApp, Title: r.lastLastTitle, PID: r.lastPID},
-		Usage:       r.storage.Usage(),
-		Perms:       Perms{Screen: r.scr.Permission(false), Accessibility: PermUnknown},
-		LastShot:    r.lastShotAt,
-		LastErr:     r.lastErr,
+	var session *Session
+	if r.session != nil {
+		v := *r.session
+		v.Apps = append([]string(nil), v.Apps...)
+		session = &v
 	}
+	return Status{Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: r.front, Session: session, Usage: r.storage.Usage(), Perms: Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}, LastShot: r.lastShot, LastErr: r.lastErr}
 }
-
 func (r *Runner) RecentSessions(n int) []Session {
 	if n <= 0 {
 		return nil
 	}
-	entries, err := os.ReadDir(filepath.Join(r.st.root, "sessions"))
+	r.mu.Lock()
+	st := r.st
+	r.mu.Unlock()
+	entries, err := os.ReadDir(filepath.Join(st.root, "sessions"))
 	if err != nil {
 		return nil
 	}
-	// 会话按结束日期分文件，文件名排序即时间顺序。从最新的一天往回读，
-	// 凑够 n 条就停，不必每次读完全部历史。
 	var result []Session
 	for i := len(entries) - 1; i >= 0 && len(result) < n; i-- {
 		e := entries[i]
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
-		rows, err := r.st.ReadSessions(strings.TrimSuffix(e.Name(), ".jsonl"))
+		rows, err := st.ReadSessions(strings.TrimSuffix(e.Name(), ".jsonl"))
 		if err == nil {
 			result = append(result, rows...)
 		}
@@ -128,11 +132,8 @@ func (r *Runner) RecentSessions(n int) []Session {
 	}
 	return result
 }
-
-func (r *Runner) ClearAll() (Cleared, error) { return r.storage.ClearAll() }
-
-// Start 启动采样。重复调用无副作用。
-func (r *Runner) Start() {
+func (r *Runner) Start() { r.lifecycle.Lock(); defer r.lifecycle.Unlock(); r.start() }
+func (r *Runner) start() {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
@@ -141,131 +142,353 @@ func (r *Runner) Start() {
 	r.running = true
 	r.stop = make(chan struct{})
 	r.done = make(chan struct{})
-	stop, done := r.stop, r.done
+	r.enforce = make(chan struct{}, 1)
+	r.machine = Machine{Phase: PhaseWaiting}
+	r.closed = make(map[string]closedSession)
+	r.queue = newOCRQueue(r.deps.ocr, 30*time.Second)
+	stop, done, enforce := r.stop, r.done, r.enforce
+	st, storage := r.st, r.storage
 	r.mu.Unlock()
-
-	go r.loop(stop, done)
+	if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
+		r.setError(err)
+	}
+	go r.loop(stop, done, enforce)
 }
-
-// Stop 停止采样并等待循环退出。
-func (r *Runner) Stop() {
+func (r *Runner) Stop() { r.lifecycle.Lock(); defer r.lifecycle.Unlock(); r.stopLoop() }
+func (r *Runner) stopLoop() {
 	r.mu.Lock()
 	if !r.running {
 		r.mu.Unlock()
 		return
 	}
-	r.running = false
 	close(r.stop)
 	done := r.done
 	r.mu.Unlock()
 	<-done
+	r.mu.Lock()
+	r.running = false
+	r.enforce = nil
+	r.mu.Unlock()
+}
+func (r *Runner) ClearAll() (Cleared, error) {
+	r.lifecycle.Lock()
+	defer r.lifecycle.Unlock()
+	r.mu.Lock()
+	wasRunning := r.running
+	r.mu.Unlock()
+	if wasRunning {
+		r.stopLoop()
+	}
+	r.mu.Lock()
+	storage := r.storage
+	r.mu.Unlock()
+	cleared, err := storage.ClearAll()
+	if errors.Is(err, ErrNotImplemented) {
+		err = nil
+	}
+	r.mu.Lock()
+	r.session = nil
+	r.machine = Machine{}
+	r.baseline = nil
+	r.generation++
+	r.closed = nil
+	r.lastPath = ""
+	r.lastShot = time.Time{}
+	r.mu.Unlock()
+	if wasRunning {
+		r.start()
+	}
+	return cleared, err
+}
+func (r *Runner) setError(err error) {
+	if err != nil && !errors.Is(err, ErrNotImplemented) {
+		r.mu.Lock()
+		r.lastErr = err
+		r.mu.Unlock()
+	}
 }
 
-func (r *Runner) loop(stop, done chan struct{}) {
+type closedSession struct {
+	session *Session
+	store   *Store
+	storage *Storage
+}
+
+type captureJob struct {
+	trigger    Trigger
+	at         time.Time
+	front      Front
+	session    string
+	store      *Store
+	baseline   *fingerprint
+	generation uint64
+	storage    *Storage
+	quality    int
+	probe      bool
+}
+type captureResult struct {
+	job         captureJob
+	frame       *Frame
+	fingerprint *fingerprint
+	duplicate   bool
+	tmp         string
+	err         error
+}
+
+func (r *Runner) grab(job captureJob) captureResult {
+	result := captureResult{job: job}
+	f := r.deps.screen.Grab()
+	if f == nil {
+		result.err = errors.New("抓取屏幕失败")
+		return result
+	}
+	if f.Blank {
+		return result
+	}
+	fp := fingerprintFrame(f)
+	if fp == nil {
+		result.err = errors.New("屏幕帧无效")
+		return result
+	}
+	result.frame = f
+	result.fingerprint = fp
+	result.duplicate = duplicate(job.baseline, fp)
+	if job.probe || result.duplicate {
+		return result
+	}
+	dir := filepath.Join(job.store.root, "shots")
+	file, err := os.CreateTemp(dir, ".capture-*.jpg")
+	if err != nil {
+		result.err = err
+		return result
+	}
+	result.tmp = file.Name()
+	if err = file.Close(); err != nil {
+		result.err = err
+		os.Remove(result.tmp)
+		return result
+	}
+	if !r.deps.save(f, result.tmp, job.quality) {
+		result.err = errors.New("编码截图失败")
+		os.Remove(result.tmp)
+		result.tmp = ""
+	}
+	return result
+}
+func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan struct{}) {
 	defer close(done)
-
-	tick := time.NewTicker(5 * time.Second) // 只查窗口信息，很便宜，不截屏
-	defer tick.Stop()
-
-	var lastApp, lastTitle string
-	var lastShot time.Time
-	idleSince := time.Now()
-
+	ticks, cancel := r.deps.clock.Ticks()
+	defer cancel()
+	maintenanceDone := make(chan struct{})
+	go r.maintenance(stop, maintenanceDone, enforce)
+	results := make(chan captureResult, 1)
+	var inFlight bool
+	var front Front
+	var locked bool
+	var lastSystem time.Time
+	finish := func(res captureResult, now time.Time, stopping bool) {
+		inFlight = false
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		o := Observation{Now: now, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
+		if res.job.probe {
+			o.ProbeDone = true
+			o.ProbeDuplicate = res.duplicate || res.frame == nil
+			if res.err != nil {
+				r.lastErr = res.err
+			}
+			r.finishClosed(res.job.session)
+			r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
+			return
+		}
+		o.CaptureDone = true
+		o.CaptureFailed = res.err != nil
+		if res.err != nil {
+			r.lastErr = res.err
+		}
+		if res.frame != nil && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
+			if !res.duplicate || res.job.trigger == TriggerHeartbeat {
+				if err := r.persist(res); err != nil {
+					r.lastErr = err
+					o.CaptureFailed = true
+				} else {
+					o.CaptureSaved = true
+				}
+			}
+		}
+		if res.tmp != "" {
+			os.Remove(res.tmp)
+		}
+		r.finishClosed(res.job.session)
+		r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
+	}
 	for {
 		select {
 		case <-stop:
-			return
-		case now := <-tick.C:
-			r.mu.Lock()
-			paused := r.paused(now)
-			heartbeat := r.cfg.Heartbeat
-			r.mu.Unlock()
-			if paused {
-				continue
-			}
-			app, title, pid := r.scr.FrontWindow()
-			r.mu.Lock()
-			r.lastLastApp, r.lastLastTitle, r.lastPID = app, title, pid
-			r.mu.Unlock()
-			if app == "" {
-				continue // 锁屏或权限缺失
-			}
-
-			changed := app != lastApp || title != lastTitle
-			if changed {
-				idleSince = now
-				lastApp, lastTitle = app, title
-			}
-			if now.Sub(idleSince) > 5*time.Minute && !changed {
-				continue
-			}
-			if !changed && now.Sub(lastShot) < heartbeat {
-				continue
-			}
-			if now.Sub(lastShot) < 20*time.Second {
-				continue
-			}
-
-			r.mu.Lock()
-			r.lastLastApp, r.lastLastTitle = app, title
-			r.mu.Unlock()
-
-			// 先抓帧（全分辨率，内存里），OCR 用原图，磁盘只存缩略图
-			frame := r.scr.Grab()
-			if frame == nil {
-				continue
-			}
-
-			// 黑屏（锁屏 / 显示器休眠 / 权限吊销）：跳过，但不动 lastShot，
-			// 屏幕恢复后能立刻补上。
-			if frame.Blank {
-				r.mu.Lock()
-				r.blankStreak++
-				r.mu.Unlock()
-				continue
-			}
-
-			r.mu.Lock()
-			r.blankStreak = 0
-			r.mu.Unlock()
-
-			shotPath := r.st.ShotPath(now)
-			var sizeKB int
-			var shotRel string
-
-			t0 := time.Now()
-			text, n, ocrErr := r.ocr.Recognize(frame, r.cfg.OCR.Languages)
-			ocrMs := int(time.Since(t0).Milliseconds())
-			if ocrErr != nil {
-				r.mu.Lock()
-				r.lastErr = ocrErr
-				r.mu.Unlock()
-			}
-
-			if platformSaveThumb(frame, shotPath) {
-				if fi, e := os.Stat(shotPath); e == nil {
-					sizeKB = int(fi.Size() / 1024)
-					shotRel = filepath.Join("shots", filepath.Base(shotPath))
+			if inFlight {
+				res := <-results
+				finish(res, r.deps.clock.Now(), true)
+				for inFlight {
+					res = <-results
+					finish(res, r.deps.clock.Now(), true)
 				}
 			}
-
-			snap := Snapshot{
-				TS: now.Format(time.RFC3339), App: app, Title: title, PID: pid,
-				OCR: text, OCRLine: n, Shot: shotRel, ImgKB: sizeKB, OCRMs: ocrMs,
-			}
-			if err := r.st.Append(snap); err != nil {
-				r.mu.Lock()
-				r.lastErr = err
-				r.mu.Unlock()
-			}
-
-			lastShot = now
 			r.mu.Lock()
-			r.lastShotAt = now
-			r.sampleCount++
+			r.perform(r.machine.Step(Observation{Now: r.deps.clock.Now(), Stop: true}, r.cfg), r.deps.clock.Now(), front, results, &inFlight)
+			q := r.queue
+			r.queue = nil
+			r.mu.Unlock()
+			q.close()
+			<-maintenanceDone
+			return
+		case res := <-results:
+			finish(res, r.deps.clock.Now(), false)
+		case now := <-ticks:
+			key, click, scroll := r.deps.input.Intervals()
+			if lastSystem.IsZero() || now.Sub(lastSystem) >= time.Second {
+				front = r.deps.front.Front()
+				locked = r.deps.lock.Locked()
+				lastSystem = now
+			}
+			r.mu.Lock()
+			r.front = front
+			if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
+				r.pausedUntil = time.Time{}
+			}
+			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil}
+			r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
 			r.mu.Unlock()
 		}
 	}
+}
+func (r *Runner) perform(actions []Action, now time.Time, front Front, results chan<- captureResult, inFlight *bool) {
+	for _, a := range actions {
+		switch a.Kind {
+		case ActionResetBaseline:
+			r.generation++
+			r.baseline = nil
+			r.lastPath = ""
+		case ActionOpenSession:
+			root, _ := filepath.Abs(r.cfg.Root)
+			if r.st.root != root {
+				st, err := NewStore(r.cfg.Root)
+				if err != nil {
+					r.lastErr = err
+				} else {
+					r.st = st
+					r.storage = NewStorage(r.cfg.Root)
+					r.baseline = nil
+					r.generation++
+					r.lastPath = ""
+				}
+			}
+			r.session = &Session{ID: r.st.NewSnapshotID(now), Start: now}
+		case ActionCloseSession:
+			if r.session != nil {
+				r.session.End = now
+				r.session.EndReason = a.Reason
+				if *inFlight && r.flightSession == r.session.ID {
+					r.closed[r.session.ID] = closedSession{r.session, r.st, r.storage}
+				} else {
+					r.writeSession(closedSession{r.session, r.st, r.storage})
+				}
+				r.session = nil
+			}
+		case ActionCapture, ActionProbe:
+			session := ""
+			if r.session != nil {
+				session = r.session.ID
+			}
+			job := captureJob{trigger: a.Trigger, at: now, front: front, session: session, store: r.st, baseline: r.baseline, generation: r.generation, storage: r.storage, quality: r.cfg.JPEGQuality, probe: a.Kind == ActionProbe}
+			*inFlight = true
+			r.flightSession = session
+			go func() { results <- r.grab(job) }()
+		}
+	}
+}
+func (r *Runner) writeSession(c closedSession) {
+	if err := c.store.AppendSession(*c.session); err != nil {
+		r.lastErr = err
+	} else {
+		c.storage.CountSession()
+	}
+}
+func (r *Runner) finishClosed(id string) {
+	if c, ok := r.closed[id]; ok {
+		r.writeSession(c)
+		delete(r.closed, id)
+	}
+}
+func (r *Runner) persist(res captureResult) error {
+	job := res.job
+	id := job.store.NewSnapshotID(job.at)
+	path := r.lastPath
+	size := int64(0)
+	w, h := res.frame.W, res.frame.H
+	if !res.duplicate {
+		dest := job.store.ShotFile(id)
+		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+			return err
+		}
+		if err := os.Rename(res.tmp, dest); err != nil {
+			return err
+		}
+		info, err := os.Stat(dest)
+		if err != nil {
+			return err
+		}
+		size = info.Size()
+		path, err = filepath.Rel(job.store.root, dest)
+		if err != nil {
+			return err
+		}
+		if w > screenshotMaxDimension || h > screenshotMaxDimension {
+			if w >= h {
+				h = h * screenshotMaxDimension / w
+				w = screenshotMaxDimension
+			} else {
+				w = w * screenshotMaxDimension / h
+				h = screenshotMaxDimension
+			}
+		}
+	} else if path == "" {
+		return nil
+	}
+	_, title, _ := r.deps.screen.FrontWindow()
+	snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, ImgKB: int(size / 1024)}
+	if err := job.store.Append(snap); err != nil {
+		return err
+	}
+	if !res.duplicate {
+		r.baseline = res.fingerprint
+		r.lastPath = path
+		job.storage.Account(size)
+		if r.cfg.MaxStorage > 0 && job.storage.Usage().Bytes > r.cfg.MaxStorage {
+			select {
+			case r.enforce <- struct{}{}:
+			default:
+			}
+		}
+	}
+	r.lastShot = job.at
+	session := r.session
+	if session == nil || session.ID != job.session {
+		session = r.closed[job.session].session
+	}
+	if session != nil && session.ID == job.session {
+		session.Snapshots++
+		seen := false
+		for _, app := range session.Apps {
+			if app == job.front.App {
+				seen = true
+			}
+		}
+		if !seen && job.front.App != "" {
+			session.Apps = append(session.Apps, job.front.App)
+		}
+	}
+	r.queue.submit(job.session, r.cfg.OCR, ocrTask{frame: res.frame, id: id, day: job.at.In(time.Local).Format("2006-01-02"), store: job.store})
+	return nil
 }
 
 // ---------- 时间轴聚合 ----------
@@ -287,7 +510,10 @@ func (r *Runner) Timeline(dateKey string) ([]Block, error) {
 	if dateKey == "" {
 		dateKey = time.Now().Format("2006-01-02")
 	}
-	snaps, err := r.st.ReadDay(dateKey)
+	r.mu.Lock()
+	st := r.st
+	r.mu.Unlock()
+	snaps, err := st.ReadDay(dateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -340,13 +566,19 @@ func DoctorReport() string {
 
 // OCRIndex 暴露存储层的 OCR 索引，供摘要层取原文。
 func (r *Runner) OCRIndex(dateKey string) (map[string]string, error) {
-	return r.st.OCRIndex(dateKey)
+	r.mu.Lock()
+	st := r.st
+	r.mu.Unlock()
+	return st.OCRIndex(dateKey)
 }
 
 // Snapshots 读回某天的原始采样。
 func (r *Runner) Snapshots(dateKey string) ([]Snapshot, error) {
-	return r.st.ReadDay(dateKey)
+	r.mu.Lock()
+	st := r.st
+	r.mu.Unlock()
+	return st.ReadDay(dateKey)
 }
 
 // Root 返回数据根目录，导出 skill 时要用。
-func (r *Runner) Root() string { r.mu.Lock(); defer r.mu.Unlock(); return r.cfg.Root }
+func (r *Runner) Root() string { r.mu.Lock(); defer r.mu.Unlock(); return r.st.root }

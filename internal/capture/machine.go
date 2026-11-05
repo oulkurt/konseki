@@ -53,7 +53,7 @@ type Machine struct {
 	initialized, locked, typing                         bool
 	lastAttempt, lastSaved, lastProbe                   time.Time
 	inFlight, probing                                   bool
-	pending                                             Trigger
+	pending, flying                                     Trigger
 	failures                                            int
 	retryAt                                             time.Time
 	probeFactor                                         int
@@ -74,6 +74,7 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 	if o.CaptureDone {
 		m.inFlight = false
 		if o.CaptureFailed {
+			m.queue(m.flying)
 			if m.failures < 16 {
 				m.failures++
 			}
@@ -221,6 +222,7 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		t := m.pending
 		m.pending = ""
 		m.inFlight = true
+		m.flying = t
 		m.lastAttempt = now
 		add(ActionCapture, t, "")
 	}

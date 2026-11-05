@@ -317,7 +317,7 @@ func downscaleTo(img uintptr, targetW int) uintptr {
 	if h == 0 {
 		return 0
 	}
-	if w <= targetW {
+	if w <= targetW && h <= targetW {
 		return img
 	}
 	full := writeJPEGData(img, 0.85)
@@ -365,7 +365,7 @@ func ocrData(data uintptr, langs []string) (string, int) {
 		return "", 0
 	}
 	req := O(O(cls("VNRecognizeTextRequest"), "alloc"), "init")
-	O(req, "setRecognitionLevel:", 1) // accurate
+	O(req, "setRecognitionLevel:", 0) // accurate
 	O(req, "setUsesLanguageCorrection:", 1)
 	// 显式指定语言：不指定时 Vision 对中英混排的识别会明显退化
 
@@ -477,8 +477,6 @@ func rgbaToImage(f *Frame) uintptr {
 	// 同上：dst 是 NSBitmapImageRep 的内部像素缓冲区，rep 在作用域内被持有，
 	// 拷贝立即完成，不存在悬垂风险。
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(dst)), f.W*f.H*4), f.RGBA) //nolint:govet
-	// 让 rep 重新解析像素
-	O(rep, "setSize:", 0)
 	cg := O(rep, "CGImage")
 	if cg == 0 {
 		return 0

@@ -145,3 +145,24 @@ func platformSaveThumb(f *Frame, path string) bool {
 	}
 	return saveThumb(img, path)
 }
+
+func platformSaveJPEG(f *Frame, path string, quality int) bool {
+	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
+	defer O(pool, "drain")
+	img := rgbaToImage(f)
+	if img == 0 {
+		return false
+	}
+	img = downscaleTo(img, screenshotMaxDimension)
+	if img == 0 {
+		return false
+	}
+	if quality < 1 {
+		quality = 1
+	}
+	if quality > 100 {
+		quality = 100
+	}
+	data := writeJPEGData(img, float64(quality)/100)
+	return data != 0 && O(data, "writeToFile:atomically:", nsstr(path), 1) != 0
+}

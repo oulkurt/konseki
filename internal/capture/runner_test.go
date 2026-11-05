@@ -1,0 +1,136 @@
+/*
+ * [INPUT]: 依赖临时目录和可控的屏幕、识别、观测与时钟。
+ * [OUTPUT]: 验证采集外壳的快照、OCR 与会话写入。
+ * [POS]: 采集外壳的端到端测试，不访问真实屏幕。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+package capture
+
+import (
+	"os"
+	"sync"
+	"testing"
+	"time"
+)
+
+type fakeClock struct {
+	mu    sync.Mutex
+	now   time.Time
+	ticks chan time.Time
+}
+
+func (c *fakeClock) Now() time.Time                    { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+func (c *fakeClock) Ticks() (<-chan time.Time, func()) { return c.ticks, func() {} }
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	now := c.now
+	c.mu.Unlock()
+	c.ticks <- now
+}
+
+type fakeSystem struct {
+	mu                 sync.Mutex
+	key, click, scroll time.Time
+	clock              *fakeClock
+	front              Front
+	locked             bool
+}
+
+func (s *fakeSystem) Intervals() (time.Duration, time.Duration, time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.clock.Now()
+	return now.Sub(s.key), now.Sub(s.click), now.Sub(s.scroll)
+}
+func (s *fakeSystem) Front() Front           { s.mu.Lock(); defer s.mu.Unlock(); return s.front }
+func (s *fakeSystem) Locked() bool           { s.mu.Lock(); defer s.mu.Unlock(); return s.locked }
+func (*fakeSystem) Accessibility() PermState { return PermGranted }
+
+type fakeScreen struct{}
+
+func (fakeScreen) FrontWindow() (string, string, int) { return "App", "Window", 1 }
+func (fakeScreen) Permission(bool) PermState          { return PermGranted }
+func (fakeScreen) Grab() *Frame {
+	f := &Frame{W: 160, H: 90, RGBA: make([]byte, 160*90*4)}
+	for i := 0; i < len(f.RGBA); i += 4 {
+		f.RGBA[i] = byte(i % 251)
+		f.RGBA[i+1] = 100
+		f.RGBA[i+2] = 150
+		f.RGBA[i+3] = 255
+	}
+	return f
+}
+
+type fakeOCR struct{}
+
+func (fakeOCR) Recognize(*Frame, []string) (string, int, error) { return "识别文本", 1, nil }
+func fakeDependencies() (dependencies, *fakeClock, *fakeSystem) {
+	c := &fakeClock{now: time.Now(), ticks: make(chan time.Time, 100)}
+	s := &fakeSystem{clock: c, key: c.now.Add(-time.Hour), click: c.now.Add(-time.Hour), scroll: c.now.Add(-time.Hour), front: Front{App: "App", Bundle: "a", PID: 1}}
+	return dependencies{screen: fakeScreen{}, ocr: fakeOCR{}, input: s, front: s, lock: s, clock: c, perms: s, save: func(_ *Frame, path string, _ int) bool { return os.WriteFile(path, []byte("jpeg"), 0600) == nil }}, c, s
+}
+func eventually(t *testing.T, fn func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("等待结果超时")
+}
+func TestRunnerScript(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Idle: 2 * time.Second, TypingPause: 500 * time.Millisecond, Debounce: time.Millisecond, Heartbeat: time.Hour, JPEGQuality: 80, OCR: OCRSettings{Enabled: true, EveryN: 1}}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.key = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Session != nil })
+	c.advance(500 * time.Millisecond)
+	day := c.Now().Format("2006-01-02")
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 1 })
+	eventually(t, func() bool { rows, _ := r.st.ReadOCR(day); return len(rows) == 1 })
+	c.advance(3 * time.Second)
+	eventually(t, func() bool { return r.Status().Session == nil })
+	rows, err := r.Snapshots(day)
+	if err != nil || len(rows) != 1 || rows[0].Session == "" || rows[0].Trigger != TriggerTypingPause {
+		t.Fatal(rows, err)
+	}
+	if _, err := os.Stat(r.st.ShotFile(rows[0].ID)); err != nil {
+		t.Fatal(err)
+	}
+	sessions := r.RecentSessions(5)
+	if len(sessions) != 1 || sessions[0].EndReason != EndIdle || sessions[0].Snapshots != 1 {
+		t.Fatal(sessions)
+	}
+	sys.mu.Lock()
+	sys.front = Front{App: "B", Bundle: "b", PID: 2}
+	sys.mu.Unlock()
+	c.advance(time.Second)
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 2 })
+	rows, _ = r.Snapshots(day)
+	if rows[1].Trigger != TriggerAppFocus || rows[1].Bundle != "b" || rows[1].Dup {
+		t.Fatal(rows[1])
+	}
+	eventually(t, func() bool { rows, _ := r.st.ReadOCR(day); return len(rows) == 2 })
+	sys.mu.Lock()
+	sys.locked = true
+	sys.mu.Unlock()
+	c.advance(time.Second)
+	eventually(t, func() bool { return r.Status().Block == BlockScreenLocked })
+	sessions = r.RecentSessions(5)
+	if len(sessions) != 2 || sessions[0].EndReason != EndLock || sessions[0].Snapshots != 1 {
+		t.Fatal(sessions)
+	}
+
+}
