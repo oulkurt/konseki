@@ -161,7 +161,7 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 	if newScroll {
 		m.lastScroll = scroll
 	}
-	focus := o.Front.Bundle != m.front && o.Front.Bundle != ""
+	focus := !systemFront(o.Front) && o.Front.Bundle != m.front && o.Front.Bundle != ""
 	if focus {
 		m.front = o.Front.Bundle
 		add(ActionResetBaseline, "", "")
@@ -195,6 +195,18 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		m.Block = BlockSensitiveApp
 		m.pending = ""
 		m.typing = false
+		return actions
+	}
+
+	if systemFront(o.Front) {
+		m.pending = ""
+		m.typing = false
+		if m.active {
+			m.Phase = PhaseActive
+		} else {
+			m.Phase = PhaseWaiting
+		}
+		m.Block = BlockNone
 		return actions
 	}
 
@@ -277,6 +289,12 @@ func (m *Machine) queue(t Trigger) {
 	if rank(t) > rank(m.pending) {
 		m.pending = t
 	}
+}
+
+func systemFront(front Front) bool {
+	bundle := strings.ToLower(front.Bundle)
+	name := strings.ToLower(front.App)
+	return bundle == "com.apple.loginwindow" || bundle == "com.apple.screensaver.engine" || bundle == "com.apple.screensaverengine" || name == "loginwindow" || name == "screensaverengine"
 }
 
 func sensitiveFront(front Front, apps []string) bool {

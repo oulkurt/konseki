@@ -340,3 +340,24 @@ func TestMachineBlankAdvancesHeartbeatAndBackoff(t *testing.T) {
 	}
 	requireAction(t, x.step(time.Second), ActionProbe, "")
 }
+
+func TestMachineSystemFrontDoesNotCountOrCapture(t *testing.T) {
+	for _, front := range []Front{{Bundle: "com.apple.loginwindow"}, {Bundle: "com.apple.ScreenSaver.Engine"}, {App: "ScreenSaverEngine"}} {
+		x := newMachineScenario()
+		x.s.Heartbeat = time.Second
+		x.o.Front = Front{Bundle: "a"}
+		x.step(0)
+		x.o.Front = front
+		x.o.SinceClick = 0
+		actions := x.step(2 * time.Second)
+		if hasAction(actions, ActionOpenSession, "") || hasAction(actions, ActionCapture, "") || hasAction(actions, ActionProbe, "") {
+			t.Fatalf("%+v: %+v", front, actions)
+		}
+		x.o.Front = Front{Bundle: "a"}
+		x.o.SinceClick = 250 * time.Millisecond
+		actions = x.step(250 * time.Millisecond)
+		if hasAction(actions, ActionOpenSession, "") {
+			t.Fatalf("系统界面输入被延迟计数: %+v", actions)
+		}
+	}
+}

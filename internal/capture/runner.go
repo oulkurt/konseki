@@ -421,7 +421,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 		if res.err != nil {
 			r.lastErr = res.err
 		}
-		if res.frame != nil && !res.blank && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && !sensitiveFront(front, r.cfg.SensitiveApps) && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
+		if res.frame != nil && !res.blank && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && !systemFront(front) && !sensitiveFront(front, r.cfg.SensitiveApps) && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
 			if !res.duplicate || res.job.trigger == TriggerHeartbeat {
 				if err := r.persist(res); err != nil {
 					r.lastErr = err
