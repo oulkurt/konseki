@@ -626,7 +626,9 @@ func (r *Runner) persist(res captureResult) error {
 			session.Apps = append(session.Apps, job.front.App)
 		}
 	}
-	r.queue.submit(job.session, r.cfg.OCR, ocrTask{frame: res.frame, id: id, day: job.at.In(time.Local).Format("2006-01-02"), store: job.store})
+	if !res.duplicate {
+		r.queue.submit(job.session, r.cfg.OCR, ocrTask{frame: res.frame, id: id, day: job.at.In(time.Local).Format("2006-01-02"), store: job.store})
+	}
 	return nil
 }
 

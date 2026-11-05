@@ -140,7 +140,7 @@ func TestRunnerScript(t *testing.T) {
 
 func TestRunnerHeartbeatDuplicate(t *testing.T) {
 	d, c, sys := fakeDependencies()
-	r, err := newRunner(Settings{Root: t.TempDir(), Idle: time.Minute, Heartbeat: time.Second, Debounce: time.Millisecond, JPEGQuality: 75}, d)
+	r, err := newRunner(Settings{Root: t.TempDir(), Idle: time.Minute, Heartbeat: time.Second, Debounce: time.Millisecond, JPEGQuality: 75, OCR: OCRSettings{Enabled: true, EveryN: 2}}, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,6 +159,15 @@ func TestRunnerHeartbeatDuplicate(t *testing.T) {
 	rows, err := r.Snapshots(day)
 	if err != nil || !rows[1].Dup || rows[1].Shot != rows[0].Shot || rows[1].Trigger != TriggerHeartbeat || rows[1].Bytes != 0 {
 		t.Fatal(rows, err)
+	}
+	eventually(t, func() bool { ocr, _ := r.st.ReadOCR(day); return len(ocr) == 1 })
+	r.mu.Lock()
+	r.queue.mu.Lock()
+	count := r.queue.counts[rows[0].Session]
+	r.queue.mu.Unlock()
+	r.mu.Unlock()
+	if count != 1 {
+		t.Fatalf("重复帧占用 OCR 抽样计数：%d", count)
 	}
 }
 func TestRunnerRootChangesNextSession(t *testing.T) {
