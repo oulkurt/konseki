@@ -502,7 +502,9 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 					r.lastErr = err
 				} else {
 					r.st = st
-					r.storage = NewStorage(r.cfg.Root)
+					r.storage = NewStorage(root)
+					storage := r.storage
+					go func() { r.setError(storage.Rescan()) }()
 					r.baseline = nil
 					r.generation++
 					r.lastPath = ""

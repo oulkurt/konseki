@@ -183,6 +183,7 @@ func TestRunnerRootChangesNextSession(t *testing.T) {
 	d, c, sys := fakeDependencies()
 	rootA := t.TempDir()
 	rootB := t.TempDir()
+	writeTestFile(t, rootB, "shots/20261101-000000.jpg", []byte("existing"))
 	cfg := Settings{Root: rootA, Idle: time.Second, Heartbeat: time.Hour, TypingPause: time.Second, JPEGQuality: 75}
 	r, err := newRunner(cfg, d)
 	if err != nil {
@@ -210,6 +211,7 @@ func TestRunnerRootChangesNextSession(t *testing.T) {
 	sys.mu.Unlock()
 	c.advance(250 * time.Millisecond)
 	eventually(t, func() bool { return r.Root() == rootB && r.Status().Session != nil })
+	eventually(t, func() bool { return r.Status().Usage.Shots == 1 })
 	c.advance(2 * time.Second)
 	eventually(t, func() bool { return r.Status().Session != nil })
 }
