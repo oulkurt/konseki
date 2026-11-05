@@ -47,9 +47,6 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 							}
 						}
 						m.Separator()
-						if m.Item("展示参考时间轴 (Showcase)").Checked(a.includeShowcase).Chosen() {
-							a.includeShowcase = !a.includeShowcase
-						}
 						if m.Item("展开全部时间段").Chosen() {
 							for _, s := range a.activeSlots() {
 								a.expanded[s.ID] = true
@@ -96,9 +93,6 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 						}
 
 						moreMenu := func(m *ui.Menu) {
-							if m.Item("展开/收起 10:00 AM 详情").Chosen() {
-								a.expanded["slot-1000"] = !a.expanded["slot-1000"]
-							}
 							if m.Item("展开全部").Chosen() {
 								for _, s := range a.activeSlots() {
 									a.expanded[s.ID] = true
@@ -108,9 +102,6 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 								a.expanded = map[string]bool{}
 							}
 							m.Separator()
-							if m.Item("显示示例时间轴数据").Checked(a.includeShowcase).Chosen() {
-								a.includeShowcase = !a.includeShowcase
-							}
 							if m.Item("权限与环境诊断").Checked(a.showDiag).Chosen() {
 								a.doctor = capture.DoctorReport()
 								a.showDiag = !a.showDiag
@@ -163,18 +154,6 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 					ui.Text(c, "今天还没有记录").FontSize(14.5).Bold().TextColor(pal.textPrimary)
 					ui.Text(c, "点「开始记录」，它会在本机留痕，不上传任何数据").FontSize(12.2).TextColor(pal.textSecondary)
 
-					previewBtn := ui.ButtonBase(c.Key("btn-load-demo")).
-						Margin(6, 0, 0, 0).
-						Padding(6, 14).
-						Radius(999).
-						Material(glass.Glass{Style: glass.Regular, Interactive: true, Clarity: 0.25}).
-						Border(1, pal.cardBorder)
-					previewBtn.Children(func() {
-						ui.Text(c, "加载示例时间轴 (Demo)").FontSize(12).Bold().TextColor(pal.textPrimary)
-					})
-					if previewBtn.Clicked() {
-						a.includeShowcase = true
-					}
 				})
 			} else {
 				ui.Column(c).FillWidth().Padding(4, 16, 20, 10).Gap(0).Children(func() {

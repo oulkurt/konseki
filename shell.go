@@ -13,15 +13,7 @@ import (
 )
 
 func (a *app) activeSlots() []TimelineSlot {
-	live := buildSlotsFromBlocks(a.blocks)
-	if a.includeShowcase {
-		demo := showcaseSlots()
-		if len(live) == 0 {
-			return demo
-		}
-		return append(live, demo...)
-	}
-	return live
+	return buildSlotsFromBlocks(a.blocks)
 }
 
 func (a *app) view(c *ui.Context) {

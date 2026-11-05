@@ -33,26 +33,16 @@ type app struct {
 	llmc   *llm.Client
 
 	// ---- 界面与采集状态 ----
-	blocks          []capture.Block
-	status          capture.Status
-	doctor          string
-	showDiag        bool
-	lastLoad        time.Time
-	err             string
-	listState       ui.ListState
-	scrollState     ui.ScrollState
-	expanded        map[string]bool
-	includeShowcase bool
-	dayFilter       string
-
-	// ---- Capture 设置 ----
-	pauseDuration       string
-	denylistApps        []string
-	denylistSites       []string
-	showDenylistPopover bool
-	denylistTab         int
-	customAppInput      string
-	customSiteInput     string
+	blocks      []capture.Block
+	status      capture.Status
+	doctor      string
+	showDiag    bool
+	lastLoad    time.Time
+	err         string
+	listState   ui.ListState
+	scrollState ui.ScrollState
+	expanded    map[string]bool
+	dayFilter   string
 
 	// ---- 供应商 ----
 	// 当前展开的是哪个供应商的配置面板，空表示都收起。
@@ -87,7 +77,6 @@ type app struct {
 	skillExportedAt time.Time
 
 	// ---- 其它 ----
-	settingsInited bool
 }
 
 func (a *app) ensureInit() {
@@ -99,10 +88,6 @@ func (a *app) ensureInit() {
 	}
 	if a.cfg != nil {
 		a.cfgNow = a.cfg.Get()
-	}
-	if !a.settingsInited {
-		a.settingsInited = true
-		a.pauseDuration = "Select"
 	}
 }
 
@@ -260,14 +245,13 @@ func main() {
 	}
 
 	a := &app{
-		runner:          runner,
-		appDir:          appDir,
-		cfg:             cfg,
-		cfgNow:          cfg.Get(),
-		sums:            sums,
-		llmc:            llm.New(5 * time.Minute),
-		includeShowcase: false,
-		expanded:        map[string]bool{},
+		runner:   runner,
+		appDir:   appDir,
+		cfg:      cfg,
+		cfgNow:   cfg.Get(),
+		sums:     sums,
+		llmc:     llm.New(5 * time.Minute),
+		expanded: map[string]bool{},
 	}
 	a.rebuildGenerator()
 
