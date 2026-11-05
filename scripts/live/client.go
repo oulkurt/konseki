@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 MyGo 自动化 Unix 套接字协议。
- * [OUTPUT]: 提供请求、协议错误和截图解码。
+ * [OUTPUT]: 提供请求、协议错误、带上限的等待和截图解码。
  * [POS]: live 命令的传输边界，隔离窗口操作与协议编码。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"time"
 )
 
 type protocolError struct {
@@ -33,6 +34,7 @@ func dial(path string) (*client, error) {
 	}
 	return &client{conn: c, enc: json.NewEncoder(c), dec: json.NewDecoder(c)}, nil
 }
+
 func (c *client) call(method string, params any, out any) error {
 	c.next++
 	id := c.next
@@ -64,6 +66,13 @@ func (c *client) call(method string, params any, out any) error {
 		return nil
 	}
 }
+
+// idle 等焦点窗口画完。插件把 timeout 为 0 当作不设上限，
+// 动画不停的窗口会让命令永远等下去，所以总是带上限。
+func (c *client) idle(timeout time.Duration) error {
+	return c.call("idle", map[string]any{"timeout": timeout.Milliseconds()}, nil)
+}
+
 func (c *client) capture(id int) ([]byte, error) {
 	var r struct {
 		PNG []byte `json:"png"`
