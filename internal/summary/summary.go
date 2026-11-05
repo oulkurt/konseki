@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"os"
 	"path/filepath"
 	"sort"
@@ -541,6 +540,11 @@ Rules:
 	return base
 }
 
+// screenTextFence 用形近字符替换屏幕文字里的尖括号，让它闭合不了 <screen_text> 边界。
+// 不用 HTML 转义：转义会引入 & 和 ;，脱敏规则把 ; 当作值的结尾，
+// 含 & 的密码会只遮住前半截。
+var screenTextFence = strings.NewReplacer("<", "‹", ">", "›")
+
 func buildPrompt(w window, ocr map[string]string, lang string) (string, int) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "时间段：%s – %s\n\n", w.start.Format("15:04"), w.end.Format("15:04"))
@@ -574,7 +578,7 @@ func buildPrompt(w window, ocr map[string]string, lang string) (string, int) {
 		for _, t := range titles {
 			if txt, ok := ocr[t]; ok && strings.TrimSpace(txt) != "" {
 				sb.WriteString("  屏幕文字摘录：<screen_text>")
-				sb.WriteString(html.EscapeString(trimTo(txt, 600)))
+				sb.WriteString(screenTextFence.Replace(trimTo(txt, 600)))
 				sb.WriteString("</screen_text>\n")
 				break
 			}
