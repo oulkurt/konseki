@@ -13,9 +13,9 @@ maintenance.go: 用可注入时钟调度对账、保留、降级和容量清理�
 maintenance_test.go: 验证维护周期、退出与容量请求合并。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。
-macos.go: 连接 macOS 原生屏幕与文字识别能力。
+macos.go: 绑定窗口、位图、JPEG 与 Vision 原语，不编排采集任务。
 native_darwin_test.go: 用合成图和 Vision 样本验证原生管线与性能。
-testdata/: 保存不含用户数据的 Vision 测试图。
+testdata/timeline-empty-zh-Hans-light.png: Vision 中英文识别测试图。
 ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
 ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和诊断信息。
@@ -24,7 +24,7 @@ pool_test.go: 检查自动释放池的创建边界。
 runner_behavior_test.go: 验证采集停止、超额触发和 OCR 抽样。
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
 runner.go: 协调采集生命周期、异步抓帧与时间轴聚合；开放依赖注入供应用测试隔离系统接口。
-screen_darwin.go: 提供 macOS 平台采集适配。
+screen_darwin.go: 编排 macOS 帧、权限、图像编码与 OCR 生命周期。
 screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。
 sessions.go: 从最新日期向前查找快照并恢复未关闭会话。

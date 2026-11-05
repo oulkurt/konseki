@@ -1,9 +1,9 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖平台屏幕与文字识别能力。
- * [OUTPUT]: 提供采集接口的平台实现。
- * [POS]: 采集模块的平台适配，与外壳隔离。
+ * [INPUT]: 依赖 CoreGraphics、ImageIO、Vision 与 Objective-C 运行时。
+ * [OUTPUT]: 提供窗口查询、位图缩放、JPEG 编码和文字识别原语。
+ * [POS]: macOS 原生桥接层；screen_darwin.go 编排帧与资源生命周期。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture
@@ -190,7 +190,8 @@ func grab() uintptr { return imgFn(dispFn()) }
 // cgRect 与 CoreGraphics 的 CGRect 使用相同的四个 CGFloat。
 type cgRect struct{ X, Y, W, H float64 }
 
-// bitmap 用 RGBA 缓冲区接收 CoreGraphics 的高质量缩放结果。
+// 截屏 CGImage 的底层数据可为 BGRA，不能假定通道顺序。
+// 此处由 CoreGraphics 绘入明确的 RGBA 目标，指纹只读取目标字节。
 func bitmap(img uintptr, w, h int, createImage bool) (pix []byte, scaled uintptr) {
 	withPool(func() { pix, scaled = bitmapInPool(img, w, h, createImage) })
 	return
@@ -285,7 +286,7 @@ func writeJPEGData(img uintptr, quality float64) uintptr {
 	return data
 }
 
-// ocrData 用 Vision 框架识别文字。accurate 模式，中英日都能认。
+// ocrImage 用 Vision 的 accurate 模式识别原始 CGImage。
 func ocrImage(data uintptr, langs []string) (string, int, error) {
 	if data == 0 {
 		return "", 0, errors.New("Vision 识别初始化失败")
@@ -327,7 +328,8 @@ func ocrImage(data uintptr, langs []string) (string, int, error) {
 	return string(out), int(n), nil
 }
 
-// rgbaToImage 从测试和非原生帧构造借用的 CGImage。
+// 合成帧的来源是 Go 的 RGBA 像素，不是屏幕截图的 BGRA 缓冲区。
+// 位图上下文复制这些字节，并返回需要释放的 CGImage。
 func rgbaToImage(f *Frame) uintptr {
 	if f == nil || f.W <= 0 || f.H <= 0 || len(f.RGBA) < f.W*f.H*4 {
 		return 0

@@ -1,9 +1,9 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖平台屏幕与文字识别能力。
- * [OUTPUT]: 提供采集接口的平台实现。
- * [POS]: 采集模块的平台适配，与外壳隔离。
+ * [INPUT]: 依赖 macos.go 的原生原语和线程绑定自动释放池。
+ * [OUTPUT]: 实现屏幕、权限、JPEG、OCR 和帧引用生命周期。
+ * [POS]: Runner 与 macOS 原生桥接层之间的适配边界。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture
@@ -14,7 +14,6 @@ package capture
 
 import (
 	"errors"
-	"time"
 
 	"github.com/ebitengine/purego"
 )
@@ -125,8 +124,6 @@ func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int
 	})
 	return
 }
-
-var _ = time.Now
 
 func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
 	withPool(func() {
