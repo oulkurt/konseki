@@ -11,6 +11,7 @@ package main
 
 import (
 	"fmt"
+	"konseki/locales"
 	"os"
 	"time"
 
@@ -480,7 +481,8 @@ func ownerName() string {
 // 用分段控件而不是侧边栏：这个 App 只有两页，侧边栏的导航成本
 // 比它省下的空间贵。分段控件还能顺便显示「设置里有几项没配好」。
 func (a *app) renderTabs(c *ui.Context, pal palette) {
-	names := []string{"时间轴", "设置"}
+	msg := locales.In(c.Locale())
+	names := []string{msg.TabsTimeline(), msg.TabsSettings()}
 
 	// 提示点：没配供应商，或者有内容但还没生成摘要。
 	needSetup := len(a.cfgNow.Providers) == 0
@@ -512,10 +514,10 @@ func (a *app) renderTabs(c *ui.Context, pal palette) {
 		case a.sumRunning:
 			ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
 				ui.Spinner(c).Size(11, 11)
-				ui.Text(c, "正在生成摘要").FontSize(11).TextColor(pal.textSecondary)
+				ui.Text(c, msg.TabsGenerating()).FontSize(11).TextColor(pal.textSecondary)
 			})
 		case needSetup:
-			ui.Text(c, "先在设置里配模型 →").FontSize(11).TextColor(pal.textSecondary)
+			ui.Text(c, msg.TabsSetup()).FontSize(11).TextColor(pal.textSecondary)
 		}
 	})
 }

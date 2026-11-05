@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/egoist/mygo/ui"
 )
 
 var latinWord = regexp.MustCompile(`[A-Za-z]{2,}`)
@@ -78,5 +80,38 @@ func TestLangViolations(t *testing.T) {
 				t.Fatalf("%q 的违规片段是 %q", c.text, got)
 			}
 		})
+	}
+}
+
+func TestEmptyTimelineLanguages(t *testing.T) {
+	// 有数据时旧时间轴拼接英文句子，P2 会替换它，因此这里只检查空状态。
+	for _, lang := range []string{"zh-Hans", "en"} {
+		t.Run(lang, func(t *testing.T) {
+			a, cleanup := newTestApp(t)
+			defer cleanup()
+			tt := ui.NewTester(a.view, 780, 1000)
+			tt.SetLocale(lang)
+			if bad := langViolations(tt.Texts(), lang, []string{"痕跡 Konseki", "Konseki"}); len(bad) != 0 {
+				t.Fatalf("界面混入其他语言 %q，文本：%q", bad, tt.Texts())
+			}
+			want := "今天还没有记录"
+			if lang == "en" {
+				want = "No activity recorded today"
+			}
+			if !tt.HasText(want) {
+				t.Fatalf("空状态缺少 %q：%q", want, tt.Texts())
+			}
+		})
+	}
+}
+
+func TestLanguageSetting(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	selected := ""
+	a.setLocale = func(lang string) { selected = lang }
+	a.setLanguage("en")
+	if selected != "en" || a.cfg.Get().Language != "en" || a.cfgNow.Language != "en" {
+		t.Fatalf("语言未保存或应用：选择=%q 配置=%q", selected, a.cfg.Get().Language)
 	}
 }

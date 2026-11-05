@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 	"konseki/internal/capture"
+	"konseki/locales"
 )
 
 func (a *app) activeSlots() []TimelineSlot {
@@ -19,6 +20,7 @@ func (a *app) activeSlots() []TimelineSlot {
 func (a *app) view(c *ui.Context) {
 	a.refresh()
 	pal := themePalette(c)
+	msg := locales.In(c.Locale())
 	t := c.Theme()
 
 	if c.Vibrancy() {
@@ -49,9 +51,9 @@ func (a *app) view(c *ui.Context) {
 						if a.status.Front.App != "" {
 							title := a.status.Front.Title
 							if title == "" {
-								title = "（无标题）"
+								title = msg.ShellUntitled()
 							}
-							ui.Textf(c, "· 现在：%s — %s", a.status.Front.App, title).
+							ui.Text(c, msg.ShellNow(a.status.Front.App, title)).
 								FontSize(11).
 								TextColor(pal.textSecondary).
 								SingleLine().
@@ -67,19 +69,19 @@ func (a *app) view(c *ui.Context) {
 							Children(func() {
 								switch a.status.Phase {
 								case capture.PhaseBlocked:
-									ui.Text(c, "● 屏幕休眠").FontSize(11).TextColor(pal.textSecondary)
+									ui.Text(c, msg.ShellAsleep()).FontSize(11).TextColor(pal.textSecondary)
 								case capture.PhasePaused:
-									ui.Text(c, "● 已暂停").FontSize(11).TextColor(pal.textSecondary)
+									ui.Text(c, msg.ShellPaused()).FontSize(11).TextColor(pal.textSecondary)
 								case capture.PhaseActive, capture.PhaseWaiting:
-									ui.Text(c, "● 记录中").FontSize(11).TextColor(pal.switchOn)
+									ui.Text(c, msg.ShellRecording()).FontSize(11).TextColor(pal.switchOn)
 								default:
-									ui.Text(c, "● 已关闭").FontSize(11).TextColor(pal.textSecondary)
+									ui.Text(c, msg.ShellOff()).FontSize(11).TextColor(pal.textSecondary)
 								}
 
 								if a.runner != nil {
-									toggleLabel := "开始记录"
+									toggleLabel := msg.ShellStart()
 									if a.status.Phase != capture.PhaseOff {
-										toggleLabel = "暂停"
+										toggleLabel = msg.ShellPause()
 									}
 									btn := ui.ButtonBase(c.Key("btn-record-toggle")).
 										Padding(2, 7).
@@ -96,7 +98,7 @@ func (a *app) view(c *ui.Context) {
 					})
 
 					if a.err != "" {
-						ui.Text(c, "读取数据出错："+a.err).FontSize(12).TextColor(t.Danger)
+						ui.Text(c, msg.ShellReadError()+a.err).FontSize(12).TextColor(t.Danger)
 					}
 
 					// ---- 分页：时间轴 / 设置 ----
@@ -114,6 +116,7 @@ func (a *app) view(c *ui.Context) {
 						a.renderCaptureSection(c, pal)
 						a.renderSummariesSection(c, pal)
 						a.renderProvidersSection(c, pal)
+						a.renderLanguageSection(c, pal)
 						a.renderSkillSection(c, pal)
 					}
 				})

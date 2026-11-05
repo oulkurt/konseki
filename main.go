@@ -25,6 +25,7 @@ type app struct {
 	runner          *capture.Runner
 	appDir          string
 	post            func(func())
+	setLocale       func(string)
 	scanCredentials func() []providers.Credential
 
 	// ---- 持久层 ----
@@ -44,7 +45,7 @@ type app struct {
 	listState   ui.ListState
 	scrollState ui.ScrollState
 	expanded    map[string]bool
-	dayFilter   string
+	dayFilter   dayFilter
 
 	// ---- 供应商 ----
 	// 当前展开的是哪个供应商的配置面板，空表示都收起。
@@ -83,9 +84,6 @@ type app struct {
 func (a *app) ensureInit() {
 	if a.expanded == nil {
 		a.expanded = map[string]bool{}
-	}
-	if a.dayFilter == "" {
-		a.dayFilter = "Today"
 	}
 	if a.cfg != nil {
 		a.cfgNow = a.cfg.Get()
@@ -140,9 +138,9 @@ func (a *app) loadSummaries() {
 // dayKey 把 UI 上的筛选词换成日期。
 func (a *app) dayKey() string {
 	switch a.dayFilter {
-	case "Yesterday":
+	case dayYesterday:
 		return time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	case "Last 7 Days", "Today":
+	case dayLastSeven, dayToday:
 		return time.Now().Format("2006-01-02")
 	}
 	return time.Now().Format("2006-01-02")
@@ -250,6 +248,7 @@ func main() {
 		llmc:            llm.New(5 * time.Minute),
 		expanded:        map[string]bool{},
 		scanCredentials: providers.DetectLocal,
+		setLocale:       mygo.App.SetLocale,
 	}
 	a.rebuildGenerator()
 

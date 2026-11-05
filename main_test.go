@@ -47,6 +47,7 @@ func newTestApp(t *testing.T) (*app, func()) {
 		expanded: map[string]bool{},
 	}
 	a.post = func(f func()) { f() }
+	a.setLocale = func(string) {}
 	scanTestCredentials(t, a, nil)
 	a.rebuildGenerator()
 	return a, func() { r.Stop() }

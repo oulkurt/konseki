@@ -11,13 +11,34 @@ import (
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 	"konseki/internal/capture"
+	"konseki/locales"
 	"strings"
 	"time"
 )
 
+type dayFilter uint8
+
+const (
+	dayToday dayFilter = iota
+	dayYesterday
+	dayLastSeven
+)
+
+func (d dayFilter) label(msg locales.Messages) string {
+	switch d {
+	case dayYesterday:
+		return msg.TimelineYesterday()
+	case dayLastSeven:
+		return msg.TimelineLastSevenDays()
+	default:
+		return msg.TimelineToday()
+	}
+}
+
 func (a *app) renderHistorySection(c *ui.Context, pal palette) {
+	msg := locales.In(c.Locale())
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		ui.Text(c, "History").
+		ui.Text(c, msg.TimelineHistory()).
 			FontSize(13).
 			Bold().
 			TextColor(pal.textSecondary).
@@ -41,18 +62,18 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 				Material(glass.Glass{Style: glass.Clear, Clarity: 0.65}).
 				Children(func() {
 					dayMenu := func(m *ui.Menu) {
-						for _, d := range []string{"Today", "Yesterday", "Last 7 Days"} {
-							if m.Item(d).Checked(a.dayFilter == d).Chosen() {
+						for _, d := range []dayFilter{dayToday, dayYesterday, dayLastSeven} {
+							if m.Item(d.label(msg)).Checked(a.dayFilter == d).Chosen() {
 								a.dayFilter = d
 							}
 						}
 						m.Separator()
-						if m.Item("展开全部时间段").Chosen() {
+						if m.Item(msg.TimelineExpandAll()).Chosen() {
 							for _, s := range a.activeSlots() {
 								a.expanded[s.ID] = true
 							}
 						}
-						if m.Item("收起全部时间段").Chosen() {
+						if m.Item(msg.TimelineCollapseAll()).Chosen() {
 							a.expanded = map[string]bool{}
 						}
 					}
@@ -67,7 +88,7 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 						todayBtn.Background(pal.rowHoverBg)
 					}
 					todayBtn.Children(func() {
-						ui.Text(c, a.dayFilter).FontSize(14).Bold().TextColor(pal.textPrimary)
+						ui.Text(c, a.dayFilter.label(msg)).FontSize(14).Bold().TextColor(pal.textPrimary)
 						ui.Icon(c, chevronsUpDownSVG).FontSize(13).TextColor(pal.textSecondary)
 					})
 
@@ -78,8 +99,8 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 							Size(28, 28).
 							Radius(8).
 							Center().
-							Label("诊断").
-							Tooltip("权限与采集诊断").
+							Label(msg.TimelineDiagnostic()).
+							Tooltip(msg.TimelineDiagnosticTooltip()).
 							Material(glass.Glass{Style: glass.Clear, Interactive: true, Clarity: 0.6})
 						if infoBtn.Hovered() || a.showDiag {
 							infoBtn.Background(pal.rowHoverBg)
@@ -93,16 +114,16 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 						}
 
 						moreMenu := func(m *ui.Menu) {
-							if m.Item("展开全部").Chosen() {
+							if m.Item(msg.TimelineExpandAll()).Chosen() {
 								for _, s := range a.activeSlots() {
 									a.expanded[s.ID] = true
 								}
 							}
-							if m.Item("收起全部").Chosen() {
+							if m.Item(msg.TimelineCollapseAll()).Chosen() {
 								a.expanded = map[string]bool{}
 							}
 							m.Separator()
-							if m.Item("权限与环境诊断").Checked(a.showDiag).Chosen() {
+							if m.Item(msg.TimelineDiagnosticMenu()).Checked(a.showDiag).Chosen() {
 								a.doctor = capture.DoctorReport()
 								a.showDiag = !a.showDiag
 							}
@@ -112,7 +133,7 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 							Size(28, 28).
 							Radius(8).
 							Center().
-							Label("更多选项").
+							Label(msg.TimelineMore()).
 							PopoverMenuButton(moreMenu).
 							Material(glass.Glass{Style: glass.Clear, Interactive: true, Clarity: 0.6})
 						if moreBtn.Hovered() {
@@ -134,11 +155,11 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 					BorderColor(pal.rowDivider).
 					Children(func() {
 						ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-							ui.Text(c, "采集与权限诊断").FontSize(12).Bold().TextColor(pal.textPrimary)
+							ui.Text(c, msg.TimelineDiagnosticTitle()).FontSize(12).Bold().TextColor(pal.textPrimary)
 							ui.Spacer(c)
 							closeBtn := ui.ButtonBase(c.Key("btn-close-diag")).Padding(2, 6).Radius(6)
 							closeBtn.Children(func() {
-								ui.Text(c, "关闭").FontSize(11).TextColor(pal.textSecondary)
+								ui.Text(c, msg.TimelineClose()).FontSize(11).TextColor(pal.textSecondary)
 							})
 							if closeBtn.Clicked() {
 								a.showDiag = false
@@ -151,8 +172,8 @@ func (a *app) renderHistorySection(c *ui.Context, pal palette) {
 			slots := a.activeSlots()
 			if len(slots) == 0 {
 				ui.Column(c).FillWidth().Center().Padding(42, 24, 42, 24).Gap(10).Children(func() {
-					ui.Text(c, "今天还没有记录").FontSize(14.5).Bold().TextColor(pal.textPrimary)
-					ui.Text(c, "点「开始记录」，它会在本机留痕，不上传任何数据").FontSize(12.2).TextColor(pal.textSecondary)
+					ui.Text(c, msg.TimelineEmptyTitle()).FontSize(14.5).Bold().TextColor(pal.textPrimary)
+					ui.Text(c, msg.TimelineEmptyBody()).FontSize(12.2).TextColor(pal.textSecondary)
 
 				})
 			} else {
