@@ -32,11 +32,12 @@ func (c *fakeClock) advance(d time.Duration) {
 }
 
 type fakeSystem struct {
-	mu                 sync.Mutex
-	key, click, scroll time.Time
-	clock              *fakeClock
-	front              Front
-	locked             bool
+	mu                    sync.Mutex
+	key, click, scroll    time.Time
+	clock                 *fakeClock
+	front                 Front
+	locked                bool
+	frontReads, lockReads int
 }
 
 func (s *fakeSystem) Intervals() (time.Duration, time.Duration, time.Duration) {
@@ -45,8 +46,8 @@ func (s *fakeSystem) Intervals() (time.Duration, time.Duration, time.Duration) {
 	now := s.clock.Now()
 	return now.Sub(s.key), now.Sub(s.click), now.Sub(s.scroll)
 }
-func (s *fakeSystem) Front() Front           { s.mu.Lock(); defer s.mu.Unlock(); return s.front }
-func (s *fakeSystem) Locked() bool           { s.mu.Lock(); defer s.mu.Unlock(); return s.locked }
+func (s *fakeSystem) Front() Front           { s.mu.Lock(); defer s.mu.Unlock(); s.frontReads++; return s.front }
+func (s *fakeSystem) Locked() bool           { s.mu.Lock(); defer s.mu.Unlock(); s.lockReads++; return s.locked }
 func (*fakeSystem) Accessibility() PermState { return PermGranted }
 
 type fakeScreen struct{}
@@ -362,4 +363,24 @@ func TestRunnerStatusDoesNotWaitForDisk(t *testing.T) {
 		t.Fatal("Status 等待磁盘")
 	}
 	close(release)
+}
+
+func TestRunnerObservationRates(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir()}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	for i := 1; i <= 5; i++ {
+		c.advance(250 * time.Millisecond)
+		want := i
+		eventually(t, func() bool { sys.mu.Lock(); defer sys.mu.Unlock(); return sys.frontReads >= want })
+	}
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	if sys.frontReads != 5 || sys.lockReads != 2 {
+		t.Fatalf("前台 %d 次，锁屏 %d 次", sys.frontReads, sys.lockReads)
+	}
 }

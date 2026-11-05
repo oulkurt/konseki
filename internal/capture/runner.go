@@ -454,8 +454,8 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 				perms = Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}
 				lastPermissions = now
 			}
+			front = r.deps.front.Front()
 			if lastSystem.IsZero() || now.Sub(lastSystem) >= time.Second {
-				front = r.deps.front.Front()
 				locked = r.deps.lock.Locked()
 				lastSystem = now
 			}
