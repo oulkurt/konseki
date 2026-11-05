@@ -7,9 +7,10 @@
 package main
 
 import (
+	"time"
+
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
-	"time"
 )
 
 type palette struct {

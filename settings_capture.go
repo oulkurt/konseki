@@ -8,8 +8,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/egoist/mygo/ui"
+
 	"konseki/internal/config"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) renderCaptureSection(c *ui.Context, pal palette) {

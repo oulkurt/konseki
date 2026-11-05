@@ -8,12 +8,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/egoist/mygo/ui"
+	"slices"
+	"strings"
+
 	"konseki/internal/config"
 	"konseki/internal/llm"
 	"konseki/internal/providers"
-	"slices"
-	"strings"
+
+	"github.com/egoist/mygo/ui"
 )
 
 var providerFilterNames = []string{"全部", "官方", "中转", "本地"}

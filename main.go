@@ -9,16 +9,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"log"
+	"os"
+	"time"
+
 	"konseki/internal/capture"
 	"konseki/internal/config"
 	"konseki/internal/llm"
 	"konseki/internal/providers"
 	"konseki/internal/summary"
-	"log"
-	"os"
-	"time"
+
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 type app struct {
@@ -65,7 +67,7 @@ type app struct {
 	fetchMsg        string
 
 	// ---- 摘要 ----
-	// 视图切换：0 = 设置（Capture/Summaries/Providers/Skill），1 = 时间轴
+	// 视图切换：0 = 时间轴，1 = 设置
 	tab        int
 	sumEntries []summary.Entry
 	sumErr     string
@@ -276,15 +278,12 @@ func main() {
 			Content:         ui.View(a.view),
 		})
 		a.post = win.Update
+		// 自动摘要单独一个循环：一次摘要要跑几分钟，和采集混在一起会拖慢采样。
+		// 无条件启动、由循环自己读开关，用户打开 Auto 后不用重启。
+		// 它把检查投递到界面线程，所以必须等窗口建好、post 有值以后才启动。
 		go a.autoSummaryLoop()
 	})
 
-	// 自动摘要。走一个独立的 ticker，和采集循环无关：
-	// 采集是 5 秒一次的热路径，摘要要跑几分钟，混在一起会让
-	// 采样被拖慢。
-	//
-	// 无条件启动，让循环自己读开关：用户在设置页打开 Auto 之后
-	// 不该要求重启 App 才生效。
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}

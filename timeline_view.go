@@ -8,12 +8,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/egoist/mygo/plugins/glass"
-	"github.com/egoist/mygo/ui"
-	"konseki/internal/capture"
-	"konseki/locales"
 	"strings"
 	"time"
+
+	"konseki/internal/capture"
+	"konseki/locales"
+
+	"github.com/egoist/mygo/plugins/glass"
+	"github.com/egoist/mygo/ui"
 )
 
 type dayFilter uint8

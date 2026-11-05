@@ -17,7 +17,6 @@ package main
 
 import (
 	"fmt"
-	"konseki/locales"
 	"os"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"konseki/internal/redact"
 	"konseki/internal/skill"
 	"konseki/internal/summary"
+	"konseki/locales"
 
 	"github.com/egoist/mygo/ui"
 )

@@ -9,12 +9,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/egoist/mygo/plugins/glass"
-	"github.com/egoist/mygo/ui"
-	"konseki/internal/config"
-	"konseki/internal/llm"
 	"strings"
 	"time"
+
+	"konseki/internal/config"
+	"konseki/internal/llm"
+
+	"github.com/egoist/mygo/plugins/glass"
+	"github.com/egoist/mygo/ui"
 )
 
 func (a *app) startCredentialScan() {
