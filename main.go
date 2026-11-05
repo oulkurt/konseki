@@ -38,28 +38,29 @@ type app struct {
 	llmc   *llm.Client
 
 	// ---- 界面与采集状态 ----
-	blocks            []capture.Block
-	status            capture.Status
-	doctor            string
-	showDiag          bool
-	lastLoad          time.Time
-	err               string
-	listState         ui.ListState
-	scrollState       ui.ScrollState
-	expanded          map[string]bool
-	dayFilter         string
-	now               func() time.Time
-	receipt           ReceiptDay
-	receiptStore      *capture.Store
-	receiptRevision   int
-	receiptTarget     string
-	feedDay           string
-	feedRevision      int
-	feedStart         time.Time
-	feedDistance      float32
-	feedMeasure       bool
-	paperHandle       ui.Handle
-	receiptLineHandle ui.Handle
+	blocks          []capture.Block
+	status          capture.Status
+	doctor          string
+	showDiag        bool
+	lastLoad        time.Time
+	err             string
+	listState       ui.ListState
+	scrollState     ui.ScrollState
+	expanded        map[string]bool
+	dayFilter       string
+	now             func() time.Time
+	receipt         ReceiptDay
+	receiptStore    *capture.Store
+	receiptRevision int
+	receiptTarget   string
+	feedDay         string
+	feedStart       time.Time
+	feedDistance    float32
+	paperHandle     ui.Handle
+	printRevision   int
+	printStart      time.Time
+	printHeight     float32
+	printHandle     ui.Handle
 
 	// ---- 供应商 ----
 	// 当前展开的是哪个供应商的配置面板，空表示都收起。

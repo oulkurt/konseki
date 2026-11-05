@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖缓存的小票、采集状态与 MyGo 的日期和动画能力。
- * [OUTPUT]: 提供固定打印机、日期选择和裁剪送纸视图。
+ * [OUTPUT]: 提供固定打印机、日期选择、整张纸的送纸动画，以及新条目从累计行下面展开的印出高度。
  * [POS]: 时间轴页面的布局边界，纸面内容由 receipt_parts.go 绘制。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -113,23 +113,45 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 	})
 }
 
+const printDuration = 600 * time.Millisecond
+
+// printReveal 返回新条目已经印出的高度。新条目从累计行下面展开，累计行和旧条目不用整体位移。
+// 出现的那一帧还没有新布局，高度给 0，旧条目原地不动；下一帧量出新条目的真实高度再展开。
+// 先估一个距离再修正，估错的那一帧旧条目会闪一下。
+func (a *app) printReveal(c *ui.Context) (float32, bool) {
+	if a.printRevision != a.receiptRevision {
+		a.printRevision = a.receiptRevision
+		a.printStart = c.Now()
+		a.printHeight = -1
+	}
+	if a.printStart.IsZero() || c.Preferences().ReduceMotion {
+		return 0, false
+	}
+	if a.printHeight < 0 {
+		if !c.Now().After(a.printStart) {
+			c.AnimationFrame()
+			return 0, true
+		}
+		a.printHeight = a.printHandle.Bounds(c).H
+	}
+	progress := float64(c.Now().Sub(a.printStart)) / float64(printDuration)
+	if progress >= 1 {
+		a.printStart = time.Time{}
+		return 0, false
+	}
+	c.AnimationFrame()
+	return a.printHeight * float32(1-math.Pow(1-progress, 3)), true
+}
+
 func (a *app) renderPaper(c *ui.Context, width float32) {
 	day := a.dayKey()
 	if a.feedDay != day {
 		a.feedDay = day
-		a.feedRevision = a.receiptRevision
+		// 换一天是整张纸重新送出，不算印出新条目。
+		a.printRevision = a.receiptRevision
+		a.printStart = time.Time{}
 		a.feedStart = c.Now()
 		a.feedDistance = -1
-		a.feedMeasure = false
-	} else if a.feedRevision != a.receiptRevision {
-		a.feedRevision = a.receiptRevision
-		a.feedStart = c.Now()
-		a.feedDistance = max(a.receiptLineHandle.Bounds(c).H, 60)
-		a.feedMeasure = true
-	}
-	if a.feedMeasure && c.Now().After(a.feedStart) {
-		a.feedDistance = max(a.receiptLineHandle.Bounds(c).H, 1)
-		a.feedMeasure = false
 	}
 	h := a.paperHandle.Bounds(c).H
 	if a.feedDistance < 0 && h > 0 {

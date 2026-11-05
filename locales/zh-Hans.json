@@ -100,15 +100,45 @@
   "@receiptUntil": {
     "description": "小票：receiptUntil"
   },
-  "receiptSegments": "{count} 段",
+  "receiptSegments": "{count, plural, other {# 段}}",
   "@receiptSegments": {
-    "description": "小票：receiptSegments"
+    "description": "小票顶部累计行里的会话数，紧跟在时长后面。",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
+  },
+  "receiptEntries": "{count, plural, other {# 条}}",
+  "@receiptEntries": {
+    "description": "小票顶部累计行。只剩摘要、没有采集记录的日子不知道时长和会话数，改印条目数。",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "3"
+      }
+    }
   },
   "receiptHoursMinutes": "{hours}小时{minutes}分",
   "@receiptHoursMinutes": {
     "description": "小票：receiptHoursMinutes"
   },
   "receiptMinutes": "{minutes}分",
+  "receiptHours": "{hours}小时",
+  "@receiptHours": {
+    "description": "整点时长，例如 2小时。不印「0分」。",
+    "placeholders": {
+      "hours": {
+        "type": "String",
+        "example": "2"
+      }
+    }
+  },
+  "receiptUnderMinute": "<1分",
+  "@receiptUnderMinute": {
+    "description": "不足一分钟的时长，印在条目右侧和结算区。"
+  },
   "@receiptMinutes": {
     "description": "小票：receiptMinutes"
   },

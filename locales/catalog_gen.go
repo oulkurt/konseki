@@ -384,18 +384,32 @@ func (msgs Messages) ReceiptUntil(time_ string) string {
 	return Catalog.Format(msgs.locale, "receiptUntil", map[string]any{"time": time_})
 }
 
-// ReceiptSegments says "{count} 段"
+// ReceiptSegments says "{count, plural, other {# 段}}"
 // in the language the app shows.
 //
-// 小票：receiptSegments
-func ReceiptSegments(count string) string { return In(i18n.Locale()).ReceiptSegments(count) }
+// 小票顶部累计行里的会话数，紧跟在时长后面。
+func ReceiptSegments(count int) string { return In(i18n.Locale()).ReceiptSegments(count) }
 
-// ReceiptSegments says "{count} 段"
+// ReceiptSegments says "{count, plural, other {# 段}}"
 // in the language of msgs.
 //
-// 小票：receiptSegments
-func (msgs Messages) ReceiptSegments(count string) string {
+// 小票顶部累计行里的会话数，紧跟在时长后面。
+func (msgs Messages) ReceiptSegments(count int) string {
 	return Catalog.Format(msgs.locale, "receiptSegments", map[string]any{"count": count})
+}
+
+// ReceiptEntries says "{count, plural, other {# 条}}"
+// in the language the app shows.
+//
+// 小票顶部累计行。只剩摘要、没有采集记录的日子不知道时长和会话数，改印条目数。
+func ReceiptEntries(count int) string { return In(i18n.Locale()).ReceiptEntries(count) }
+
+// ReceiptEntries says "{count, plural, other {# 条}}"
+// in the language of msgs.
+//
+// 小票顶部累计行。只剩摘要、没有采集记录的日子不知道时长和会话数，改印条目数。
+func (msgs Messages) ReceiptEntries(count int) string {
+	return Catalog.Format(msgs.locale, "receiptEntries", map[string]any{"count": count})
 }
 
 // ReceiptHoursMinutes says "{hours}小时{minutes}分"
@@ -426,6 +440,34 @@ func ReceiptMinutes(minutes string) string { return In(i18n.Locale()).ReceiptMin
 // 小票：receiptMinutes
 func (msgs Messages) ReceiptMinutes(minutes string) string {
 	return Catalog.Format(msgs.locale, "receiptMinutes", map[string]any{"minutes": minutes})
+}
+
+// ReceiptHours says "{hours}小时"
+// in the language the app shows.
+//
+// 整点时长，例如 2小时。不印「0分」。
+func ReceiptHours(hours string) string { return In(i18n.Locale()).ReceiptHours(hours) }
+
+// ReceiptHours says "{hours}小时"
+// in the language of msgs.
+//
+// 整点时长，例如 2小时。不印「0分」。
+func (msgs Messages) ReceiptHours(hours string) string {
+	return Catalog.Format(msgs.locale, "receiptHours", map[string]any{"hours": hours})
+}
+
+// ReceiptUnderMinute says "<1分"
+// in the language the app shows.
+//
+// 不足一分钟的时长，印在条目右侧和结算区。
+func ReceiptUnderMinute() string { return In(i18n.Locale()).ReceiptUnderMinute() }
+
+// ReceiptUnderMinute says "<1分"
+// in the language of msgs.
+//
+// 不足一分钟的时长，印在条目右侧和结算区。
+func (msgs Messages) ReceiptUnderMinute() string {
+	return Catalog.Format(msgs.locale, "receiptUnderMinute", nil)
 }
 
 // ReceiptTotal says "合计"
