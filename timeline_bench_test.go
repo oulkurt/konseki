@@ -11,8 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"konseki/internal/capture"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func BenchmarkTimelineFrame(b *testing.B) {

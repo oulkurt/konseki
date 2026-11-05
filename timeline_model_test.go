@@ -7,10 +7,11 @@
 package main
 
 import (
-	"konseki/internal/capture"
-	"konseki/internal/summary"
 	"testing"
 	"time"
+
+	"konseki/internal/capture"
+	"konseki/internal/summary"
 )
 
 func TestBuildReceipt(t *testing.T) {

@@ -17,8 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
 	"konseki/internal/summary"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestReceiptAnimationArtifacts(t *testing.T) {

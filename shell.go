@@ -7,9 +7,10 @@
 package main
 
 import (
+	"time"
+
 	"konseki/internal/capture"
 	"konseki/locales"
-	"time"
 
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
