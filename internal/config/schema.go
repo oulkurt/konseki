@@ -215,7 +215,7 @@ type wireSummary struct {
 	Model           *string `json:"model,omitempty"`
 	ThinkingEffort  *string `json:"thinkingEffort,omitempty"`
 	WindowMinutes   *int    `json:"windowMinutes,omitempty"`
-	Language        *string `json:"language,omitempty"`
+	LegacyLanguage  *string `json:"language,omitempty"`
 }
 type wireSkill struct {
 	ExportDir      *string `json:"exportDir,omitempty"`
@@ -240,7 +240,7 @@ func parse(data []byte) (Config, bool, error) {
 	legacy := w.Version == nil
 	if legacy {
 		c.Language = "zh-Hans"
-		if w.Summary != nil && w.Summary.Language != nil && *w.Summary.Language == "en" {
+		if w.Summary != nil && w.Summary.LegacyLanguage != nil && *w.Summary.LegacyLanguage == "en" {
 			c.Language = "en"
 		}
 		c.Recorder = Default().Recorder

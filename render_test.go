@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖临时应用数据和 mygo 测试器。
+ * [OUTPUT]: 验证时间轴与设置界面渲染。
+ * [POS]: 应用层的无窗口界面回归测试。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package main
 
 import (
@@ -14,15 +20,9 @@ import (
 
 // 用真实数据验证时间轴渲染：注入 blocks，检查文本是否画出来。
 func TestTimelineRenders(t *testing.T) {
-	cfg := capture.DefaultConfig()
-	cfg.Root = t.TempDir()
-	r, err := capture.New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer r.Stop()
+	a, cleanup := newTestApp(t)
+	defer cleanup()
 
-	a := &app{runner: r}
 	base := time.Date(2026, 11, 4, 14, 29, 0, 0, time.Local)
 	a.blocks = []capture.Block{
 		{Start: base, End: base.Add(45 * time.Second), App: "Konseki",

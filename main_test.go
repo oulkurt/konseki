@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖临时应用存储和 mygo 测试器。
+ * [OUTPUT]: 验证应用视图与时间轴聚合。
+ * [POS]: 应用层无窗口测试及共享测试构造器。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package main
 
 import (
@@ -17,22 +23,22 @@ import (
 
 func newTestApp(t *testing.T) (*app, func()) {
 	t.Helper()
-	ccfg := capture.DefaultConfig()
-	ccfg.Root = t.TempDir()
-	r, err := capture.New(ccfg)
-	if err != nil {
-		t.Fatalf("capture.New: %v", err)
-	}
-	cs, err := config.Open(ccfg.Root)
+	appDir := t.TempDir()
+	cs, err := config.Open(appDir)
 	if err != nil {
 		t.Fatalf("config.Open: %v", err)
 	}
-	sums, err := summary.NewStore(ccfg.Root)
+	r, err := capture.New(recorderSettings(cs.Get().Recorder, appDir))
+	if err != nil {
+		t.Fatalf("capture.New: %v", err)
+	}
+	sums, err := summary.NewStore(appDir)
 	if err != nil {
 		t.Fatalf("summary.NewStore: %v", err)
 	}
 	a := &app{
 		runner:   r,
+		appDir:   appDir,
 		cfg:      cs,
 		cfgNow:   cs.Get(),
 		sums:     sums,
@@ -135,5 +141,37 @@ func TestFmtDur(t *testing.T) {
 		if got := fmtDur(c.in); got != c.want {
 			t.Errorf("fmtDur(%v) = %q，期望 %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestRecorderControlsPersist(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	tt := ui.NewTester(a.view, 760, 1400)
+	if err := tt.Click("开始记录"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseActive {
+		t.Fatal("顶栏未启动采集")
+	}
+	if err := tt.Click("暂停"); err != nil {
+		t.Fatal(err)
+	}
+	if a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseOff {
+		t.Fatal("顶栏未停止采集")
+	}
+	a.tab = 1
+	tt = ui.NewTester(a.view, 760, 1400)
+	rect, ok := tt.Find("Enable Context Awareness")
+	if !ok {
+		t.Fatal("设置开关缺失")
+	}
+	tt.ClickAt(700, rect.Y+12)
+	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseActive {
+		t.Fatal("设置开关未启动采集")
+	}
+	reopened, err := config.Open(a.appDir)
+	if err != nil || !reopened.Get().Recorder.Enabled {
+		t.Fatalf("开关未落盘: %v", err)
 	}
 }

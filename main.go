@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖采集、设置、摘要及 mygo 原生界面。
+ * [OUTPUT]: 提供应用入口、设置界面和生命周期协调。
+ * [POS]: 应用组合根，连接持久化、采集与视图。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package main
 
 // Konseki（痕跡）—— 本机优先的个人时间轴。
@@ -27,6 +33,7 @@ import (
 
 type app struct {
 	runner *capture.Runner
+	appDir string
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -49,14 +56,13 @@ type app struct {
 	dayFilter       string
 
 	// ---- Capture 设置 ----
-	enableContextAwareness bool
-	pauseDuration          string
-	denylistApps           []string
-	denylistSites          []string
-	showDenylistPopover    bool
-	denylistTab            int
-	customAppInput         string
-	customSiteInput        string
+	pauseDuration       string
+	denylistApps        []string
+	denylistSites       []string
+	showDenylistPopover bool
+	denylistTab         int
+	customAppInput      string
+	customSiteInput     string
 
 	// ---- 供应商 ----
 	// 当前展开的是哪个供应商的配置面板，空表示都收起。
@@ -106,7 +112,6 @@ func (a *app) ensureInit() {
 	}
 	if !a.settingsInited {
 		a.settingsInited = true
-		a.enableContextAwareness = true
 		a.pauseDuration = "Select"
 	}
 }
@@ -356,12 +361,12 @@ func (a *app) view(c *ui.Context) {
 							Bold().
 							TextColor(pal.textSecondary.Alpha(0.7))
 
-						if a.status.App != "" {
-							title := a.status.Title
+						if a.status.Front.App != "" {
+							title := a.status.Front.Title
 							if title == "" {
 								title = "（无标题）"
 							}
-							ui.Textf(c, "· 现在：%s — %s", a.status.App, title).
+							ui.Textf(c, "· 现在：%s — %s", a.status.Front.App, title).
 								FontSize(11).
 								TextColor(pal.textSecondary).
 								SingleLine().
@@ -375,20 +380,20 @@ func (a *app) view(c *ui.Context) {
 							Material(glass.Glass{Style: glass.Regular, Clarity: 0.4}).
 							Border(1, pal.cardBorder).
 							Children(func() {
-								switch {
-								case a.status.Blank:
+								switch a.status.Phase {
+								case capture.PhaseBlocked:
 									ui.Text(c, "● 屏幕休眠").FontSize(11).TextColor(pal.textSecondary)
-								case a.pauseDuration != "Select":
-									ui.Textf(c, "● 已暂停 (%s)", a.pauseDuration).FontSize(11).TextColor(pal.textSecondary)
-								case a.status.Running && a.enableContextAwareness:
+								case capture.PhasePaused:
+									ui.Text(c, "● 已暂停").FontSize(11).TextColor(pal.textSecondary)
+								case capture.PhaseActive, capture.PhaseWaiting:
 									ui.Text(c, "● 记录中").FontSize(11).TextColor(pal.switchOn)
 								default:
-									ui.Text(c, "● 已暂停").FontSize(11).TextColor(pal.textSecondary)
+									ui.Text(c, "● 已关闭").FontSize(11).TextColor(pal.textSecondary)
 								}
 
 								if a.runner != nil {
 									toggleLabel := "开始记录"
-									if a.status.Running {
+									if a.status.Phase != capture.PhaseOff {
 										toggleLabel = "暂停"
 									}
 									btn := ui.ButtonBase(c.Key("btn-record-toggle")).
@@ -399,15 +404,7 @@ func (a *app) view(c *ui.Context) {
 										ui.Text(c, toggleLabel).FontSize(11).Bold().TextColor(pal.textPrimary)
 									})
 									if btn.Clicked() {
-										if a.status.Running {
-											a.runner.Stop()
-											a.enableContextAwareness = false
-										} else {
-											a.runner.Start()
-											a.enableContextAwareness = true
-											a.pauseDuration = "Select"
-										}
-										a.status = a.runner.Status()
+										a.setRecorderEnabled(a.status.Phase == capture.PhaseOff)
 									}
 								}
 							})
@@ -506,7 +503,7 @@ func (a *app) rebuildGenerator() {
 		Header:    headersFor(*pc, resolved),
 		Model:     model,
 		Thinking:  a.cfgNow.Summary.ThinkingEffort,
-		Language:  a.cfgNow.Summary.Language,
+		Language:  a.cfgNow.Language,
 		MaxTokens: 4096,
 		Redact: redact.Options{
 			Secrets:  a.cfgNow.Redact.Enabled && a.cfgNow.Redact.Secrets,
@@ -561,14 +558,9 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 				"Capture your activity on this device.",
 				pal,
 				func() {
-					changed := renderPillSwitch(c, "sw-enable-context", &a.enableContextAwareness, pal)
-					if changed && a.runner != nil {
-						if a.enableContextAwareness {
-							a.runner.Start()
-						} else {
-							a.runner.Stop()
-						}
-						a.status = a.runner.Status()
+					enabled := a.cfgNow.Recorder.Enabled
+					if renderPillSwitch(c, "sw-enable-context", &enabled, pal) && a.runner != nil {
+						a.setRecorderEnabled(enabled)
 					}
 				},
 			)
@@ -620,8 +612,8 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 			// 采集到的原始截屏是最占空间也最敏感的东西，
 			// 让用户能自己设一个上限，比事后清理体验好得多。
 			retentionSub := "原始截图和屏幕文字保留的天数。摘要不会过期。"
-			retentionLabel := fmt.Sprintf("%d days", a.cfgNow.RetentionDays)
-			if a.cfgNow.RetentionDays <= 0 {
+			retentionLabel := fmt.Sprintf("%d days", a.cfgNow.Recorder.RetentionDays)
+			if a.cfgNow.Recorder.RetentionDays <= 0 {
 				retentionLabel = "Forever"
 			}
 			a.settingsRow(c, "Retention", retentionSub, pal, func() {
@@ -631,9 +623,9 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 						if days == 0 {
 							label = "Forever"
 						}
-						if m.Item(label).Checked(a.cfgNow.RetentionDays == days).Chosen() {
-							a.cfg.SetRetentionDays(days)
-							a.cfgNow = a.cfg.Get()
+						if m.Item(label).Checked(a.cfgNow.Recorder.RetentionDays == days).Chosen() {
+							a.cfg.Update(func(c *config.Config) { c.Recorder.RetentionDays = days })
+							a.applyRecorder()
 						}
 					}
 				}
@@ -1352,25 +1344,26 @@ func itoa(v int) string {
 }
 
 func main() {
-	runner, err := capture.New(capture.DefaultConfig())
+	appDir := config.AppDir()
+	cfg, err := config.Open(appDir)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// 配置存在数据目录里，跟采集数据放一起 —— 备份/迁移时一个
-	// 目录搬走就全套，不用记两个路径。
-	cfg, err := config.Open(runner.Root())
+	current := cfg.Get()
+	mygo.App.SetLocale(current.Language)
+	runner, err := capture.New(recorderSettings(current.Recorder, appDir))
 	if err != nil {
 		log.Fatal(err)
 	}
-	// 摘要和原始采样同目录，但分开放。删原始数据不该连带删摘要。
-	sums, err := summary.NewStore(runner.Root())
+	runner.Pause(current.Recorder.PausedUntil)
+	sums, err := summary.NewStore(appDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	a := &app{
 		runner:          runner,
+		appDir:          appDir,
 		cfg:             cfg,
 		cfgNow:          cfg.Get(),
 		sums:            sums,
@@ -1382,15 +1375,13 @@ func main() {
 
 	// 启动时就清一次过期数据。放在 goroutine 里是因为它要扫目录，
 	// 而窗口应该在几百毫秒内出现。
-	go func() {
-		if days := a.cfgNow.RetentionDays; days > 0 {
-			runner.Prune(days)
-		}
-	}()
+	go func() { _, _ = runner.Storage().Prune(current.Recorder.RetentionDays, time.Now()) }()
 
 	mygo.App.WhenReady(func() {
 		warmOSAppIcons()
-		runner.Start()
+		if current.Recorder.Enabled {
+			runner.Start()
+		}
 
 		mygo.NewWindow(mygo.WindowOptions{
 			Title:           "痕跡 Konseki",
@@ -1441,7 +1432,7 @@ func (a *app) autoSummaryLoop() {
 		if !a.cfgNow.Summary.Auto || a.sumRunning || a.gen == nil {
 			continue
 		}
-		if a.cfgNow.CapturePaused {
+		if !a.cfgNow.Recorder.Enabled {
 			continue
 		}
 

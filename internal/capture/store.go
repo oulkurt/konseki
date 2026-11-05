@@ -115,18 +115,16 @@ func (s *Store) ShotPath(t time.Time) string {
 	return filepath.Join(s.root, "shots", t.Format("20060102-150405")+".jpg")
 }
 
-var shotSequence = func() atomic.Uint32 {
+var shotSequence = func() uint32 {
 	var b [2]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		panic(err)
 	}
-	var seq atomic.Uint32
-	seq.Store(uint32(binary.BigEndian.Uint16(b[:])))
-	return seq
+	return uint32(binary.BigEndian.Uint16(b[:]))
 }()
 
 func (s *Store) NewSnapshotID(t time.Time) string {
-	return fmt.Sprintf("%s-%04x", t.Format("20060102-150405.000"), shotSequence.Add(1)&0xffff)
+	return fmt.Sprintf("%s-%04x", t.Format("20060102-150405.000"), atomic.AddUint32(&shotSequence, 1)&0xffff)
 }
 func (s *Store) NewShotPath(t time.Time) string {
 	id := s.NewSnapshotID(t)

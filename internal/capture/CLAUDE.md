@@ -1,5 +1,6 @@
 # capture/
 > L2 | 父级: ../CLAUDE.md
+CLAUDE.md: 描述本模块的成员与职责边界。
 collector.go: 定义屏幕与 OCR 接口，隔离平台实现。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
 macos.go: 连接 macOS 原生屏幕与文字识别能力。

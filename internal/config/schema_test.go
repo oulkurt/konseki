@@ -49,11 +49,14 @@ func TestMigration(t *testing.T) {
 			if err != nil || string(b) != original {
 				t.Fatalf("备份: %q %v", b, err)
 			}
+			if err := os.WriteFile(backup, []byte("保留备份"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			if _, err = Open(dir); err != nil {
 				t.Fatal(err)
 			}
 			b, _ = os.ReadFile(backup)
-			if string(b) != original {
+			if string(b) != "保留备份" {
 				t.Fatal("备份被覆盖")
 			}
 		})
