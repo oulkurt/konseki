@@ -31,11 +31,13 @@ type Front struct {
 	App, Bundle, Title string
 	PID                int
 }
+
 type Perms struct{ Screen, Accessibility PermState }
 type Usage struct {
 	Bytes                      int64
 	Shots, Snapshots, Sessions int
 }
+
 type Status struct {
 	Phase       Phase
 	Block       BlockReason

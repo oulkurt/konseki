@@ -55,6 +55,7 @@ func New(cfg Settings) (*Runner, error) {
 	r.Apply(cfg)
 	return r, nil
 }
+
 func (r *Runner) Apply(s Settings) {
 	s.SensitiveApps = append([]string(nil), s.SensitiveApps...)
 	s.OCR.Languages = append([]string(nil), s.OCR.Languages...)
@@ -62,6 +63,7 @@ func (r *Runner) Apply(s Settings) {
 	r.cfg = s
 	r.mu.Unlock()
 }
+
 func (r *Runner) Storage() *Storage     { return r.storage }
 func (r *Runner) Pause(until time.Time) { r.mu.Lock(); r.pausedUntil = until; r.mu.Unlock() }
 func (r *Runner) Resume()               { r.Pause(time.Time{}) }
@@ -71,6 +73,7 @@ func (r *Runner) paused(now time.Time) bool {
 	}
 	return !r.pausedUntil.IsZero()
 }
+
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -88,6 +91,7 @@ func (r *Runner) Status() Status {
 	}
 	return Status{Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: Front{App: r.lastLastApp, Title: r.lastLastTitle, PID: r.lastPID}, Usage: r.storage.Usage(), Perms: Perms{Screen: r.scr.Permission(false), Accessibility: PermUnknown}, LastShot: r.lastShotAt, LastErr: r.lastErr}
 }
+
 func (r *Runner) RecentSessions(n int) []Session {
 	if n <= 0 {
 		return nil
@@ -112,6 +116,7 @@ func (r *Runner) RecentSessions(n int) []Session {
 	}
 	return result
 }
+
 func (r *Runner) ClearAll() (Cleared, error) { return r.storage.ClearAll() }
 
 // Start 启动采样。重复调用无副作用。

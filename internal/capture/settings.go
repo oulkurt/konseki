@@ -22,6 +22,7 @@ type Settings struct {
 	MaxStorage    int64
 	RetentionDays int
 }
+
 type OCRSettings struct {
 	Enabled   bool
 	Languages []string

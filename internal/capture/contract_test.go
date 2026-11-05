@@ -69,6 +69,7 @@ func TestStoreContracts(t *testing.T) {
 		}
 	}
 }
+
 func TestStoragePrune(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.Local)
@@ -94,6 +95,7 @@ func TestStoragePrune(t *testing.T) {
 		}
 	}
 }
+
 func TestRunnerPauseAndSessions(t *testing.T) {
 	root := t.TempDir()
 	r, err := New(Settings{Root: root, Heartbeat: time.Minute})

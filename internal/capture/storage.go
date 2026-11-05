@@ -21,6 +21,7 @@ type Cleared struct {
 	Freed           int64
 	Failed          int
 }
+
 type Storage struct{ root string }
 
 func NewStorage(root string) *Storage                    { return &Storage{root: root} }

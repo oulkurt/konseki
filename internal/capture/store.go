@@ -50,6 +50,7 @@ type Snapshot struct {
 	ImgKB   int     `json:"imgKB"`
 	OCRMs   int     `json:"ocrMs"`
 }
+
 type OCRResult struct {
 	Snap   string `json:"snap"`
 	Text   string `json:"text"`
@@ -57,6 +58,7 @@ type OCRResult struct {
 	Ms     int    `json:"ms"`
 	Status string `json:"status"`
 }
+
 type Store struct{ root string }
 
 func NewStore(root string) (*Store, error) {
@@ -69,9 +71,11 @@ func NewStore(root string) (*Store, error) {
 	}
 	return &Store{root: abs}, nil
 }
+
 func (s *Store) dayFile(t time.Time) string {
 	return filepath.Join(s.root, t.Format("2006-01-02")+".jsonl")
 }
+
 func appendJSON(path string, v any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
@@ -90,6 +94,7 @@ func appendJSON(path string, v any) error {
 	}
 	return f.Sync()
 }
+
 func readJSON[T any](path string) ([]T, error) {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -110,6 +115,7 @@ func readJSON[T any](path string) ([]T, error) {
 	}
 	return out, sc.Err()
 }
+
 func (s *Store) Append(v Snapshot) error { return appendJSON(s.dayFile(time.Now()), v) }
 func (s *Store) ShotPath(t time.Time) string {
 	return filepath.Join(s.root, "shots", t.Format("20060102-150405")+".jpg")
@@ -144,22 +150,28 @@ func (s *Store) NewSnapshotID(t time.Time) string {
 		}
 	}
 }
+
 func (s *Store) NewShotPath(t time.Time) string {
 	id := s.NewSnapshotID(t)
 	return filepath.Join(s.root, "shots", t.Format("2006-01-02"), id[9:]+".jpg")
 }
+
 func (s *Store) AppendOCR(day string, r OCRResult) error {
 	return appendJSON(filepath.Join(s.root, "ocr", day+".jsonl"), r)
 }
+
 func (s *Store) ReadOCR(day string) ([]OCRResult, error) {
 	return readJSON[OCRResult](filepath.Join(s.root, "ocr", day+".jsonl"))
 }
+
 func (s *Store) AppendSession(v Session) error {
 	return appendJSON(filepath.Join(s.root, "sessions", v.End.In(time.Local).Format("2006-01-02")+".jsonl"), v)
 }
+
 func (s *Store) ReadSessions(day string) ([]Session, error) {
 	return readJSON[Session](filepath.Join(s.root, "sessions", day+".jsonl"))
 }
+
 func (s *Store) ReadDay(day string) ([]Snapshot, error) {
 	out, err := readJSON[Snapshot](filepath.Join(s.root, day+".jsonl"))
 	if err != nil {
@@ -185,6 +197,7 @@ func (s *Store) ReadDay(day string) ([]Snapshot, error) {
 	}
 	return out, nil
 }
+
 func (s *Store) OCRIndex(day string) (map[string]string, error) {
 	snaps, err := s.ReadDay(day)
 	if err != nil {
