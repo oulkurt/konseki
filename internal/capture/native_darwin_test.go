@@ -18,6 +18,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/ebitengine/purego"
 )
 
 func nativeFrame(t testing.TB, img *image.RGBA) *Frame {
@@ -153,4 +156,43 @@ func BenchmarkNativePipeline(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestNativeOCRQueueReleasesFrames(t *testing.T) {
+	f := nativeFrame(t, pattern(80, 60))
+	lib, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainCount func(uintptr) int64
+	purego.RegisterLibFunc(&retainCount, lib, "CFGetRetainCount")
+	baseline := retainCount(f.native)
+	st, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &blockingOCR{started: make(chan struct{}, 1), release: make(chan struct{})}
+	q := newOCRQueue(engine, 20*time.Millisecond, nil)
+	cfg := OCRSettings{Enabled: true, EveryN: 1}
+	task := func(id string) ocrTask { return ocrTask{frame: f, id: id, day: "2026-11-05", store: st} }
+	q.submit("s", cfg, task("1"))
+	<-engine.started
+	q.submit("s", cfg, task("2"))
+	q.submit("s", cfg, task("3"))
+	q.mu.Lock()
+	old := q.tasks
+	q.mu.Unlock()
+	q.submit("s", cfg, task("4"))
+	q.mu.Lock()
+	cleared := old[0].frame == nil
+	q.mu.Unlock()
+	if !cleared || retainCount(f.native) != baseline+3 {
+		close(engine.release)
+		q.close()
+		t.Fatal("丢弃任务未释放原生帧或清空槽位")
+	}
+	eventually(t, func() bool { rows, _ := st.ReadOCR("2026-11-05"); return len(rows) > 0 && rows[0].Status == "timeout" })
+	close(engine.release)
+	q.close()
+	eventually(t, func() bool { return retainCount(f.native) == baseline })
 }
