@@ -29,22 +29,22 @@ func TestPoolOwnership(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		var start, end token.Pos
 		for _, decl := range f.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil {
-				continue
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == "withPool" && fn.Body != nil {
+				start, end = fn.Body.Pos(), fn.Body.End()
 			}
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				lit, ok := n.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					return true
-				}
-				value, _ := strconv.Unquote(lit.Value)
-				if (strings.Contains(value, "NSAutoreleasePool") || strings.Contains(value, "objc_autoreleasePoolPush")) && fn.Name.Name != "withPool" {
-					t.Errorf("%s: %s 在 withPool 外创建池", name, fn.Name.Name)
-				}
-				return true
-			})
 		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			value, _ := strconv.Unquote(lit.Value)
+			if (strings.Contains(value, "NSAutoreleasePool") || strings.Contains(value, "objc_autoreleasePoolPush")) && (start == 0 || lit.Pos() < start || lit.End() > end) {
+				t.Errorf("%s: 在 withPool 外创建池", name)
+			}
+			return true
+		})
 	}
 }
