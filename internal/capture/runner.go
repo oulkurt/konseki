@@ -53,6 +53,7 @@ type Runner struct {
 	mu             sync.Mutex
 	lifecycle      sync.Mutex
 	cfg            Settings
+	configured     bool
 	st             *Store
 	storage        *Storage
 	deps           dependencies
@@ -97,9 +98,33 @@ func (r *Runner) Apply(s Settings) {
 	s.SensitiveApps = append([]string(nil), s.SensitiveApps...)
 	s.OCR.Languages = append([]string(nil), s.OCR.Languages...)
 	r.mu.Lock()
+	prune := r.configured && r.cfg.RetentionDays != s.RetentionDays
+	enforce := r.configured && r.cfg.MaxStorage != s.MaxStorage
 	r.cfg = s
-	r.requestEnforce()
+	r.configured = true
+	storage := r.storage
 	r.mu.Unlock()
+	if prune || enforce {
+		go r.applyStoragePolicy(storage, prune, enforce)
+	}
+}
+
+func (r *Runner) applyStoragePolicy(storage *Storage, prune, enforce bool) {
+	r.mu.Lock()
+	cfg := r.cfg
+	r.mu.Unlock()
+	ops := defaultMaintenanceOps()
+	if r.deps.maintenanceOps != nil {
+		ops = *r.deps.maintenanceOps
+	}
+	if prune {
+		_, err := ops.prune(storage, cfg.RetentionDays, r.deps.clock.Now())
+		r.setError(err)
+	}
+	if enforce && cfg.MaxStorage > 0 {
+		_, err := ops.enforce(storage, cfg.MaxStorage)
+		r.setError(err)
+	}
 }
 func (r *Runner) requestEnforce() {
 	if r.enforce != nil && !r.enforcePending {

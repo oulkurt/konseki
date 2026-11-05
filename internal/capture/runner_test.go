@@ -336,7 +336,7 @@ func TestRunnerStopDoesNotWaitForMaintenance(t *testing.T) {
 	ops := defaultMaintenanceOps()
 	ops.enforce = func(*Storage, int64) (int64, error) { close(started); <-release; return 0, nil }
 	d.maintenanceOps = &ops
-	r, err := newRunner(Settings{Root: t.TempDir()}, d)
+	r, err := newRunner(Settings{Root: t.TempDir(), MaxStorage: 100}, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,5 +462,39 @@ func TestRunnerRejectsLiveSensitiveWindow(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(r.Root(), "shots"))
 	if err != nil || len(entries) != 0 {
 		t.Fatal(entries, err)
+	}
+}
+
+func TestApplyStoragePolicyWhileStopped(t *testing.T) {
+	d, _, _ := fakeDependencies()
+	pruned := make(chan int, 1)
+	enforced := make(chan int64, 1)
+	ops := defaultMaintenanceOps()
+	ops.prune = func(_ *Storage, days int, _ time.Time) (int, error) { pruned <- days; return 0, nil }
+	ops.enforce = func(_ *Storage, max int64) (int64, error) { enforced <- max; return 0, nil }
+	d.maintenanceOps = &ops
+	cfg := Settings{Root: t.TempDir(), RetentionDays: 30, MaxStorage: 1000}
+	r, err := newRunner(cfg, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RetentionDays = 7
+	cfg.MaxStorage = 500
+	r.Apply(cfg)
+	select {
+	case n := <-pruned:
+		if n != 7 {
+			t.Fatal(n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("未清理保留期")
+	}
+	select {
+	case n := <-enforced:
+		if n != 500 {
+			t.Fatal(n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("未执行容量限制")
 	}
 }

@@ -25,6 +25,13 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 	if r.deps.maintenanceOps != nil {
 		ops = *r.deps.maintenanceOps
 	}
+	enforceLimit := func(st *Storage, cfg Settings) error {
+		if cfg.MaxStorage <= 0 {
+			return nil
+		}
+		_, err := ops.enforce(st, cfg.MaxStorage)
+		return err
+	}
 	stopped := func() bool {
 		select {
 		case <-stop:
@@ -65,16 +72,14 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			if stopped() {
 				return
 			}
-			_, err = ops.enforce(st, cfg.MaxStorage)
-			r.setError(err)
+			r.setError(enforceLimit(st, cfg))
 			five = time.NewTicker(5 * time.Minute)
 			half = time.NewTicker(30 * time.Minute)
 			six = time.NewTicker(6 * time.Hour)
 			fiveC, halfC, sixC = five.C, half.C, six.C
 		case <-fiveC:
 			st, cfg := settings()
-			_, err := ops.enforce(st, cfg.MaxStorage)
-			r.setError(err)
+			r.setError(enforceLimit(st, cfg))
 		case <-halfC:
 			st, _ := settings()
 			_, err := ops.degrade(st, time.Now())
@@ -89,8 +94,7 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			r.setError(err)
 		case <-enforce:
 			st, cfg := settings()
-			_, err := ops.enforce(st, cfg.MaxStorage)
-			r.setError(err)
+			r.setError(enforceLimit(st, cfg))
 			r.mu.Lock()
 			r.enforcePending = false
 			r.mu.Unlock()
