@@ -157,7 +157,7 @@ func TestRecorderControlsPersist(t *testing.T) {
 	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase == capture.PhaseOff {
 		t.Fatal("顶栏未启动采集")
 	}
-	if err := tt.Click("记录中"); err != nil {
+	if err := tt.Click("等待中"); err != nil {
 		t.Fatal(err)
 	}
 	if a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseOff {
