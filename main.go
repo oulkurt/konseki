@@ -22,8 +22,10 @@ import (
 )
 
 type app struct {
-	runner *capture.Runner
-	appDir string
+	runner          *capture.Runner
+	appDir          string
+	post            func(func())
+	scanCredentials func() []providers.Credential
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -57,6 +59,7 @@ type app struct {
 	testOK          bool
 	detected        []providers.Credential
 	detectDone      bool
+	detectStarted   bool
 	fetchingModels  bool
 	fetchMsg        string
 
@@ -75,8 +78,6 @@ type app struct {
 	// ---- Skill ----
 	skillExportMsg  string
 	skillExportedAt time.Time
-
-	// ---- 其它 ----
 }
 
 func (a *app) ensureInit() {
@@ -159,12 +160,7 @@ func (a *app) summarizable() bool {
 	return a.gen != nil && len(a.blocks) > 0 && !a.sumRunning
 }
 
-// runSummary 在后台生成当天的摘要。
-//
-// 单独一个 goroutine：一次生成可能跑好几分钟（逐个小时调模型），
-// 卡在 UI 线程里整窗都要冻结。所有回写到 UI 的字段都是简单类型，
-// 读取方在下一帧就会看到，不需要额外的锁 —— mygo 的渲染是单线程的，
-// 而这里写的是 bool/string/int，最坏情况是晚一帧生效。
+// runSummary 在后台生成摘要，并在界面线程发布结果。
 func (a *app) runSummary(force bool) {
 	if a.gen == nil || a.sumRunning {
 		return
@@ -177,34 +173,35 @@ func (a *app) runSummary(force bool) {
 	blocks := a.blocks
 	root := a.runner.Root()
 	gen := a.gen
+	window := time.Duration(a.cfgNow.Summary.WindowMinutes) * time.Minute
+	if window <= 0 {
+		window = time.Hour
+	}
 
 	go func() {
-		defer func() { a.sumRunning = false }()
-
 		ocr, err := a.runner.OCRIndex(key)
 		if err != nil {
 			ocr = nil // OCR 拿不到也能生成，靠窗口标题
-		}
-		window := time.Duration(a.cfgNow.Summary.WindowMinutes) * time.Minute
-		if window <= 0 {
-			window = time.Hour
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 
 		entries, err := gen.GenerateDay(ctx, blocks, ocr, key, window, force)
-		// 无论成败都把「这次遮了多少」带回去：失败时用户更需要知道
-		// 发出去的内容到底遮没遮住。
+		redactions := 0
 		if m := gen.Masker(); m != nil {
-			a.sumRedactions = len(m.Hits())
+			redactions = len(m.Hits())
 		}
-		if err != nil {
-			a.sumErr = err.Error()
-			return
-		}
-		a.sumEntries = entries
-		a.stampSkill(root)
+		a.post(func() {
+			a.sumRunning = false
+			a.sumRedactions = redactions
+			if err != nil {
+				a.sumErr = err.Error()
+				return
+			}
+			a.sumEntries = entries
+			a.stampSkill(root)
+		})
 	}()
 }
 
@@ -245,13 +242,14 @@ func main() {
 	}
 
 	a := &app{
-		runner:   runner,
-		appDir:   appDir,
-		cfg:      cfg,
-		cfgNow:   cfg.Get(),
-		sums:     sums,
-		llmc:     llm.New(5 * time.Minute),
-		expanded: map[string]bool{},
+		runner:          runner,
+		appDir:          appDir,
+		cfg:             cfg,
+		cfgNow:          cfg.Get(),
+		sums:            sums,
+		llmc:            llm.New(5 * time.Minute),
+		expanded:        map[string]bool{},
+		scanCredentials: providers.DetectLocal,
 	}
 	a.rebuildGenerator()
 
@@ -265,7 +263,7 @@ func main() {
 			runner.Start()
 		}
 
-		mygo.NewWindow(mygo.WindowOptions{
+		win := mygo.NewWindow(mygo.WindowOptions{
 			Title:           "痕跡 Konseki",
 			TitleBarStyle:   mygo.TitleBarHidden,
 			Transparent:     true,
@@ -278,6 +276,8 @@ func main() {
 			StateKey:        "main",
 			Content:         ui.View(a.view),
 		})
+		a.post = win.Update
+		go a.autoSummaryLoop()
 	})
 
 	// 自动摘要。走一个独立的 ticker，和采集循环无关：
@@ -286,8 +286,6 @@ func main() {
 	//
 	// 无条件启动，让循环自己读开关：用户在设置页打开 Auto 之后
 	// 不该要求重启 App 才生效。
-	go a.autoSummaryLoop()
-
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -310,33 +308,35 @@ func (a *app) autoSummaryLoop() {
 	lastRun := time.Time{}
 
 	for range tick.C {
-		a.ensureInit()
-		if !a.cfgNow.Summary.Auto || a.sumRunning || a.gen == nil {
-			continue
-		}
-		if !a.cfgNow.Recorder.Enabled {
-			continue
-		}
+		a.post(func() {
+			a.ensureInit()
+			if !a.cfgNow.Summary.Auto || a.sumRunning || a.gen == nil {
+				return
+			}
+			if !a.cfgNow.Recorder.Enabled {
+				return
+			}
 
-		interval := time.Duration(a.cfgNow.Summary.IntervalMinutes) * time.Minute
-		if interval < 5*time.Minute {
-			interval = 5 * time.Minute
-		}
-		if !lastRun.IsZero() && time.Since(lastRun) < interval {
-			continue
-		}
+			interval := time.Duration(a.cfgNow.Summary.IntervalMinutes) * time.Minute
+			if interval < 5*time.Minute {
+				interval = 5 * time.Minute
+			}
+			if !lastRun.IsZero() && time.Since(lastRun) < interval {
+				return
+			}
 
-		a.loadDay()
-		if len(a.blocks) == 0 {
-			continue
-		}
-		// 已经覆盖到最新一块就不用再跑了 —— 没有新内容时跑一次
-		// 只是白烧 token。
-		if a.coversLatest() {
-			continue
-		}
-		lastRun = time.Now()
-		a.runSummary(false)
+			a.loadDay()
+			if len(a.blocks) == 0 {
+				return
+			}
+			// 已经覆盖到最新一块就不用再跑了 —— 没有新内容时跑一次
+			// 只是白烧 token。
+			if a.coversLatest() {
+				return
+			}
+			lastRun = time.Now()
+			a.runSummary(false)
+		})
 	}
 }
 

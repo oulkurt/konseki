@@ -110,6 +110,7 @@ func (a *app) view(c *ui.Context) {
 					case 0:
 						a.renderHistorySection(c, pal)
 					case 1:
+						a.startCredentialScan()
 						a.renderCaptureSection(c, pal)
 						a.renderSummariesSection(c, pal)
 						a.renderProvidersSection(c, pal)

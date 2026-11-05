@@ -13,6 +13,7 @@ import (
 	"konseki/internal/capture"
 	"konseki/internal/config"
 	"konseki/internal/llm"
+	"konseki/internal/providers"
 	"konseki/internal/summary"
 
 	"github.com/egoist/mygo/ui"
@@ -45,8 +46,26 @@ func newTestApp(t *testing.T) (*app, func()) {
 		llmc:     llm.New(time.Second),
 		expanded: map[string]bool{},
 	}
+	a.post = func(f func()) { f() }
+	scanTestCredentials(t, a, nil)
 	a.rebuildGenerator()
 	return a, func() { r.Stop() }
+}
+
+func scanTestCredentials(t *testing.T, a *app, creds []providers.Credential) {
+	t.Helper()
+	queued := make(chan func(), 1)
+	a.post = func(f func()) { queued <- f }
+	a.scanCredentials = func() []providers.Credential { return creds }
+	a.detectStarted, a.detectDone = false, false
+	a.startCredentialScan()
+	select {
+	case f := <-queued:
+		f()
+	case <-time.After(5 * time.Second):
+		t.Fatal("凭据扫描超时")
+	}
+	a.post = func(f func()) { f() }
 }
 
 func TestViewBuilds(t *testing.T) {

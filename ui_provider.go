@@ -442,10 +442,6 @@ func firstURL(vals ...string) string {
 
 // renderLocalImport 画「从本机 CLI 导入」。
 func (a *app) renderLocalImport(c *ui.Context, pal palette) {
-	if !a.detectDone {
-		a.detected = providers.DetectLocal()
-		a.detectDone = true
-	}
 
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
@@ -455,6 +451,10 @@ func (a *app) renderLocalImport(c *ui.Context, pal palette) {
 					FontSize(11.8).TextColor(pal.textSecondary).LineHeight(1.38)
 			})
 
+			if !a.detectDone {
+				ui.Text(c, "正在扫描…").FontSize(11.5).TextColor(pal.textSecondary)
+				return
+			}
 			if len(a.detected) == 0 {
 				ui.Text(c, "没有在本机找到已登录的 CLI。").
 					FontSize(11.5).TextColor(pal.textSecondary.Alpha(0.75))

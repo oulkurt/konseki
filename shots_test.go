@@ -68,7 +68,7 @@ func shot(t *testing.T, state, lang string, dark bool) []byte {
 	t.Helper()
 	a, cleanup := newTestApp(t)
 	defer cleanup()
-	a.detected, a.detectDone = shotCredentials, true
+	scanTestCredentials(t, a, shotCredentials)
 	height := 1000
 	switch state {
 	case "timeline-day":

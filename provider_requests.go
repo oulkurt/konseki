@@ -13,50 +13,49 @@ import (
 	"github.com/egoist/mygo/ui"
 	"konseki/internal/config"
 	"konseki/internal/llm"
-	"konseki/internal/providers"
 	"strings"
 	"time"
 )
+
+func (a *app) startCredentialScan() {
+	if a.detectStarted || a.scanCredentials == nil {
+		return
+	}
+	a.detectStarted = true
+	scan := a.scanCredentials
+	go func() {
+		credentials := scan()
+		a.post(func() { a.detected = credentials; a.detectDone = true })
+	}()
+}
 
 func (a *app) testConnection(idx int) {
 	if a.llmc == nil || idx < 0 || idx >= len(a.cfgNow.Providers) {
 		return
 	}
-	pc := a.cfgNow.Providers[idx]
-	a.testing = true
-	a.testResult = ""
-
+	pc, client := a.cfgNow.Providers[idx], a.llmc
+	a.testing, a.testResult = true, ""
 	go func() {
-		defer func() { a.testing = false }()
+		result, ok := "", false
 		r, err := llm.Resolve(pc, true)
+		if err == nil {
+			key := pc.APIKey
+			if pc.Auth == "oauth" {
+				key = pc.AccessToken
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer cancel()
+			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "只回复两个字：收到", MaxTokens: 32})
+			err = e
+			if err == nil {
+				result = fmt.Sprintf("连通 · %s · %d tokens", strings.TrimSpace(resp.Text), resp.Usage.Input+resp.Usage.Output)
+				ok = true
+			}
+		}
 		if err != nil {
-			a.testResult = err.Error()
-			a.testOK = false
-			return
+			result = err.Error()
 		}
-		key := pc.APIKey
-		if pc.Auth == "oauth" {
-			key = pc.AccessToken
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-		resp, err := a.llmc.Complete(ctx, llm.Request{
-			Kind:      r.Kind,
-			BaseURL:   r.BaseURL,
-			APIKey:    key,
-			Header:    headersFor(pc, r),
-			Model:     r.Model,
-			Prompt:    "只回复两个字：收到",
-			MaxTokens: 32,
-		})
-		if err != nil {
-			a.testResult = err.Error()
-			a.testOK = false
-			return
-		}
-		a.testResult = fmt.Sprintf("连通 · %s · %d tokens",
-			strings.TrimSpace(resp.Text), resp.Usage.Input+resp.Usage.Output)
-		a.testOK = true
+		a.post(func() { a.testing, a.testResult, a.testOK = false, result, ok })
 	}()
 }
 
@@ -98,44 +97,24 @@ func (a *app) fetchModels(idx int) {
 	if a.llmc == nil || idx < 0 || idx >= len(a.cfgNow.Providers) {
 		return
 	}
-	pc := a.cfgNow.Providers[idx]
-	a.fetchingModels = true
-	a.fetchMsg = ""
-
+	pc, client := a.cfgNow.Providers[idx], a.llmc
+	a.fetchingModels, a.fetchMsg = true, ""
 	go func() {
-		defer func() { a.fetchingModels = false }()
-
 		resolved, err := llm.Resolve(pc, false)
-		if err != nil {
-			a.fetchMsg = err.Error()
-			return
+		var ids []string
+		if err == nil {
+			key := pc.APIKey
+			if pc.Auth == "oauth" && pc.AccessToken != "" {
+				key = pc.AccessToken
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			ids, err = client.ListModels(ctx, resolved.BaseURL, key, headersFor(pc, resolved))
 		}
-		key := pc.APIKey
-		if pc.Auth == "oauth" && pc.AccessToken != "" {
-			key = pc.AccessToken
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		ids, err := a.llmc.ListModels(ctx, resolved.BaseURL, key, headersFor(pc, resolved))
-		if err != nil {
-			a.fetchMsg = "拉取失败：" + err.Error()
-			return
-		}
-		if len(ids) == 0 {
-			a.fetchMsg = "接口返回了空列表"
-			return
-		}
-
-		// 只保留看起来像对话模型的。拉回来的列表里常常混着
-		// embedding、tts、rerank —— 它们填进摘要模型的选项里只会误导。
 		var chat []string
 		for _, id := range ids {
 			low := strings.ToLower(id)
-			if strings.Contains(low, "embed") || strings.Contains(low, "rerank") ||
-				strings.Contains(low, "whisper") || strings.Contains(low, "tts") ||
-				strings.Contains(low, "moderation") || strings.Contains(low, "dall-e") ||
-				strings.Contains(low, "image") {
+			if strings.Contains(low, "embed") || strings.Contains(low, "rerank") || strings.Contains(low, "whisper") || strings.Contains(low, "tts") || strings.Contains(low, "moderation") || strings.Contains(low, "dall-e") || strings.Contains(low, "image") {
 				continue
 			}
 			chat = append(chat, id)
@@ -143,24 +122,36 @@ func (a *app) fetchModels(idx int) {
 		if len(chat) == 0 {
 			chat = ids
 		}
-
-		preset, _ := providers.ByID(pc.Preset)
-		a.cfg.Update(func(c *config.Config) {
-			for i := range c.Providers {
-				if c.Providers[i].Preset == pc.Preset && c.Providers[i].Label == pc.Label {
-					c.Providers[i].EnabledModels = chat
-					if c.Providers[i].DefaultModel == "" && len(chat) > 0 {
-						c.Providers[i].DefaultModel = chat[0]
+		a.post(func() {
+			a.fetchingModels = false
+			if err != nil {
+				a.fetchMsg = "拉取失败：" + err.Error()
+				return
+			}
+			if len(chat) == 0 {
+				a.fetchMsg = "接口返回了空列表"
+				return
+			}
+			a.cfg.Update(func(c *config.Config) {
+				for i := range c.Providers {
+					p := &c.Providers[i]
+					if p.Preset == pc.Preset && p.Label == pc.Label {
+						p.EnabledModels = chat
+						if p.DefaultModel == "" {
+							p.DefaultModel = chat[0]
+						}
+						return
 					}
-					return
+				}
+			})
+			a.cfgNow = a.cfg.Get()
+			for _, p := range a.cfgNow.Providers {
+				if p.Preset == pc.Preset && p.Label == pc.Label && a.openProvider != "" {
+					a.modelDraft = p.DefaultModel
+					break
 				}
 			}
+			a.fetchMsg = fmt.Sprintf("拉到 %d 个模型", len(chat))
 		})
-		a.cfgNow = a.cfg.Get()
-		if idx < len(a.cfgNow.Providers) {
-			a.modelDraft = a.cfgNow.Providers[idx].DefaultModel
-		}
-		_ = preset
-		a.fetchMsg = fmt.Sprintf("拉到 %d 个模型", len(chat))
 	}()
 }

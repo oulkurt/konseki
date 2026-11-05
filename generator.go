@@ -78,7 +78,7 @@ func (a *app) rebuildGenerator() {
 
 	if a.gen == nil {
 		a.gen = summary.New(a.sums, a.llmc, cfg, func(e summary.Entry) {
-			a.sumEntries = append(a.sumEntries, e)
+			a.post(func() { a.sumEntries = append(a.sumEntries, e) })
 		})
 	} else {
 		a.gen.SetConfig(cfg)
