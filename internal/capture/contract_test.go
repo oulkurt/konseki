@@ -100,7 +100,7 @@ func TestStoragePrune(t *testing.T) {
 func TestRunnerPauseAndSessions(t *testing.T) {
 	root := t.TempDir()
 	deps, _, _ := fakeDependencies()
-	r, err := newRunner(Settings{Root: root, Heartbeat: time.Minute}, deps)
+	r, err := NewWithDependencies(Settings{Root: root, Heartbeat: time.Minute}, Dependencies{Screen: deps.screen, OCR: deps.ocr, Input: deps.input, Front: deps.front, Lock: deps.lock, Clock: deps.clock, Permissions: deps.perms, SaveJPEG: deps.save})
 	if err != nil {
 		t.Fatal(err)
 	}

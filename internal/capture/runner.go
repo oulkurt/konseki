@@ -17,6 +17,26 @@ import (
 	"time"
 )
 
+// Dependencies 允许调用方隔离平台观测与图像编码。
+type Dependencies struct {
+	Screen      Screen
+	OCR         OCREngine
+	Input       InputSource
+	Front       FrontSource
+	Lock        LockSource
+	Clock       Clock
+	Permissions PermissionSource
+	SaveJPEG    func(*Frame, string, int) bool
+}
+
+// NewWithDependencies 创建使用指定依赖的采集循环。
+func NewWithDependencies(cfg Settings, d Dependencies) (*Runner, error) {
+	if d.Screen == nil || d.OCR == nil || d.Input == nil || d.Front == nil || d.Lock == nil || d.Clock == nil || d.Permissions == nil || d.SaveJPEG == nil {
+		return nil, fmt.Errorf("capture: 采集依赖不完整")
+	}
+	return newRunner(cfg, dependencies{screen: d.Screen, ocr: d.OCR, input: d.Input, front: d.Front, lock: d.Lock, clock: d.Clock, perms: d.Permissions, save: d.SaveJPEG})
+}
+
 type dependencies struct {
 	screen Screen
 	ocr    OCREngine

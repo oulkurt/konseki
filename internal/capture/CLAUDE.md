@@ -16,7 +16,7 @@ ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
 ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和诊断信息。
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
-runner.go: 协调采集生命周期、异步抓帧与时间轴聚合。
+runner.go: 协调采集生命周期、异步抓帧与时间轴聚合；开放依赖注入供应用测试隔离系统接口。
 screen_darwin.go: 提供 macOS 平台采集适配。
 screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。

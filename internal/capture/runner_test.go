@@ -192,3 +192,26 @@ func TestRunnerRootChangesNextSession(t *testing.T) {
 	c.advance(2 * time.Second)
 	eventually(t, func() bool { return r.Status().Session != nil })
 }
+
+func TestRunnerClearAllRestarts(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Hour, Idle: time.Minute}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.scroll = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Session != nil })
+	if _, err := r.ClearAll(); err != nil {
+		t.Fatal(err)
+	}
+	if status := r.Status(); status.Phase != PhaseWaiting || status.Session != nil {
+		t.Fatal(status)
+	}
+}
