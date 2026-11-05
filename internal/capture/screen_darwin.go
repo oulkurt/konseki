@@ -95,10 +95,9 @@ func newScreen() Screen {
 	return darwinScreen{}
 }
 
-func (darwinScreen) FrontWindow() (string, string, int) {
-	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
-	defer O(pool, "drain")
-	return frontWindow()
+func (darwinScreen) FrontWindow() (app, title string, pid int) {
+	withPool(func() { app, title, pid = frontWindow() })
+	return
 }
 
 func (darwinScreen) Permission(ask bool) PermState {
@@ -112,68 +111,73 @@ func (darwinScreen) Permission(ask bool) PermState {
 	}
 }
 
-func (darwinScreen) Grab() *Frame {
-	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
-	defer O(pool, "drain")
-	img := grab()
-	if img == 0 {
-		return nil
-	}
-	defer cfRelease(img)
-	f := &Frame{W: int(cgGetW(img)), H: int(cgGetH(img))}
-	f.Blank = isBlank(img)
-	if !f.Blank {
-		f.RGBA = imageToRGBA(img)
-	}
-	return f
+func (darwinScreen) Grab() (f *Frame) {
+	withPool(func() {
+		img := grab()
+		if img == 0 {
+			return
+		}
+		defer cfRelease(img)
+		f = &Frame{W: int(cgGetW(img)), H: int(cgGetH(img))}
+		f.Blank = isBlank(img)
+		if !f.Blank {
+			f.RGBA = imageToRGBA(img)
+		}
+	})
+	return
 }
 
 type darwinOCR struct{}
 
 func newOCR() OCREngine { return darwinOCR{} }
 
-func (darwinOCR) Recognize(f *Frame, languages []string) (string, int, error) {
-	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
-	defer O(pool, "drain")
-	img := rgbaToImage(f)
-	if img == 0 {
-		return "", 0, errors.New("OCR 图像无效")
-	}
-	return ocrImage(img, languages)
+func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int, err error) {
+	withPool(func() {
+		img := rgbaToImage(f)
+		if img == 0 {
+			err = errors.New("OCR 图像无效")
+			return
+		}
+		text, lines, err = ocrImage(img, languages)
+	})
+	return
 }
 
 var _ = time.Now
 
 // platformSaveThumb 把 Frame 缩成小图存盘（磁盘上只留视觉凭证）。
-func platformSaveThumb(f *Frame, path string) bool {
-	img := rgbaToImage(f)
-	if img == 0 {
-		return false
-	}
-	return saveThumb(img, path)
+func platformSaveThumb(f *Frame, path string) (ok bool) {
+	withPool(func() {
+		img := rgbaToImage(f)
+		if img != 0 {
+			ok = saveThumb(img, path)
+		}
+	})
+	return
 }
 
-func platformSaveJPEG(f *Frame, path string, quality int) bool {
-	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
-	defer O(pool, "drain")
-	img := rgbaToImage(f)
-	if img == 0 {
-		return false
-	}
-	small := downscaleTo(img, screenshotMaxDimension)
-	if small != 0 && small != img {
-		defer cfRelease(small)
-	}
-	img = small
-	if img == 0 {
-		return false
-	}
-	if quality < 1 {
-		quality = 1
-	}
-	if quality > 100 {
-		quality = 100
-	}
-	data := writeJPEGData(img, float64(quality)/100)
-	return data != 0 && O(data, "writeToFile:atomically:", nsstr(path), 1) != 0
+func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
+	withPool(func() {
+		img := rgbaToImage(f)
+		if img == 0 {
+			return
+		}
+		small := downscaleTo(img, screenshotMaxDimension)
+		if small != 0 && small != img {
+			defer cfRelease(small)
+		}
+		img = small
+		if img == 0 {
+			return
+		}
+		if quality < 1 {
+			quality = 1
+		}
+		if quality > 100 {
+			quality = 100
+		}
+		data := writeJPEGData(img, float64(quality)/100)
+		ok = data != 0 && O(data, "writeToFile:atomically:", nsstr(path), 1) != 0
+	})
+	return
 }

@@ -8,7 +8,11 @@
  */
 package capture
 
-import "testing"
+import (
+	"runtime"
+	"sync"
+	"testing"
+)
 
 func TestNativeObservationsSmoke(t *testing.T) {
 	n := nativeObservations{}
@@ -19,4 +23,28 @@ func TestNativeObservationsSmoke(t *testing.T) {
 	if key < 0 || click < 0 || scroll < 0 || front.PID < 0 {
 		t.Fatal("系统观测值无效")
 	}
+}
+
+func TestPoolFrontLockedStress(t *testing.T) {
+	old := runtime.GOMAXPROCS(4)
+	defer runtime.GOMAXPROCS(old)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			n := nativeObservations{}
+			for j := 0; j < 3000; j++ {
+				n.Front()
+				runtime.Gosched()
+				n.Locked()
+				if j%32 == 0 {
+					b := make([]byte, 256*1024)
+					b[j%len(b)] = byte(j)
+					runtime.KeepAlive(b)
+				}
+			}
+		}()
+	}
+	wg.Wait()
 }

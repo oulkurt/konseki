@@ -15,6 +15,8 @@ macos.go: 连接 macOS 原生屏幕与文字识别能力。
 ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
 ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和诊断信息。
+pool_darwin.go: 将后台 Objective-C 调用绑定线程和自动释放池。
+pool_test.go: 检查自动释放池的创建边界。
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
 runner.go: 协调采集生命周期、异步抓帧与时间轴聚合；开放依赖注入供应用测试隔离系统接口。
 screen_darwin.go: 提供 macOS 平台采集适配。

@@ -56,21 +56,25 @@ func (nativeObservations) Intervals() (time.Duration, time.Duration, time.Durati
 }
 func (nativeObservations) Front() Front {
 	initPlatform()
-	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
-	defer O(pool, "drain")
-	app := O(O(cls("NSWorkspace"), "sharedWorkspace"), "frontmostApplication")
-	return Front{App: gostr(O(app, "localizedName")), Bundle: gostr(O(app, "bundleIdentifier")), PID: int(O(app, "processIdentifier"))}
+	var front Front
+	withPool(func() {
+		app := O(O(cls("NSWorkspace"), "sharedWorkspace"), "frontmostApplication")
+		front = Front{App: gostr(O(app, "localizedName")), Bundle: gostr(O(app, "bundleIdentifier")), PID: int(O(app, "processIdentifier"))}
+	})
+	return front
 }
 func (nativeObservations) Locked() bool {
 	initPlatform()
-	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
-	defer O(pool, "drain")
-	d := sessionDictionary()
-	if d == 0 {
-		return false
-	}
-	defer cfRelease(d)
-	return O(O(d, "objectForKey:", nsstr("CGSSessionScreenIsLocked")), "boolValue") != 0
+	var locked bool
+	withPool(func() {
+		d := sessionDictionary()
+		if d == 0 {
+			return
+		}
+		defer cfRelease(d)
+		locked = O(O(d, "objectForKey:", nsstr("CGSSessionScreenIsLocked")), "boolValue") != 0
+	})
+	return locked
 }
 func (nativeObservations) Accessibility() PermState {
 	initPlatform()
