@@ -29,8 +29,8 @@ import (
 //   - 授权后往往需要重启 App 才生效，旧进程的 CGDisplayCreateImage 仍返回黑图
 //   - App 名不需要权限，只有窗口标题和截屏需要
 var (
-	preflightScreen func() bool
-	requestScreen   func() bool
+	preflightScreen func() uint8
+	requestScreen   func() uint8
 )
 
 func initScreenPerm() {
@@ -59,33 +59,17 @@ func screenPermission(ask bool) string {
 	if preflightScreen == nil {
 		return "unknown"
 	}
-	if preflightScreen() {
+	if preflightScreen() != 0 {
 		return "granted"
 	}
 	if !ask {
 		return "denied"
 	}
 	// 只有用户还没明确拒绝时，这个调用才会真的弹框
-	if requestScreen != nil && requestScreen() {
+	if requestScreen != nil && requestScreen() != 0 {
 		return "granted"
 	}
 	return "denied"
-}
-
-// probeCapture 用「能不能截到非黑图」来判断权限是否真的生效。
-//
-// 这是必需的兜底：macOS 在「已授权但进程是授权前启动的」情况下，
-// preflight 会返回 true，但 CGDisplayCreateImage 拿到的仍是全黑图。
-// 只有实测一帧才能确认。
-func probeCapture() (ok bool, blank bool) {
-	img := grab()
-	if img == 0 {
-		return false, false
-	}
-	if isBlank(img) {
-		return false, true
-	}
-	return true, false
 }
 
 type darwinScreen struct{}
@@ -168,7 +152,7 @@ func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
 			quality = 100
 		}
 		data := writeJPEGData(img, float64(quality)/100)
-		ok = data != 0 && O(data, "writeToFile:atomically:", nsstr(path), 1) != 0
+		ok = data != 0 && objcBool(O(data, "writeToFile:atomically:", nsstr(path), 0))
 	})
 	return
 }

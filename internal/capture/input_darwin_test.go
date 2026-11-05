@@ -48,3 +48,14 @@ func TestPoolFrontLockedStress(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestNativeBoolAndAccessibilitySymbols(t *testing.T) {
+	var _ func(int32, uint32) float64 = eventSeconds
+	if objcBool(0x100) || !objcBool(0x101) {
+		t.Fatal("BOOL 只能读取低八位")
+	}
+	initPlatform()
+	if accessibilityWithOptions == nil || accessibilityPrompt == 0 {
+		t.Fatal("辅助功能请求符号缺失")
+	}
+}

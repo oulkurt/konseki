@@ -2,7 +2,7 @@
 
 /*
  * [INPUT]: 依赖非 macOS 平台的现有采集桩。
- * [OUTPUT]: 提供无输入观测与未知权限状态。
+ * [OUTPUT]: 提供无输入观测、未知权限及授权请求桩。
  * [POS]: 非 macOS 构建的采集观测适配层。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -19,3 +19,5 @@ func (nativeObservations) Front() Front             { return Front{} }
 func (nativeObservations) Locked() bool             { return false }
 func (nativeObservations) Accessibility() PermState { return PermUnknown }
 func RequestScreenPermission() PermState            { return newScreen().Permission(true) }
+
+func RequestAccessibility() PermState { return PermUnknown }

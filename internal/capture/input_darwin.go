@@ -2,7 +2,7 @@
 
 /*
  * [INPUT]: 依赖 CoreGraphics、NSWorkspace、窗口所有者与辅助功能权限。
- * [OUTPUT]: 提供输入间隔、前台应用、实时窗口所有者、锁屏和权限读取。
+ * [OUTPUT]: 提供系统观测、权限读取和辅助功能授权请求。
  * [POS]: macOS 只读观测边界，不注册输入监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,10 +15,12 @@ import (
 )
 
 var platformInit sync.Once
-var eventSeconds func(uint32, uint32) float64
+var eventSeconds func(int32, uint32) float64
 var sessionDictionary func() uintptr
 var cfRelease func(uintptr)
-var accessibilityTrusted func() bool
+var accessibilityTrusted func() uint8
+var accessibilityWithOptions func(uintptr) uint8
+var accessibilityPrompt uintptr
 
 func initPlatform() {
 	platformInit.Do(func() {
@@ -32,6 +34,8 @@ func initPlatform() {
 			mustReg(cf, "CFRelease", &cfRelease)
 			ax, _ := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_NOW)
 			mustReg(ax, "AXIsProcessTrusted", &accessibilityTrusted)
+			mustReg(ax, "AXIsProcessTrustedWithOptions", &accessibilityWithOptions)
+			accessibilityPrompt = nativeGlobal(ax, "kAXTrustedCheckOptionPrompt")
 		})
 	})
 }
@@ -87,13 +91,13 @@ func (nativeObservations) Locked() bool {
 			return
 		}
 		defer cfRelease(d)
-		locked = O(O(d, "objectForKey:", nsstr("CGSSessionScreenIsLocked")), "boolValue") != 0
+		locked = objcBool(O(O(d, "objectForKey:", nsstr("CGSSessionScreenIsLocked")), "boolValue"))
 	})
 	return locked
 }
 func (nativeObservations) Accessibility() PermState {
 	initPlatform()
-	if accessibilityTrusted() {
+	if accessibilityTrusted() != 0 {
 		return PermGranted
 	}
 	return PermDenied
@@ -103,8 +107,21 @@ func RequestScreenPermission() PermState {
 	if requestScreen == nil {
 		return PermUnknown
 	}
-	if requestScreen() {
+	if requestScreen() != 0 {
 		return PermGranted
 	}
 	return PermDenied
+}
+
+// RequestAccessibility 请求辅助功能权限，应由用户操作触发。
+func RequestAccessibility() (state PermState) {
+	initPlatform()
+	withPool(func() {
+		options := O(cls("NSDictionary"), "dictionaryWithObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), accessibilityPrompt)
+		state = PermDenied
+		if accessibilityWithOptions(options) != 0 {
+			state = PermGranted
+		}
+	})
+	return
 }

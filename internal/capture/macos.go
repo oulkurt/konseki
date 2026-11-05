@@ -113,6 +113,16 @@ func mustReg(lib uintptr, name string, fn any) {
 	purego.RegisterFunc(fn, sym)
 }
 
+func nativeGlobal(lib uintptr, name string) uintptr {
+	sym, err := purego.Dlsym(lib, name)
+	if err != nil {
+		panic(err)
+	}
+	return *(*uintptr)(unsafe.Pointer(sym))
+}
+
+func objcBool(v uintptr) bool { return uint8(v) != 0 }
+
 func cls(name string) uintptr { return uintptr(objc.GetClass(name)) }
 
 func mutableArray() uintptr {
@@ -298,7 +308,7 @@ func ocrImage(data uintptr, langs []string) (string, int, error) {
 		return "", 0, errors.New("Vision 识别初始化失败")
 	}
 	defer O(handler, "release")
-	if O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0) == 0 {
+	if !objcBool(O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0)) {
 		return "", 0, errors.New("Vision 识别失败")
 	}
 
