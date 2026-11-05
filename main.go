@@ -1,7 +1,7 @@
 /*
- * [INPUT]: 依赖采集、配置和摘要服务。
- * [OUTPUT]: 提供应用入口与后台摘要。
- * [POS]: 应用组合根。
+ * [INPUT]: 依赖采集、会话存储、配置和摘要服务。
+ * [OUTPUT]: 提供应用入口、刷新缓存与后台摘要。
+ * [POS]: 应用组合根。刷新后缓存小票供视图读取。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -38,16 +38,26 @@ type app struct {
 	llmc   *llm.Client
 
 	// ---- 界面与采集状态 ----
-	blocks      []capture.Block
-	status      capture.Status
-	doctor      string
-	showDiag    bool
-	lastLoad    time.Time
-	err         string
-	listState   ui.ListState
-	scrollState ui.ScrollState
-	expanded    map[string]bool
-	dayFilter   dayFilter
+	blocks            []capture.Block
+	status            capture.Status
+	doctor            string
+	showDiag          bool
+	lastLoad          time.Time
+	err               string
+	listState         ui.ListState
+	scrollState       ui.ScrollState
+	expanded          map[string]bool
+	dayFilter         string
+	now               func() time.Time
+	receipt           ReceiptDay
+	receiptStore      *capture.Store
+	receiptRevision   int
+	feedDay           string
+	feedRevision      int
+	feedStart         time.Time
+	feedDistance      float32
+	paperHandle       ui.Handle
+	receiptLineHandle ui.Handle
 
 	// ---- 供应商 ----
 	// 当前展开的是哪个供应商的配置面板，空表示都收起。
@@ -106,6 +116,31 @@ func (a *app) refresh() {
 	a.status = a.runner.Status()
 	a.loadDay()
 	a.loadSummaries()
+	if a.receiptStore == nil {
+		store, err := capture.NewStore(a.runner.Root())
+		if err != nil {
+			a.err = err.Error()
+		} else {
+			a.receiptStore = store
+		}
+	}
+	var sessions []capture.Session
+	if a.receiptStore != nil {
+		var err error
+		sessions, err = a.receiptStore.ReadSessions(a.dayKey())
+		if err != nil && !os.IsNotExist(err) {
+			a.err = err.Error()
+		}
+	}
+	day, err := time.ParseInLocation("2006-01-02", a.dayKey(), time.Local)
+	if err != nil {
+		day = time.Now()
+	}
+	next := buildReceiptWindow(day, a.sumEntries, a.blocks, sessions, time.Duration(a.cfgNow.Summary.WindowMinutes)*time.Minute)
+	if a.receipt.Day.Equal(next.Day) && len(next.Lines) > 0 && (len(a.receipt.Lines) == 0 || (next.Lines[0].ID != a.receipt.Lines[0].ID && next.Lines[0].Start.After(a.receipt.Lines[0].Start))) {
+		a.receiptRevision++
+	}
+	a.receipt = next
 }
 
 // loadDay 读回当天的时间块。
@@ -137,15 +172,19 @@ func (a *app) loadSummaries() {
 	a.sumEntries = ents
 }
 
-// dayKey 把 UI 上的筛选词换成日期。
+// dayKey 返回所选日期，空值表示今天。
 func (a *app) dayKey() string {
-	switch a.dayFilter {
-	case dayYesterday:
-		return time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	case dayLastSeven, dayToday:
-		return time.Now().Format("2006-01-02")
+	if a.dayFilter != "" {
+		return a.dayFilter
 	}
-	return time.Now().Format("2006-01-02")
+	return a.currentTime().Format("2006-01-02")
+}
+
+func (a *app) currentTime() time.Time {
+	if a.now != nil {
+		return a.now()
+	}
+	return time.Now()
 }
 
 // dayLabel 给摘要生成用：昨天生成昨天，其余都当今天。
@@ -259,7 +298,6 @@ func main() {
 	go func() { _, _ = runner.Storage().Prune(current.Recorder.RetentionDays, time.Now()) }()
 
 	mygo.App.WhenReady(func() {
-		warmOSAppIcons()
 		if current.Recorder.Enabled {
 			runner.Start()
 		}

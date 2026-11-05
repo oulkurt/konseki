@@ -1,7 +1,7 @@
 /*
- * [INPUT]: 依赖应用状态与 MyGo 界面组件。
- * [OUTPUT]: 提供窗口主体与导航。
- * [POS]: 连接设置页和时间轴。
+ * [INPUT]: 依赖应用状态、设置页与 MyGo 界面组件。
+ * [OUTPUT]: 提供窗口主体、分页与设置页滚动区。
+ * [POS]: 连接设置页和小票页。小票页独立固定打印机。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -13,10 +13,6 @@ import (
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 )
-
-func (a *app) activeSlots() []TimelineSlot {
-	return buildSlotsFromBlocks(a.blocks)
-}
 
 func (a *app) view(c *ui.Context) {
 	a.refresh()
@@ -32,6 +28,10 @@ func (a *app) view(c *ui.Context) {
 
 	bar := c.TitleBar()
 	topInset := max(float32(16), bar.Height+6)
+	if a.tab == 0 {
+		a.renderTimelinePage(c, pal, topInset)
+		return
+	}
 
 	ui.Box(c).Fill().Children(func() {
 		// 主滚动容器：包含 Capture、Summaries 与 History 三大模块
@@ -110,8 +110,6 @@ func (a *app) view(c *ui.Context) {
 					a.renderTabs(c, pal)
 
 					switch a.tab {
-					case 0:
-						a.renderHistorySection(c, pal)
 					case 1:
 						a.startCredentialScan()
 						a.renderCaptureSection(c, pal)

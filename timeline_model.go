@@ -96,7 +96,11 @@ func buildReceiptWindow(day time.Time, sums []summary.Entry, blocks []capture.Bl
 			for _, s := range sums {
 				if s.Start.Before(we) && s.End.After(ws) {
 					covered = true
-					break
+					for i := range result.Lines {
+						if result.Lines[i].ID == s.ID {
+							result.Lines[i].Apps = appendUnique(result.Lines[i].Apps, b.App)
+						}
+					}
 				}
 			}
 			if !covered {

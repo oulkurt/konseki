@@ -166,5 +166,3 @@ func renderSelectPill(c *ui.Context, key, label string, minW float32, textColor 
 		ui.Icon(c, chevronsUpDownSVG).FontSize(12.5).TextColor(pal.textSecondary)
 	})
 }
-
-// renderTimelineSlot 绘制单条时间轴节点：左侧时间 + 连续刻度尺，右侧可展开卡片。

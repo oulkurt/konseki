@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖测试应用、固定的一天采集数据与摘要、固定的本机凭据和 MyGo 离屏渲染器。
- * [OUTPUT]: 提供三种界面状态在中英文、深浅色下的截图，以及逐字节确定性验证。
+ * [OUTPUT]: 提供四种界面状态在中英文、深浅色下的截图，以及逐字节确定性验证。
  * [POS]: 根模块的视觉回归基线。拆文件等不改界面的重构用它逐字节比对，所以夹具要走到尽量多的渲染路径。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -21,7 +21,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-var shotStates = []string{"timeline-empty", "timeline-day", "settings"}
+var shotStates = []string{"timeline-empty", "timeline-day", "timeline-past", "settings"}
 
 // shotCredentials 顶替本机凭据扫描。设置页渲染时会读钥匙串和 ~/.claude、~/.codex，
 // 截图不能随开发机的登录状态和令牌到期时间变化，测试也不该把真实令牌读进进程。
@@ -49,31 +49,29 @@ func shotDay(t *testing.T, a *app) {
 			Summary: "逐项核对 Alma 的采集参数和清除流程。", Apps: []string{"微信", "Alma"}, Topics: []string{"Alma"}},
 		{ID: "2026-11-04-1300", Day: "2026-11-04", Start: at(13, 0), End: at(14, 0), Headline: "起草小票时间轴的出纸动画",
 			Summary: "写了出纸口和送纸动画，长标题的换行还没看过。", Apps: []string{"Editor"},
-			Topics: []string{"MyGo", "动画"}, Open: []string{"长标题换行观感未验证"}},
+			Topics: []string{"MyGo", "动画"}, Open: []string{"长标题换行观感未验证"}, Decisions: []string{"使用悬挂式小票"}, Files: []string{"receipt.go"}},
 	}
-	// 时间轴会把同一个 10 分钟窗里的块并成一行。展开这一行，截图才覆盖多应用和展开详情。
-	expanded := false
-	for _, s := range buildSlotsFromBlocks(a.blocks) {
-		if len(s.Apps) > 1 {
-			a.expanded[s.ID] = true
-			expanded = true
-		}
-	}
-	if !expanded {
-		t.Fatal("夹具里没有多应用的时间段，截图覆盖不到展开详情")
-	}
+	a.dayFilter = "2026-11-04"
+	a.receipt = buildReceipt(at(0, 0), a.sumEntries, a.blocks, nil)
+	a.expanded["2026-11-04-1300"] = true
 }
 
 func shot(t *testing.T, state, lang string, dark bool) []byte {
 	t.Helper()
 	a, cleanup := newTestApp(t)
 	defer cleanup()
+	a.now = func() time.Time { return time.Date(2026, 11, 5, 16, 0, 0, 0, time.Local) }
 	scanTestCredentials(t, a, shotCredentials)
 	height := 1000
 	switch state {
 	case "timeline-day":
 		shotDay(t, a)
 		height = 2400
+	case "timeline-past":
+		shotDay(t, a)
+		a.blocks = nil
+		a.receipt = buildReceipt(time.Date(2026, 11, 4, 0, 0, 0, 0, time.Local), a.sumEntries, nil, nil)
+		height = 1800
 	case "settings":
 		// 设置页带上一天的数据，摘要列表才会出现；再配一家供应商，供应商卡片和编辑区才会出现。
 		shotDay(t, a)
@@ -97,6 +95,7 @@ func shot(t *testing.T, state, lang string, dark bool) []byte {
 			t.Fatal("供应商编辑区没有展开，截图覆盖不到它")
 		}
 	}
+	tt.Advance(time.Second)
 	tt.Frame()
 	var b bytes.Buffer
 	if err := png.Encode(&b, tt.Image()); err != nil {

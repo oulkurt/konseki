@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用存储和 mygo 测试器。
- * [OUTPUT]: 验证应用视图与时间轴聚合。
+ * [OUTPUT]: 验证应用视图、录制控制与采集聚合。
  * [POS]: 应用层无窗口测试及共享测试构造器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -77,8 +77,8 @@ func TestViewBuilds(t *testing.T) {
 	if !tt.HasText("痕跡") {
 		t.Errorf("标题没画出来，texts=%q", tt.Texts())
 	}
-	if !tt.HasText("开始记录") {
-		t.Errorf("未启动时应该有「开始记录」按钮，texts=%q", tt.Texts())
+	if !tt.HasText("已关闭") {
+		t.Errorf("未启动时应该显示关闭状态，texts=%q", tt.Texts())
 	}
 }
 
@@ -147,34 +147,17 @@ func TestAggregate(t *testing.T) {
 	})
 }
 
-func TestFmtDur(t *testing.T) {
-	cases := []struct {
-		in   time.Duration
-		want string
-	}{
-		{30 * time.Second, "<1m"},
-		{5 * time.Minute, "5m"},
-		{90 * time.Minute, "1h30m"},
-		{2 * time.Hour, "2h0m"},
-	}
-	for _, c := range cases {
-		if got := fmtDur(c.in); got != c.want {
-			t.Errorf("fmtDur(%v) = %q，期望 %q", c.in, got, c.want)
-		}
-	}
-}
-
 func TestRecorderControlsPersist(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	tt := ui.NewTester(a.view, 760, 1400)
-	if err := tt.Click("开始记录"); err != nil {
+	if err := tt.Click("已关闭"); err != nil {
 		t.Fatal(err)
 	}
 	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase == capture.PhaseOff {
 		t.Fatal("顶栏未启动采集")
 	}
-	if err := tt.Click("暂停"); err != nil {
+	if err := tt.Click("记录中"); err != nil {
 		t.Fatal(err)
 	}
 	if a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseOff {

@@ -230,198 +230,368 @@ func (msgs Messages) TabsLanguage() string {
 	return Catalog.Format(msgs.locale, "tabsLanguage", nil)
 }
 
-// TimelineHistory says "历史记录"
+// ReceiptToday says "今天"
 // in the language the app shows.
 //
-// 时间轴卡片标题
-func TimelineHistory() string { return In(i18n.Locale()).TimelineHistory() }
+// 小票：receiptToday
+func ReceiptToday() string { return In(i18n.Locale()).ReceiptToday() }
 
-// TimelineHistory says "历史记录"
+// ReceiptToday says "今天"
 // in the language of msgs.
 //
-// 时间轴卡片标题
-func (msgs Messages) TimelineHistory() string {
-	return Catalog.Format(msgs.locale, "timelineHistory", nil)
+// 小票：receiptToday
+func (msgs Messages) ReceiptToday() string {
+	return Catalog.Format(msgs.locale, "receiptToday", nil)
 }
 
-// TimelineToday says "今天"
+// ReceiptYesterday says "昨天"
 // in the language the app shows.
 //
-// 今天的日期筛选
-func TimelineToday() string { return In(i18n.Locale()).TimelineToday() }
+// 小票：receiptYesterday
+func ReceiptYesterday() string { return In(i18n.Locale()).ReceiptYesterday() }
 
-// TimelineToday says "今天"
+// ReceiptYesterday says "昨天"
 // in the language of msgs.
 //
-// 今天的日期筛选
-func (msgs Messages) TimelineToday() string {
-	return Catalog.Format(msgs.locale, "timelineToday", nil)
+// 小票：receiptYesterday
+func (msgs Messages) ReceiptYesterday() string {
+	return Catalog.Format(msgs.locale, "receiptYesterday", nil)
 }
 
-// TimelineYesterday says "昨天"
+// ReceiptOff says "已关闭"
 // in the language the app shows.
 //
-// 昨天的日期筛选
-func TimelineYesterday() string { return In(i18n.Locale()).TimelineYesterday() }
+// 小票：receiptOff
+func ReceiptOff() string { return In(i18n.Locale()).ReceiptOff() }
 
-// TimelineYesterday says "昨天"
+// ReceiptOff says "已关闭"
 // in the language of msgs.
 //
-// 昨天的日期筛选
-func (msgs Messages) TimelineYesterday() string {
-	return Catalog.Format(msgs.locale, "timelineYesterday", nil)
+// 小票：receiptOff
+func (msgs Messages) ReceiptOff() string {
+	return Catalog.Format(msgs.locale, "receiptOff", nil)
 }
 
-// TimelineLastSevenDays says "最近 7 天"
+// ReceiptPaused says "已暂停"
 // in the language the app shows.
 //
-// 最近七天的日期筛选
-func TimelineLastSevenDays() string { return In(i18n.Locale()).TimelineLastSevenDays() }
+// 小票：receiptPaused
+func ReceiptPaused() string { return In(i18n.Locale()).ReceiptPaused() }
 
-// TimelineLastSevenDays says "最近 7 天"
+// ReceiptPaused says "已暂停"
 // in the language of msgs.
 //
-// 最近七天的日期筛选
-func (msgs Messages) TimelineLastSevenDays() string {
-	return Catalog.Format(msgs.locale, "timelineLastSevenDays", nil)
+// 小票：receiptPaused
+func (msgs Messages) ReceiptPaused() string {
+	return Catalog.Format(msgs.locale, "receiptPaused", nil)
 }
 
-// TimelineExpandAll says "展开全部"
+// ReceiptActive says "记录中"
 // in the language the app shows.
 //
-// 展开全部时间段
-func TimelineExpandAll() string { return In(i18n.Locale()).TimelineExpandAll() }
+// 小票：receiptActive
+func ReceiptActive() string { return In(i18n.Locale()).ReceiptActive() }
 
-// TimelineExpandAll says "展开全部"
+// ReceiptActive says "记录中"
 // in the language of msgs.
 //
-// 展开全部时间段
-func (msgs Messages) TimelineExpandAll() string {
-	return Catalog.Format(msgs.locale, "timelineExpandAll", nil)
+// 小票：receiptActive
+func (msgs Messages) ReceiptActive() string {
+	return Catalog.Format(msgs.locale, "receiptActive", nil)
 }
 
-// TimelineCollapseAll says "收起全部"
+// ReceiptWaiting says "等待中"
 // in the language the app shows.
 //
-// 收起全部时间段
-func TimelineCollapseAll() string { return In(i18n.Locale()).TimelineCollapseAll() }
+// 小票：receiptWaiting
+func ReceiptWaiting() string { return In(i18n.Locale()).ReceiptWaiting() }
 
-// TimelineCollapseAll says "收起全部"
+// ReceiptWaiting says "等待中"
 // in the language of msgs.
 //
-// 收起全部时间段
-func (msgs Messages) TimelineCollapseAll() string {
-	return Catalog.Format(msgs.locale, "timelineCollapseAll", nil)
+// 小票：receiptWaiting
+func (msgs Messages) ReceiptWaiting() string {
+	return Catalog.Format(msgs.locale, "receiptWaiting", nil)
 }
 
-// TimelineDiagnostic says "诊断"
+// ReceiptBlocked says "已拦截"
 // in the language the app shows.
 //
-// 诊断按钮名称
-func TimelineDiagnostic() string { return In(i18n.Locale()).TimelineDiagnostic() }
+// 小票：receiptBlocked
+func ReceiptBlocked() string { return In(i18n.Locale()).ReceiptBlocked() }
 
-// TimelineDiagnostic says "诊断"
+// ReceiptBlocked says "已拦截"
 // in the language of msgs.
 //
-// 诊断按钮名称
-func (msgs Messages) TimelineDiagnostic() string {
-	return Catalog.Format(msgs.locale, "timelineDiagnostic", nil)
+// 小票：receiptBlocked
+func (msgs Messages) ReceiptBlocked() string {
+	return Catalog.Format(msgs.locale, "receiptBlocked", nil)
 }
 
-// TimelineDiagnosticTooltip says "权限与采集诊断"
+// ReceiptEmptyToday says "今天还没有记录"
 // in the language the app shows.
 //
-// 诊断按钮提示
-func TimelineDiagnosticTooltip() string { return In(i18n.Locale()).TimelineDiagnosticTooltip() }
+// 小票：receiptEmptyToday
+func ReceiptEmptyToday() string { return In(i18n.Locale()).ReceiptEmptyToday() }
 
-// TimelineDiagnosticTooltip says "权限与采集诊断"
+// ReceiptEmptyToday says "今天还没有记录"
 // in the language of msgs.
 //
-// 诊断按钮提示
-func (msgs Messages) TimelineDiagnosticTooltip() string {
-	return Catalog.Format(msgs.locale, "timelineDiagnosticTooltip", nil)
+// 小票：receiptEmptyToday
+func (msgs Messages) ReceiptEmptyToday() string {
+	return Catalog.Format(msgs.locale, "receiptEmptyToday", nil)
 }
 
-// TimelineMore says "更多选项"
+// ReceiptEmptyPast says "这天没有记录"
 // in the language the app shows.
 //
-// 时间轴菜单按钮名称
-func TimelineMore() string { return In(i18n.Locale()).TimelineMore() }
+// 小票：receiptEmptyPast
+func ReceiptEmptyPast() string { return In(i18n.Locale()).ReceiptEmptyPast() }
 
-// TimelineMore says "更多选项"
+// ReceiptEmptyPast says "这天没有记录"
 // in the language of msgs.
 //
-// 时间轴菜单按钮名称
-func (msgs Messages) TimelineMore() string {
-	return Catalog.Format(msgs.locale, "timelineMore", nil)
+// 小票：receiptEmptyPast
+func (msgs Messages) ReceiptEmptyPast() string {
+	return Catalog.Format(msgs.locale, "receiptEmptyPast", nil)
 }
 
-// TimelineDiagnosticMenu says "权限与环境诊断"
+// ReceiptPending says "未摘要"
 // in the language the app shows.
 //
-// 诊断菜单项
-func TimelineDiagnosticMenu() string { return In(i18n.Locale()).TimelineDiagnosticMenu() }
+// 小票：receiptPending
+func ReceiptPending() string { return In(i18n.Locale()).ReceiptPending() }
 
-// TimelineDiagnosticMenu says "权限与环境诊断"
+// ReceiptPending says "未摘要"
 // in the language of msgs.
 //
-// 诊断菜单项
-func (msgs Messages) TimelineDiagnosticMenu() string {
-	return Catalog.Format(msgs.locale, "timelineDiagnosticMenu", nil)
+// 小票：receiptPending
+func (msgs Messages) ReceiptPending() string {
+	return Catalog.Format(msgs.locale, "receiptPending", nil)
 }
 
-// TimelineDiagnosticTitle says "采集与权限诊断"
+// ReceiptUntil says "截至 {time} 累计"
 // in the language the app shows.
 //
-// 诊断面板标题
-func TimelineDiagnosticTitle() string { return In(i18n.Locale()).TimelineDiagnosticTitle() }
+// 小票：receiptUntil
+func ReceiptUntil(time_ string) string { return In(i18n.Locale()).ReceiptUntil(time_) }
 
-// TimelineDiagnosticTitle says "采集与权限诊断"
+// ReceiptUntil says "截至 {time} 累计"
 // in the language of msgs.
 //
-// 诊断面板标题
-func (msgs Messages) TimelineDiagnosticTitle() string {
-	return Catalog.Format(msgs.locale, "timelineDiagnosticTitle", nil)
+// 小票：receiptUntil
+func (msgs Messages) ReceiptUntil(time_ string) string {
+	return Catalog.Format(msgs.locale, "receiptUntil", map[string]any{"time": time_})
 }
 
-// TimelineClose says "关闭"
+// ReceiptSegments says "{count} 段"
 // in the language the app shows.
 //
-// 关闭诊断面板
-func TimelineClose() string { return In(i18n.Locale()).TimelineClose() }
+// 小票：receiptSegments
+func ReceiptSegments(count string) string { return In(i18n.Locale()).ReceiptSegments(count) }
 
-// TimelineClose says "关闭"
+// ReceiptSegments says "{count} 段"
 // in the language of msgs.
 //
-// 关闭诊断面板
-func (msgs Messages) TimelineClose() string {
-	return Catalog.Format(msgs.locale, "timelineClose", nil)
+// 小票：receiptSegments
+func (msgs Messages) ReceiptSegments(count string) string {
+	return Catalog.Format(msgs.locale, "receiptSegments", map[string]any{"count": count})
 }
 
-// TimelineEmptyTitle says "今天还没有记录"
+// ReceiptHoursMinutes says "{hours}小时{minutes}分"
 // in the language the app shows.
 //
-// 空时间轴标题
-func TimelineEmptyTitle() string { return In(i18n.Locale()).TimelineEmptyTitle() }
-
-// TimelineEmptyTitle says "今天还没有记录"
-// in the language of msgs.
-//
-// 空时间轴标题
-func (msgs Messages) TimelineEmptyTitle() string {
-	return Catalog.Format(msgs.locale, "timelineEmptyTitle", nil)
+// 小票：receiptHoursMinutes
+func ReceiptHoursMinutes(hours string, minutes string) string {
+	return In(i18n.Locale()).ReceiptHoursMinutes(hours, minutes)
 }
 
-// TimelineEmptyBody says "点「开始记录」，它会在本机留痕，不上传任何数据"
-// in the language the app shows.
-//
-// 空时间轴说明
-func TimelineEmptyBody() string { return In(i18n.Locale()).TimelineEmptyBody() }
-
-// TimelineEmptyBody says "点「开始记录」，它会在本机留痕，不上传任何数据"
+// ReceiptHoursMinutes says "{hours}小时{minutes}分"
 // in the language of msgs.
 //
-// 空时间轴说明
-func (msgs Messages) TimelineEmptyBody() string {
-	return Catalog.Format(msgs.locale, "timelineEmptyBody", nil)
+// 小票：receiptHoursMinutes
+func (msgs Messages) ReceiptHoursMinutes(hours string, minutes string) string {
+	return Catalog.Format(msgs.locale, "receiptHoursMinutes", map[string]any{"hours": hours, "minutes": minutes})
+}
+
+// ReceiptMinutes says "{minutes}分"
+// in the language the app shows.
+//
+// 小票：receiptMinutes
+func ReceiptMinutes(minutes string) string { return In(i18n.Locale()).ReceiptMinutes(minutes) }
+
+// ReceiptMinutes says "{minutes}分"
+// in the language of msgs.
+//
+// 小票：receiptMinutes
+func (msgs Messages) ReceiptMinutes(minutes string) string {
+	return Catalog.Format(msgs.locale, "receiptMinutes", map[string]any{"minutes": minutes})
+}
+
+// ReceiptTotal says "合计"
+// in the language the app shows.
+//
+// 小票：receiptTotal
+func ReceiptTotal() string { return In(i18n.Locale()).ReceiptTotal() }
+
+// ReceiptTotal says "合计"
+// in the language of msgs.
+//
+// 小票：receiptTotal
+func (msgs Messages) ReceiptTotal() string {
+	return Catalog.Format(msgs.locale, "receiptTotal", nil)
+}
+
+// ReceiptSessions says "会话"
+// in the language the app shows.
+//
+// 小票：receiptSessions
+func ReceiptSessions() string { return In(i18n.Locale()).ReceiptSessions() }
+
+// ReceiptSessions says "会话"
+// in the language of msgs.
+//
+// 小票：receiptSessions
+func (msgs Messages) ReceiptSessions() string {
+	return Catalog.Format(msgs.locale, "receiptSessions", nil)
+}
+
+// ReceiptSnapshots says "快照"
+// in the language the app shows.
+//
+// 小票：receiptSnapshots
+func ReceiptSnapshots() string { return In(i18n.Locale()).ReceiptSnapshots() }
+
+// ReceiptSnapshots says "快照"
+// in the language of msgs.
+//
+// 小票：receiptSnapshots
+func (msgs Messages) ReceiptSnapshots() string {
+	return Catalog.Format(msgs.locale, "receiptSnapshots", nil)
+}
+
+// ReceiptTopApps says "常用应用"
+// in the language the app shows.
+//
+// 小票：receiptTopApps
+func ReceiptTopApps() string { return In(i18n.Locale()).ReceiptTopApps() }
+
+// ReceiptTopApps says "常用应用"
+// in the language of msgs.
+//
+// 小票：receiptTopApps
+func (msgs Messages) ReceiptTopApps() string {
+	return Catalog.Format(msgs.locale, "receiptTopApps", nil)
+}
+
+// ReceiptOpen says "未结清"
+// in the language the app shows.
+//
+// 小票：receiptOpen
+func ReceiptOpen() string { return In(i18n.Locale()).ReceiptOpen() }
+
+// ReceiptOpen says "未结清"
+// in the language of msgs.
+//
+// 小票：receiptOpen
+func (msgs Messages) ReceiptOpen() string {
+	return Catalog.Format(msgs.locale, "receiptOpen", nil)
+}
+
+// ReceiptThanks says "谢谢惠顾 · 数据只在本机"
+// in the language the app shows.
+//
+// 小票：receiptThanks
+func ReceiptThanks() string { return In(i18n.Locale()).ReceiptThanks() }
+
+// ReceiptThanks says "谢谢惠顾 · 数据只在本机"
+// in the language of msgs.
+//
+// 小票：receiptThanks
+func (msgs Messages) ReceiptThanks() string {
+	return Catalog.Format(msgs.locale, "receiptThanks", nil)
+}
+
+// ReceiptDetailOpen says "+ 未完成"
+// in the language the app shows.
+//
+// 小票：receiptDetailOpen
+func ReceiptDetailOpen() string { return In(i18n.Locale()).ReceiptDetailOpen() }
+
+// ReceiptDetailOpen says "+ 未完成"
+// in the language of msgs.
+//
+// 小票：receiptDetailOpen
+func (msgs Messages) ReceiptDetailOpen() string {
+	return Catalog.Format(msgs.locale, "receiptDetailOpen", nil)
+}
+
+// ReceiptDetailDecision says "+ 决定"
+// in the language the app shows.
+//
+// 小票：receiptDetailDecision
+func ReceiptDetailDecision() string { return In(i18n.Locale()).ReceiptDetailDecision() }
+
+// ReceiptDetailDecision says "+ 决定"
+// in the language of msgs.
+//
+// 小票：receiptDetailDecision
+func (msgs Messages) ReceiptDetailDecision() string {
+	return Catalog.Format(msgs.locale, "receiptDetailDecision", nil)
+}
+
+// ReceiptDetailTopic says "+ 主题"
+// in the language the app shows.
+//
+// 小票：receiptDetailTopic
+func ReceiptDetailTopic() string { return In(i18n.Locale()).ReceiptDetailTopic() }
+
+// ReceiptDetailTopic says "+ 主题"
+// in the language of msgs.
+//
+// 小票：receiptDetailTopic
+func (msgs Messages) ReceiptDetailTopic() string {
+	return Catalog.Format(msgs.locale, "receiptDetailTopic", nil)
+}
+
+// ReceiptDetailFile says "+ 文件"
+// in the language the app shows.
+//
+// 小票：receiptDetailFile
+func ReceiptDetailFile() string { return In(i18n.Locale()).ReceiptDetailFile() }
+
+// ReceiptDetailFile says "+ 文件"
+// in the language of msgs.
+//
+// 小票：receiptDetailFile
+func (msgs Messages) ReceiptDetailFile() string {
+	return Catalog.Format(msgs.locale, "receiptDetailFile", nil)
+}
+
+// ReceiptDetailPeriod says "+ 时段"
+// in the language the app shows.
+//
+// 小票：receiptDetailPeriod
+func ReceiptDetailPeriod() string { return In(i18n.Locale()).ReceiptDetailPeriod() }
+
+// ReceiptDetailPeriod says "+ 时段"
+// in the language of msgs.
+//
+// 小票：receiptDetailPeriod
+func (msgs Messages) ReceiptDetailPeriod() string {
+	return Catalog.Format(msgs.locale, "receiptDetailPeriod", nil)
+}
+
+// ReceiptSerial says "单号 {serial}"
+// in the language the app shows.
+//
+// 小票：receiptSerial
+func ReceiptSerial(serial string) string { return In(i18n.Locale()).ReceiptSerial(serial) }
+
+// ReceiptSerial says "单号 {serial}"
+// in the language of msgs.
+//
+// 小票：receiptSerial
+func (msgs Messages) ReceiptSerial(serial string) string {
+	return Catalog.Format(msgs.locale, "receiptSerial", map[string]any{"serial": serial})
 }

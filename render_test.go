@@ -30,9 +30,12 @@ func TestTimelineRenders(t *testing.T) {
 		{Start: base.Add(11 * time.Minute), End: base.Add(11*time.Minute + 20*time.Second),
 			App: "Dia", Titles: []string{"Base: konseki - Google Search"}, Samples: 1},
 	}
+	a.dayFilter = base.Format("2006-01-02")
+	a.receipt = buildReceiptWindow(base, nil, a.blocks, nil, 10*time.Minute)
 	a.lastLoad = time.Now() // 阻止 refresh 覆盖注入的数据
 
 	tt := ui.NewTester(a.view, 680, 900)
+	tt.Advance(time.Second)
 
 	// 时间轴应该画出 App 名和时间
 	for _, want := range []string{"Konseki", "Dia", "14:29", "14:40"} {

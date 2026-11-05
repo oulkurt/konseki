@@ -56,60 +56,108 @@
   "@tabsLanguage": {
     "description": "语言切换设置标题"
   },
-  "timelineHistory": "历史记录",
-  "@timelineHistory": {
-    "description": "时间轴卡片标题"
+  "receiptToday": "今天",
+  "@receiptToday": {
+    "description": "小票：receiptToday"
   },
-  "timelineToday": "今天",
-  "@timelineToday": {
-    "description": "今天的日期筛选"
+  "receiptYesterday": "昨天",
+  "@receiptYesterday": {
+    "description": "小票：receiptYesterday"
   },
-  "timelineYesterday": "昨天",
-  "@timelineYesterday": {
-    "description": "昨天的日期筛选"
+  "receiptOff": "已关闭",
+  "@receiptOff": {
+    "description": "小票：receiptOff"
   },
-  "timelineLastSevenDays": "最近 7 天",
-  "@timelineLastSevenDays": {
-    "description": "最近七天的日期筛选"
+  "receiptPaused": "已暂停",
+  "@receiptPaused": {
+    "description": "小票：receiptPaused"
   },
-  "timelineExpandAll": "展开全部",
-  "@timelineExpandAll": {
-    "description": "展开全部时间段"
+  "receiptActive": "记录中",
+  "@receiptActive": {
+    "description": "小票：receiptActive"
   },
-  "timelineCollapseAll": "收起全部",
-  "@timelineCollapseAll": {
-    "description": "收起全部时间段"
+  "receiptWaiting": "等待中",
+  "@receiptWaiting": {
+    "description": "小票：receiptWaiting"
   },
-  "timelineDiagnostic": "诊断",
-  "@timelineDiagnostic": {
-    "description": "诊断按钮名称"
+  "receiptBlocked": "已拦截",
+  "@receiptBlocked": {
+    "description": "小票：receiptBlocked"
   },
-  "timelineDiagnosticTooltip": "权限与采集诊断",
-  "@timelineDiagnosticTooltip": {
-    "description": "诊断按钮提示"
+  "receiptEmptyToday": "今天还没有记录",
+  "@receiptEmptyToday": {
+    "description": "小票：receiptEmptyToday"
   },
-  "timelineMore": "更多选项",
-  "@timelineMore": {
-    "description": "时间轴菜单按钮名称"
+  "receiptEmptyPast": "这天没有记录",
+  "@receiptEmptyPast": {
+    "description": "小票：receiptEmptyPast"
   },
-  "timelineDiagnosticMenu": "权限与环境诊断",
-  "@timelineDiagnosticMenu": {
-    "description": "诊断菜单项"
+  "receiptPending": "未摘要",
+  "@receiptPending": {
+    "description": "小票：receiptPending"
   },
-  "timelineDiagnosticTitle": "采集与权限诊断",
-  "@timelineDiagnosticTitle": {
-    "description": "诊断面板标题"
+  "receiptUntil": "截至 {time} 累计",
+  "@receiptUntil": {
+    "description": "小票：receiptUntil"
   },
-  "timelineClose": "关闭",
-  "@timelineClose": {
-    "description": "关闭诊断面板"
+  "receiptSegments": "{count} 段",
+  "@receiptSegments": {
+    "description": "小票：receiptSegments"
   },
-  "timelineEmptyTitle": "今天还没有记录",
-  "@timelineEmptyTitle": {
-    "description": "空时间轴标题"
+  "receiptHoursMinutes": "{hours}小时{minutes}分",
+  "@receiptHoursMinutes": {
+    "description": "小票：receiptHoursMinutes"
   },
-  "timelineEmptyBody": "点「开始记录」，它会在本机留痕，不上传任何数据",
-  "@timelineEmptyBody": {
-    "description": "空时间轴说明"
+  "receiptMinutes": "{minutes}分",
+  "@receiptMinutes": {
+    "description": "小票：receiptMinutes"
+  },
+  "receiptTotal": "合计",
+  "@receiptTotal": {
+    "description": "小票：receiptTotal"
+  },
+  "receiptSessions": "会话",
+  "@receiptSessions": {
+    "description": "小票：receiptSessions"
+  },
+  "receiptSnapshots": "快照",
+  "@receiptSnapshots": {
+    "description": "小票：receiptSnapshots"
+  },
+  "receiptTopApps": "常用应用",
+  "@receiptTopApps": {
+    "description": "小票：receiptTopApps"
+  },
+  "receiptOpen": "未结清",
+  "@receiptOpen": {
+    "description": "小票：receiptOpen"
+  },
+  "receiptThanks": "谢谢惠顾 · 数据只在本机",
+  "@receiptThanks": {
+    "description": "小票：receiptThanks"
+  },
+  "receiptDetailOpen": "+ 未完成",
+  "@receiptDetailOpen": {
+    "description": "小票：receiptDetailOpen"
+  },
+  "receiptDetailDecision": "+ 决定",
+  "@receiptDetailDecision": {
+    "description": "小票：receiptDetailDecision"
+  },
+  "receiptDetailTopic": "+ 主题",
+  "@receiptDetailTopic": {
+    "description": "小票：receiptDetailTopic"
+  },
+  "receiptDetailFile": "+ 文件",
+  "@receiptDetailFile": {
+    "description": "小票：receiptDetailFile"
+  },
+  "receiptDetailPeriod": "+ 时段",
+  "@receiptDetailPeriod": {
+    "description": "小票：receiptDetailPeriod"
+  },
+  "receiptSerial": "单号 {serial}",
+  "@receiptSerial": {
+    "description": "小票：receiptSerial"
   }
 }
