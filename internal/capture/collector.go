@@ -86,6 +86,21 @@ func (systemClock) Ticks() (<-chan time.Time, func()) {
 	return t.C, t.Stop
 }
 
+// 可选计时接口保持现有 Clock 实现兼容，并让维护调度可控。
+type maintenanceClock interface {
+	Timer(time.Duration) (<-chan time.Time, func())
+	Ticker(time.Duration) (<-chan time.Time, func())
+}
+
+func (systemClock) Timer(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTimer(d)
+	return t.C, func() { t.Stop() }
+}
+func (systemClock) Ticker(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(d)
+	return t.C, t.Stop
+}
+
 const (
 	ScreenPermissionSettingsURL        = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
 	AccessibilityPermissionSettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"

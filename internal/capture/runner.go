@@ -50,32 +50,31 @@ type dependencies struct {
 	maintenanceOps *maintenanceOps
 }
 type Runner struct {
-	mu             sync.Mutex
-	lifecycle      sync.Mutex
-	cfg            Settings
-	configured     bool
-	st             *Store
-	storage        *Storage
-	deps           dependencies
-	running        bool
-	stop           chan struct{}
-	done           chan struct{}
-	pausedUntil    time.Time
-	machine        Machine
-	session        *Session
-	front          Front
-	lastShot       time.Time
-	lastErr        error
-	perms          Perms
-	baseline       *fingerprint
-	generation     uint64
-	flightSession  string
-	closed         map[string]closedSession
-	lastPath       string
-	blankFrames    int
-	queue          *ocrQueue
-	enforce        chan struct{}
-	enforcePending bool
+	mu            sync.Mutex
+	lifecycle     sync.Mutex
+	cfg           Settings
+	configured    bool
+	st            *Store
+	storage       *Storage
+	deps          dependencies
+	running       bool
+	stop          chan struct{}
+	done          chan struct{}
+	pausedUntil   time.Time
+	machine       Machine
+	session       *Session
+	front         Front
+	lastShot      time.Time
+	lastErr       error
+	perms         Perms
+	baseline      *fingerprint
+	generation    uint64
+	flightSession string
+	closed        map[string]closedSession
+	lastPath      string
+	blankFrames   int
+	queue         *ocrQueue
+	enforce       chan struct{}
 }
 
 func New(cfg Settings) (*Runner, error) {
@@ -127,9 +126,11 @@ func (r *Runner) applyStoragePolicy(storage *Storage, prune, enforce bool) {
 	}
 }
 func (r *Runner) requestEnforce() {
-	if r.enforce != nil && !r.enforcePending {
-		r.enforcePending = true
-		r.enforce <- struct{}{}
+	if r.enforce != nil {
+		select {
+		case r.enforce <- struct{}{}:
+		default:
+		}
 	}
 }
 func (r *Runner) Storage() *Storage     { r.mu.Lock(); defer r.mu.Unlock(); return r.storage }
@@ -199,7 +200,6 @@ func (r *Runner) start() {
 	r.stop = make(chan struct{})
 	r.done = make(chan struct{})
 	r.enforce = make(chan struct{}, 1)
-	r.enforcePending = false
 	r.machine = Machine{Phase: PhaseWaiting}
 	r.closed = make(map[string]closedSession)
 	r.queue = newOCRQueue(r.deps.ocr, 30*time.Second, r.setError)
@@ -311,6 +311,7 @@ type captureJob struct {
 	generation uint64
 	storage    *Storage
 	quality    int
+	ocr        OCRSettings
 	probe      bool
 }
 type captureResult struct {
@@ -552,7 +553,7 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 			if r.session != nil {
 				session = r.session.ID
 			}
-			job := captureJob{trigger: a.Trigger, at: now, front: front, session: session, store: r.st, baseline: r.baseline, generation: r.generation, storage: r.storage, quality: r.cfg.JPEGQuality, probe: a.Kind == ActionProbe}
+			job := captureJob{trigger: a.Trigger, at: now, front: front, session: session, store: r.st, baseline: r.baseline, generation: r.generation, storage: r.storage, quality: r.cfg.JPEGQuality, ocr: r.cfg.OCR, probe: a.Kind == ActionProbe}
 			*inFlight = true
 			r.flightSession = session
 			go func() { results <- r.grab(job) }()
@@ -665,7 +666,7 @@ func (r *Runner) persist(res captureResult) error {
 		}
 	}
 	if !res.duplicate {
-		r.queue.submit(job.session, r.cfg.OCR, ocrTask{frame: res.frame, id: id, day: job.at.In(time.Local).Format("2006-01-02"), store: job.store})
+		r.queue.submit(job.session, job.ocr, ocrTask{frame: res.frame, id: id, day: job.at.In(time.Local).Format("2006-01-02"), store: job.store})
 	}
 	return nil
 }

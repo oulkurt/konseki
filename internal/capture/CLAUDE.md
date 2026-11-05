@@ -9,7 +9,8 @@ input_darwin_test.go: 冒烟验证 macOS 只读系统观测。
 input_darwin.go: 读取输入间隔、工作区前台、实时窗口所有者和锁屏状态。
 input_other.go: 为其他平台提供观测桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
-maintenance.go: 在后台调度用量对账、保留和容量清理。
+maintenance.go: 用可注入时钟调度对账、保留、降级和容量清理。
+maintenance_test.go: 验证维护周期、退出与容量请求合并。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。
 macos.go: 连接 macOS 原生屏幕与文字识别能力。
@@ -20,6 +21,7 @@ ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和诊断信息。
 pool_darwin.go: 将后台 Objective-C 调用绑定线程和自动释放池。
 pool_test.go: 检查自动释放池的创建边界。
+runner_behavior_test.go: 验证采集停止、超额触发和 OCR 抽样。
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
 runner.go: 协调采集生命周期、异步抓帧与时间轴聚合；开放依赖注入供应用测试隔离系统接口。
 screen_darwin.go: 提供 macOS 平台采集适配。

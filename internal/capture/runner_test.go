@@ -16,17 +16,54 @@ import (
 )
 
 type fakeClock struct {
-	mu    sync.Mutex
-	now   time.Time
-	ticks chan time.Time
+	mu     sync.Mutex
+	now    time.Time
+	ticks  chan time.Time
+	alarms []*fakeAlarm
 }
 
 func (c *fakeClock) Now() time.Time                    { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
 func (c *fakeClock) Ticks() (<-chan time.Time, func()) { return c.ticks, func() {} }
+
+type fakeAlarm struct {
+	next    time.Time
+	period  time.Duration
+	ch      chan time.Time
+	stopped bool
+}
+
+func (c *fakeClock) schedule(d time.Duration, repeat bool) (<-chan time.Time, func()) {
+	c.mu.Lock()
+	a := &fakeAlarm{next: c.now.Add(d), ch: make(chan time.Time, 1)}
+	if repeat {
+		a.period = d
+	}
+	c.alarms = append(c.alarms, a)
+	c.mu.Unlock()
+	return a.ch, func() { c.mu.Lock(); a.stopped = true; c.mu.Unlock() }
+}
+func (c *fakeClock) Timer(d time.Duration) (<-chan time.Time, func())  { return c.schedule(d, false) }
+func (c *fakeClock) Ticker(d time.Duration) (<-chan time.Time, func()) { return c.schedule(d, true) }
 func (c *fakeClock) advance(d time.Duration) {
 	c.mu.Lock()
 	c.now = c.now.Add(d)
 	now := c.now
+	for _, a := range c.alarms {
+		if a.stopped || now.Before(a.next) {
+			continue
+		}
+		select {
+		case a.ch <- a.next:
+		default:
+		}
+		if a.period == 0 {
+			a.stopped = true
+		} else {
+			for !a.next.After(now) {
+				a.next = a.next.Add(a.period)
+			}
+		}
+	}
 	c.mu.Unlock()
 	c.ticks <- now
 }

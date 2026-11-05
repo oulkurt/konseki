@@ -40,15 +40,19 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			return false
 		}
 	}
-	initial := time.NewTimer(time.Minute)
-	defer initial.Stop()
-	var five, half, six *time.Ticker
+	clock, ok := r.deps.clock.(maintenanceClock)
+	if !ok {
+		clock = systemClock{}
+	}
+	initial, stopInitial := clock.Timer(time.Minute)
+	defer stopInitial()
 	var fiveC, halfC, sixC <-chan time.Time
+	var stopFive, stopHalf, stopSix func()
 	defer func() {
-		if five != nil {
-			five.Stop()
-			half.Stop()
-			six.Stop()
+		if stopFive != nil {
+			stopFive()
+			stopHalf()
+			stopSix()
 		}
 	}()
 	settings := func() (*Storage, Settings) { r.mu.Lock(); defer r.mu.Unlock(); return r.storage, r.cfg }
@@ -56,33 +60,32 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 		select {
 		case <-stop:
 			return
-		case <-initial.C:
+		case <-initial:
 			st, cfg := settings()
 			r.setError(ops.rescan(st))
 			if stopped() {
 				return
 			}
-			_, err := ops.prune(st, cfg.RetentionDays, time.Now())
+			_, err := ops.prune(st, cfg.RetentionDays, r.deps.clock.Now())
 			r.setError(err)
 			if stopped() {
 				return
 			}
-			_, err = ops.degrade(st, time.Now())
+			_, err = ops.degrade(st, r.deps.clock.Now())
 			r.setError(err)
 			if stopped() {
 				return
 			}
 			r.setError(enforceLimit(st, cfg))
-			five = time.NewTicker(5 * time.Minute)
-			half = time.NewTicker(30 * time.Minute)
-			six = time.NewTicker(6 * time.Hour)
-			fiveC, halfC, sixC = five.C, half.C, six.C
+			fiveC, stopFive = clock.Ticker(5 * time.Minute)
+			halfC, stopHalf = clock.Ticker(30 * time.Minute)
+			sixC, stopSix = clock.Ticker(6 * time.Hour)
 		case <-fiveC:
 			st, cfg := settings()
 			r.setError(enforceLimit(st, cfg))
 		case <-halfC:
 			st, _ := settings()
-			_, err := ops.degrade(st, time.Now())
+			_, err := ops.degrade(st, r.deps.clock.Now())
 			r.setError(err)
 			if stopped() {
 				return
@@ -90,14 +93,11 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			r.setError(ops.rescan(st))
 		case <-sixC:
 			st, cfg := settings()
-			_, err := ops.prune(st, cfg.RetentionDays, time.Now())
+			_, err := ops.prune(st, cfg.RetentionDays, r.deps.clock.Now())
 			r.setError(err)
 		case <-enforce:
 			st, cfg := settings()
 			r.setError(enforceLimit(st, cfg))
-			r.mu.Lock()
-			r.enforcePending = false
-			r.mu.Unlock()
 		}
 	}
 }
