@@ -102,5 +102,3 @@ func (a *app) setThinking(level string) {
 		a.rebuildGenerator()
 	}
 }
-
-// renderCaptureSection 绘制 Capture 设置分组（两张圆角卡片）

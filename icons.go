@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖MyGo 图标、系统应用图标和同步原语。
+ * [OUTPUT]: 提供内置图标与系统图标缓存。
+ * [POS]: 界面图标来源。后台填充缓存并保护并发访问。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package main
 
 import (

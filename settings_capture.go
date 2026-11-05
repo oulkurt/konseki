@@ -66,5 +66,3 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 		})
 	})
 }
-
-// renderHistorySection 绘制 History 时间轴卡片
