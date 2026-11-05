@@ -52,11 +52,16 @@ func pattern(w, h int) *image.RGBA {
 func TestNativeBlank(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{0, 0, 0, 255}}, image.Point{}, draw.Src)
-	if !isBlank(nativeFrame(t, img).native) {
+	black := nativeFrame(t, img)
+	var blank bool
+	withPool(func() { blank = isBlank(black.native) })
+	if !blank {
 		t.Fatal("黑帧未识别")
 	}
 	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{80, 100, 120, 255}}, image.Point{}, draw.Src)
-	if isBlank(nativeFrame(t, img).native) {
+	colored := nativeFrame(t, img)
+	withPool(func() { blank = isBlank(colored.native) })
+	if blank {
 		t.Fatal("有内容的帧被判空白")
 	}
 }
@@ -139,7 +144,7 @@ func BenchmarkNativePipeline(b *testing.B) {
 	f := nativeFrame(b, pattern(5120, 2880))
 	b.Run("Blank", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			isBlank(f.native)
+			withPool(func() { isBlank(f.native) })
 		}
 	})
 	b.Run("Fingerprint", func(b *testing.B) {

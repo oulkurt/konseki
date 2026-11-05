@@ -180,6 +180,7 @@ func nativePixels(f *Frame) []byte {
 	if f == nil || f.native == 0 {
 		return nil
 	}
-	pix, _ := bitmap(f.native, dedupWidth, dedupHeight, false)
+	var pix []byte
+	withPool(func() { pix, _ = bitmap(f.native, dedupWidth, dedupHeight, false) })
 	return pix
 }

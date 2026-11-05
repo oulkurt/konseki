@@ -192,12 +192,7 @@ type cgRect struct{ X, Y, W, H float64 }
 
 // 截屏 CGImage 的底层数据可为 BGRA，不能假定通道顺序。
 // 此处由 CoreGraphics 绘入明确的 RGBA 目标，指纹只读取目标字节。
-func bitmap(img uintptr, w, h int, createImage bool) (pix []byte, scaled uintptr) {
-	withPool(func() { pix, scaled = bitmapInPool(img, w, h, createImage) })
-	return
-}
-
-func bitmapInPool(img uintptr, w, h int, createImage bool) ([]byte, uintptr) {
+func bitmap(img uintptr, w, h int, createImage bool) ([]byte, uintptr) {
 	if img == 0 || w <= 0 || h <= 0 {
 		return nil, 0
 	}
