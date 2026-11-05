@@ -30,7 +30,7 @@ func TestOCRQueueDropOldestAndTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine := &blockingOCR{started: make(chan struct{}, 1), release: make(chan struct{})}
-	q := newOCRQueue(engine, 30*time.Millisecond)
+	q := newOCRQueue(engine, 30*time.Millisecond, nil)
 	defer q.close()
 	task := func(id string) ocrTask { return ocrTask{id: id, day: "2026-01-01", store: st, frame: &Frame{}} }
 	cfg := OCRSettings{Enabled: true, EveryN: 1}

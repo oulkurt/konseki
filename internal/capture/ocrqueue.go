@@ -27,10 +27,11 @@ type ocrQueue struct {
 	done    chan struct{}
 	engine  OCREngine
 	timeout time.Duration
+	onError func(error)
 }
 
-func newOCRQueue(engine OCREngine, timeout time.Duration) *ocrQueue {
-	q := &ocrQueue{counts: map[string]int{}, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), engine: engine, timeout: timeout}
+func newOCRQueue(engine OCREngine, timeout time.Duration, onError func(error)) *ocrQueue {
+	q := &ocrQueue{counts: map[string]int{}, wake: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{}), engine: engine, timeout: timeout, onError: onError}
 	go q.run()
 	return q
 }
@@ -117,7 +118,9 @@ func (q *ocrQueue) recognize(task ocrTask) {
 		return
 	}
 	result.Ms = int(time.Since(start).Milliseconds())
-	_ = task.store.AppendOCR(task.day, result)
+	if err := task.store.AppendOCR(task.day, result); err != nil && q.onError != nil {
+		q.onError(err)
+	}
 	if result.Status == "timeout" {
 		select {
 		case <-ch:

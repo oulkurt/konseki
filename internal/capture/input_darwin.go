@@ -79,4 +79,13 @@ func (nativeObservations) Accessibility() PermState {
 	}
 	return PermDenied
 }
-func RequestScreenPermission() PermState { initPlatform(); return darwinScreen{}.Permission(true) }
+func RequestScreenPermission() PermState {
+	initPlatform()
+	if requestScreen == nil {
+		return PermUnknown
+	}
+	if requestScreen() {
+		return PermGranted
+	}
+	return PermDenied
+}

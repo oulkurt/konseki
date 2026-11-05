@@ -13,6 +13,7 @@ package capture
 // 这条路已经实测跑通，细节和踩的坑见 docs/findings.md。
 
 import (
+	"errors"
 	"time"
 
 	"github.com/ebitengine/purego"
@@ -95,6 +96,8 @@ func newScreen() Screen {
 }
 
 func (darwinScreen) FrontWindow() (string, string, int) {
+	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
+	defer O(pool, "drain")
 	return frontWindow()
 }
 
@@ -110,10 +113,13 @@ func (darwinScreen) Permission(ask bool) PermState {
 }
 
 func (darwinScreen) Grab() *Frame {
+	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
+	defer O(pool, "drain")
 	img := grab()
 	if img == 0 {
 		return nil
 	}
+	defer cfRelease(img)
 	f := &Frame{W: int(cgGetW(img)), H: int(cgGetH(img))}
 	f.Blank = isBlank(img)
 	if !f.Blank {
@@ -127,12 +133,13 @@ type darwinOCR struct{}
 func newOCR() OCREngine { return darwinOCR{} }
 
 func (darwinOCR) Recognize(f *Frame, languages []string) (string, int, error) {
+	pool := O(O(cls("NSAutoreleasePool"), "alloc"), "init")
+	defer O(pool, "drain")
 	img := rgbaToImage(f)
 	if img == 0 {
-		return "", 0, nil
+		return "", 0, errors.New("OCR 图像无效")
 	}
-	text, n := ocrImage(img, languages)
-	return text, n, nil
+	return ocrImage(img, languages)
 }
 
 var _ = time.Now
@@ -153,7 +160,11 @@ func platformSaveJPEG(f *Frame, path string, quality int) bool {
 	if img == 0 {
 		return false
 	}
-	img = downscaleTo(img, screenshotMaxDimension)
+	small := downscaleTo(img, screenshotMaxDimension)
+	if small != 0 && small != img {
+		defer cfRelease(small)
+	}
+	img = small
 	if img == 0 {
 		return false
 	}

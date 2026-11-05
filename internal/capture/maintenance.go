@@ -12,12 +12,15 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 	defer close(done)
 	initial := time.NewTimer(time.Minute)
 	defer initial.Stop()
-	five := time.NewTicker(5 * time.Minute)
-	defer five.Stop()
-	half := time.NewTicker(30 * time.Minute)
-	defer half.Stop()
-	six := time.NewTicker(6 * time.Hour)
-	defer six.Stop()
+	var five, half, six *time.Ticker
+	var fiveC, halfC, sixC <-chan time.Time
+	defer func() {
+		if five != nil {
+			five.Stop()
+			half.Stop()
+			six.Stop()
+		}
+	}()
 	settings := func() (*Storage, Settings) { r.mu.Lock(); defer r.mu.Unlock(); return r.storage, r.cfg }
 	for {
 		select {
@@ -25,23 +28,37 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			return
 		case <-initial.C:
 			st, cfg := settings()
-			_ = st.Rescan()
-			_, _ = st.Prune(cfg.RetentionDays, time.Now())
-			_, _ = st.Degrade(time.Now())
-			_, _ = st.Enforce(cfg.MaxStorage)
-		case <-five.C:
+			r.setError(st.Rescan())
+			_, err := st.Prune(cfg.RetentionDays, time.Now())
+			r.setError(err)
+			_, err = st.Degrade(time.Now())
+			r.setError(err)
+			_, err = st.Enforce(cfg.MaxStorage)
+			r.setError(err)
+			five = time.NewTicker(5 * time.Minute)
+			half = time.NewTicker(30 * time.Minute)
+			six = time.NewTicker(6 * time.Hour)
+			fiveC, halfC, sixC = five.C, half.C, six.C
+		case <-fiveC:
 			st, cfg := settings()
-			_, _ = st.Enforce(cfg.MaxStorage)
-		case <-half.C:
+			_, err := st.Enforce(cfg.MaxStorage)
+			r.setError(err)
+		case <-halfC:
 			st, _ := settings()
-			_, _ = st.Degrade(time.Now())
-			_ = st.Rescan()
-		case <-six.C:
+			_, err := st.Degrade(time.Now())
+			r.setError(err)
+			r.setError(st.Rescan())
+		case <-sixC:
 			st, cfg := settings()
-			_, _ = st.Prune(cfg.RetentionDays, time.Now())
+			_, err := st.Prune(cfg.RetentionDays, time.Now())
+			r.setError(err)
 		case <-enforce:
 			st, cfg := settings()
-			_, _ = st.Enforce(cfg.MaxStorage)
+			_, err := st.Enforce(cfg.MaxStorage)
+			r.setError(err)
+			r.mu.Lock()
+			r.enforcePending = false
+			r.mu.Unlock()
 		}
 	}
 }

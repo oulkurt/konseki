@@ -9,6 +9,7 @@
 package capture
 
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -24,10 +25,11 @@ const (
 )
 
 var (
-	msgSend  uintptr
-	imgFn    func(disp uint32) uintptr
-	dispFn   func() uint32
-	cgListFn func(opt, rel, winid uint32) uintptr
+	msgSend       uintptr
+	msgSendDouble func(uintptr, uintptr, float64) uintptr
+	imgFn         func(disp uint32) uintptr
+	dispFn        func() uint32
+	cgListFn      func(opt, rel, winid uint32) uintptr
 
 	cgGetW func(img uintptr) int
 	cgGetH func(img uintptr) int
@@ -55,6 +57,7 @@ func initRuntime() {
 	if err != nil {
 		panic(err)
 	}
+	purego.RegisterFunc(&msgSendDouble, msgSend)
 	for _, fw := range []string{
 		"/System/Library/Frameworks/Foundation.framework/Foundation",
 		"/System/Library/Frameworks/AppKit.framework/AppKit",
@@ -163,6 +166,7 @@ func frontWindow() (app, title string, pid int) {
 	if arr == 0 {
 		return
 	}
+	defer cfRelease(arr)
 	n := O(arr, "count")
 	for i := uintptr(0); i < n; i++ {
 		d := O(arr, "objectAtIndex:", i)
@@ -186,10 +190,10 @@ func grab() uintptr { return imgFn(dispFn()) }
 // 磁盘上只留 1200px 的缩略图当视觉参考。
 // 于是「识别准」和「占空间小」不再互相牺牲——
 // 实测缩到 1400px 再 OCR，中文界面会糊成 "'•¥s.JJ •.'# *\""。
-func ocrImage(img uintptr, languages []string) (string, int) {
+func ocrImage(img uintptr, languages []string) (string, int, error) {
 	data := writeJPEGData(img, 0.92)
 	if data == 0 {
-		return "", 0
+		return "", 0, errors.New("OCR 图像编码失败")
 	}
 	return ocrData(data, languages)
 }
@@ -211,6 +215,9 @@ func isBlank(img uintptr) bool {
 	if small == 0 || cfDataLen == nil {
 		return false
 	}
+	if small != img {
+		defer cfRelease(small)
+	}
 	prov := cgDataProvider(small)
 	if prov == 0 {
 		return false
@@ -219,6 +226,7 @@ func isBlank(img uintptr) bool {
 	if data == 0 {
 		return false
 	}
+	defer cfRelease(data)
 	n := cfDataLen(data)
 	if n < 16 {
 		return false
@@ -299,11 +307,10 @@ func writeJPEGData(img uintptr, quality float64) uintptr {
 	if dest == 0 {
 		return 0
 	}
-	var q [1]float64
-	q[0] = quality
-	num := O(cls("NSNumber"), "numberWithDouble:", *(*uintptr)(unsafe.Pointer(&q[0])))
+	num := msgSendDouble(cls("NSNumber"), uintptr(objc.SEL(objc.RegisterName("numberWithDouble:"))), quality)
 	props := O(cls("NSDictionary"), "dictionaryWithObject:forKey:",
 		num, nsstr("kCGImageDestinationLossyCompressionQuality"))
+	defer cfRelease(dest)
 	destAdd(dest, img, props)
 	if destFin(dest) == 0 {
 		return 0
@@ -328,6 +335,7 @@ func downscaleTo(img uintptr, targetW int) uintptr {
 	if src == 0 {
 		return 0
 	}
+	defer cfRelease(src)
 	opts := O(cls("NSMutableDictionary"), "dictionary")
 	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithInt:", uintptr(targetW)), nsstr("kCGImageSourceThumbnailMaxPixelSize"))
 	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), nsstr("kCGImageSourceCreateThumbnailFromImageAlways"))
@@ -352,6 +360,7 @@ func downscale(img uintptr) uintptr {
 	if src == 0 {
 		return 0
 	}
+	defer cfRelease(src)
 	opts := O(cls("NSMutableDictionary"), "dictionary")
 	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithInt:", thumbWidth), nsstr("kCGImageSourceThumbnailMaxPixelSize"))
 	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), nsstr("kCGImageSourceCreateThumbnailFromImageAlways"))
@@ -360,11 +369,12 @@ func downscale(img uintptr) uintptr {
 }
 
 // ocrData 用 Vision 框架识别文字。accurate 模式，中英日都能认。
-func ocrData(data uintptr, langs []string) (string, int) {
+func ocrData(data uintptr, langs []string) (string, int, error) {
 	if data == 0 {
-		return "", 0
+		return "", 0, errors.New("Vision 识别初始化失败")
 	}
 	req := O(O(cls("VNRecognizeTextRequest"), "alloc"), "init")
+	defer O(req, "release")
 	O(req, "setRecognitionLevel:", 0) // accurate
 	O(req, "setUsesLanguageCorrection:", 1)
 	// 显式指定语言：不指定时 Vision 对中英混排的识别会明显退化
@@ -378,9 +388,12 @@ func ocrData(data uintptr, langs []string) (string, int) {
 
 	handler := O(O(cls("VNImageRequestHandler"), "alloc"), "initWithData:options:", data, 0)
 	if handler == 0 {
-		return "", 0
+		return "", 0, errors.New("Vision 识别初始化失败")
 	}
-	O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0)
+	defer O(handler, "release")
+	if O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0) == 0 {
+		return "", 0, errors.New("Vision 识别失败")
+	}
 
 	results := O(req, "results")
 	n := O(results, "count")
@@ -394,7 +407,7 @@ func ocrData(data uintptr, langs []string) (string, int) {
 		out = append(out, gostr(O(O(cands, "objectAtIndex:", 0), "string"))...)
 		out = append(out, '\n')
 	}
-	return string(out), int(n)
+	return string(out), int(n), nil
 }
 
 // ---------- Frame 与 CGImage 的互转 ----------
@@ -417,6 +430,7 @@ func imageToRGBA(img uintptr) []byte {
 	if data == 0 {
 		return nil
 	}
+	defer cfRelease(data)
 	n := cfDataLen(data)
 	ptr := cfDataBytePtr(data)
 	if ptr == 0 || n < 16 {
@@ -469,6 +483,7 @@ func rgbaToImage(f *Frame) uintptr {
 	if rep == 0 {
 		return 0
 	}
+	O(rep, "autorelease")
 	dst := O(rep, "bitmapData")
 	if dst == 0 {
 		return 0

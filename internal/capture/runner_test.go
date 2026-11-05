@@ -134,3 +134,61 @@ func TestRunnerScript(t *testing.T) {
 	}
 
 }
+
+func TestRunnerHeartbeatDuplicate(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Idle: time.Minute, Heartbeat: time.Second, Debounce: time.Millisecond, JPEGQuality: 75}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	day := c.Now().Format("2006-01-02")
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 1 })
+	c.advance(time.Second)
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 2 })
+	rows, err := r.Snapshots(day)
+	if err != nil || !rows[1].Dup || rows[1].Shot != rows[0].Shot || rows[1].Trigger != TriggerHeartbeat || rows[1].Bytes != 0 {
+		t.Fatal(rows, err)
+	}
+}
+func TestRunnerRootChangesNextSession(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	rootA := t.TempDir()
+	rootB := t.TempDir()
+	cfg := Settings{Root: rootA, Idle: time.Second, Heartbeat: time.Hour, TypingPause: time.Second, JPEGQuality: 75}
+	r, err := newRunner(cfg, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Session != nil })
+	cfg.Root = rootB
+	cfg.Idle = 10 * time.Second
+	r.Apply(cfg)
+	if r.Root() != rootA {
+		t.Fatal(r.Root())
+	}
+	c.advance(2 * time.Second)
+	eventually(t, func() bool { return r.Status().Session == nil })
+	sys.mu.Lock()
+	sys.scroll = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Root() == rootB && r.Status().Session != nil })
+	c.advance(2 * time.Second)
+	eventually(t, func() bool { return r.Status().Session != nil })
+}

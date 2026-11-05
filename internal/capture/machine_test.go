@@ -271,3 +271,32 @@ func TestMachineIdleAppliesNextSession(t *testing.T) {
 		t.Fatal(a)
 	}
 }
+
+func TestMachineAllTriggerPriorities(t *testing.T) {
+	order := []Trigger{TriggerAppFocus, TriggerClick, TriggerTypingPause, TriggerVisual, TriggerHeartbeat}
+	for i, want := range order {
+		t.Run(string(want), func(t *testing.T) {
+			m := Machine{}
+			for j := len(order) - 1; j >= i; j-- {
+				m.queue(order[j])
+			}
+			if m.pending != want {
+				t.Fatal(m.pending, want)
+			}
+		})
+	}
+}
+func TestMachineIdleWhileBlocked(t *testing.T) {
+	x := newMachineScenario()
+	x.s.Idle = time.Second
+	x.scroll = x.o.Now.Add(250 * time.Millisecond)
+	x.step(250 * time.Millisecond)
+	x.s.SensitiveApps = []string{"secret"}
+	x.o.Front.Bundle = "secret"
+	x.step(250 * time.Millisecond)
+	a := x.step(time.Second)
+	requireAction(t, a, ActionCloseSession, "")
+	if x.m.Phase != PhaseBlocked || x.m.Block != BlockSensitiveApp {
+		t.Fatal(x.m)
+	}
+}

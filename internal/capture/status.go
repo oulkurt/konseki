@@ -48,4 +48,5 @@ type Status struct {
 	Perms       Perms
 	LastShot    time.Time
 	LastErr     error
+	OCRDropped  int
 }

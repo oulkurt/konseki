@@ -28,28 +28,29 @@ type dependencies struct {
 	save   func(*Frame, string, int) bool
 }
 type Runner struct {
-	mu            sync.Mutex
-	lifecycle     sync.Mutex
-	cfg           Settings
-	st            *Store
-	storage       *Storage
-	deps          dependencies
-	running       bool
-	stop          chan struct{}
-	done          chan struct{}
-	pausedUntil   time.Time
-	machine       Machine
-	session       *Session
-	front         Front
-	lastShot      time.Time
-	lastErr       error
-	baseline      *fingerprint
-	generation    uint64
-	flightSession string
-	closed        map[string]closedSession
-	lastPath      string
-	queue         *ocrQueue
-	enforce       chan struct{}
+	mu             sync.Mutex
+	lifecycle      sync.Mutex
+	cfg            Settings
+	st             *Store
+	storage        *Storage
+	deps           dependencies
+	running        bool
+	stop           chan struct{}
+	done           chan struct{}
+	pausedUntil    time.Time
+	machine        Machine
+	session        *Session
+	front          Front
+	lastShot       time.Time
+	lastErr        error
+	baseline       *fingerprint
+	generation     uint64
+	flightSession  string
+	closed         map[string]closedSession
+	lastPath       string
+	queue          *ocrQueue
+	enforce        chan struct{}
+	enforcePending bool
 }
 
 func New(cfg Settings) (*Runner, error) {
@@ -73,13 +74,13 @@ func (r *Runner) Apply(s Settings) {
 	s.OCR.Languages = append([]string(nil), s.OCR.Languages...)
 	r.mu.Lock()
 	r.cfg = s
-	enforce := r.enforce
+	r.requestEnforce()
 	r.mu.Unlock()
-	if enforce != nil {
-		select {
-		case enforce <- struct{}{}:
-		default:
-		}
+}
+func (r *Runner) requestEnforce() {
+	if r.enforce != nil && !r.enforcePending {
+		r.enforcePending = true
+		r.enforce <- struct{}{}
 	}
 }
 func (r *Runner) Storage() *Storage     { r.mu.Lock(); defer r.mu.Unlock(); return r.storage }
@@ -102,7 +103,13 @@ func (r *Runner) Status() Status {
 		v.Apps = append([]string(nil), v.Apps...)
 		session = &v
 	}
-	return Status{Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: r.front, Session: session, Usage: r.storage.Usage(), Perms: Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}, LastShot: r.lastShot, LastErr: r.lastErr}
+	dropped := 0
+	if r.queue != nil {
+		r.queue.mu.Lock()
+		dropped = r.queue.dropped
+		r.queue.mu.Unlock()
+	}
+	return Status{OCRDropped: dropped, Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: r.front, Session: session, Usage: r.storage.Usage(), Perms: Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}, LastShot: r.lastShot, LastErr: r.lastErr}
 }
 func (r *Runner) RecentSessions(n int) []Session {
 	if n <= 0 {
@@ -143,9 +150,10 @@ func (r *Runner) start() {
 	r.stop = make(chan struct{})
 	r.done = make(chan struct{})
 	r.enforce = make(chan struct{}, 1)
+	r.enforcePending = false
 	r.machine = Machine{Phase: PhaseWaiting}
 	r.closed = make(map[string]closedSession)
-	r.queue = newOCRQueue(r.deps.ocr, 30*time.Second)
+	r.queue = newOCRQueue(r.deps.ocr, 30*time.Second, r.setError)
 	stop, done, enforce := r.stop, r.done, r.enforce
 	st, storage := r.st, r.storage
 	r.mu.Unlock()
@@ -231,19 +239,36 @@ type captureResult struct {
 	frame       *Frame
 	fingerprint *fingerprint
 	duplicate   bool
+	title       string
 	tmp         string
 	err         error
 }
 
 func (r *Runner) grab(job captureJob) captureResult {
 	result := captureResult{job: job}
+	validFront := func() bool {
+		f := r.deps.front.Front()
+		return !r.deps.lock.Locked() && f.Bundle == job.front.Bundle && f.PID == job.front.PID
+	}
+	if !validFront() {
+		return result
+	}
 	f := r.deps.screen.Grab()
+	if !validFront() {
+		return result
+	}
 	if f == nil {
 		result.err = errors.New("抓取屏幕失败")
 		return result
 	}
 	if f.Blank {
 		return result
+	}
+	if !job.probe {
+		_, result.title, _ = r.deps.screen.FrontWindow()
+		if !validFront() {
+			return captureResult{job: job}
+		}
 	}
 	fp := fingerprintFrame(f)
 	if fp == nil {
@@ -306,7 +331,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 		if res.err != nil {
 			r.lastErr = res.err
 		}
-		if res.frame != nil && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
+		if res.frame != nil && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && !sensitiveFront(front, r.cfg.SensitiveApps) && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
 			if !res.duplicate || res.job.trigger == TriggerHeartbeat {
 				if err := r.persist(res); err != nil {
 					r.lastErr = err
@@ -407,6 +432,11 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 	}
 }
 func (r *Runner) writeSession(c closedSession) {
+	if r.queue != nil {
+		r.queue.mu.Lock()
+		delete(r.queue.counts, c.session.ID)
+		r.queue.mu.Unlock()
+	}
 	if err := c.store.AppendSession(*c.session); err != nil {
 		r.lastErr = err
 	} else {
@@ -454,9 +484,11 @@ func (r *Runner) persist(res captureResult) error {
 	} else if path == "" {
 		return nil
 	}
-	_, title, _ := r.deps.screen.FrontWindow()
-	snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, ImgKB: int(size / 1024)}
+	snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: res.title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, ImgKB: int(size / 1024)}
 	if err := job.store.Append(snap); err != nil {
+		if !res.duplicate {
+			_ = os.Remove(job.store.ShotFile(id))
+		}
 		return err
 	}
 	if !res.duplicate {
@@ -464,10 +496,7 @@ func (r *Runner) persist(res captureResult) error {
 		r.lastPath = path
 		job.storage.Account(size)
 		if r.cfg.MaxStorage > 0 && job.storage.Usage().Bytes > r.cfg.MaxStorage {
-			select {
-			case r.enforce <- struct{}{}:
-			default:
-			}
+			r.requestEnforce()
 		}
 	}
 	r.lastShot = job.at

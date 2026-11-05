@@ -115,6 +115,7 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		m.Phase = PhaseOff
 		m.Block = BlockNone
 		m.pending = ""
+		m.typing = false
 		return actions
 	}
 	slept := !m.lastTick.IsZero() && now.Sub(m.lastTick) > 5*time.Second
@@ -133,9 +134,9 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 	if !m.initialized {
 		m.initialized = true
 		m.front = o.Front.Bundle
-		m.lastKey = now.Add(-o.SinceKey)
-		m.lastClick = now.Add(-o.SinceClick)
-		m.lastScroll = now.Add(-o.SinceScroll)
+		m.lastKey = eventTime(now, o.SinceKey)
+		m.lastClick = eventTime(now, o.SinceClick)
+		m.lastScroll = eventTime(now, o.SinceScroll)
 		m.lastSaved = now
 		m.lastProbe = now
 	}
@@ -160,32 +161,38 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		m.front = o.Front.Bundle
 		add(ActionResetBaseline, "", "")
 	}
+	if m.active && m.idle > 0 && now.Sub(m.lastInput) > m.idle {
+		closeSession(EndIdle)
+	}
 	if o.Locked {
 		m.Phase = PhaseBlocked
 		m.Block = BlockScreenLocked
 		m.pending = ""
+		m.typing = false
 		return actions
 	}
 	if !o.PausedUntil.IsZero() && now.Before(o.PausedUntil) {
 		m.Phase = PhasePaused
 		m.Block = BlockNone
 		m.pending = ""
+		m.typing = false
 		return actions
 	}
 	if o.ScreenPermission == PermDenied {
 		m.Phase = PhaseBlocked
 		m.Block = BlockNoScreenPermission
 		m.pending = ""
+		m.typing = false
 		return actions
 	}
-	for _, app := range s.SensitiveApps {
-		if o.Front.Bundle != "" && strings.EqualFold(strings.TrimSpace(app), o.Front.Bundle) {
-			m.Phase = PhaseBlocked
-			m.Block = BlockSensitiveApp
-			m.pending = ""
-			return actions
-		}
+	if sensitiveFront(o.Front, s.SensitiveApps) {
+		m.Phase = PhaseBlocked
+		m.Block = BlockSensitiveApp
+		m.pending = ""
+		m.typing = false
+		return actions
 	}
+
 	input := newKey || newClick || newScroll || focus
 	if input {
 		m.lastInput = now
@@ -195,9 +202,6 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 			m.idle = s.Idle
 			add(ActionOpenSession, "", "")
 		}
-	}
-	if m.active && m.idle > 0 && now.Sub(m.lastInput) > m.idle {
-		closeSession(EndIdle)
 	}
 	if focus {
 		m.queue(TriggerAppFocus)
@@ -233,6 +237,9 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 	return actions
 }
 func eventTime(now time.Time, d time.Duration) time.Time {
+	if d >= 365*24*time.Hour {
+		return time.Time{}
+	}
 	if d < 0 {
 		return now
 	}
@@ -257,4 +264,13 @@ func (m *Machine) queue(t Trigger) {
 	if rank(t) > rank(m.pending) {
 		m.pending = t
 	}
+}
+
+func sensitiveFront(front Front, apps []string) bool {
+	for _, app := range apps {
+		if front.Bundle != "" && strings.EqualFold(strings.TrimSpace(app), front.Bundle) {
+			return true
+		}
+	}
+	return false
 }
