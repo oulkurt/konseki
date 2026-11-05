@@ -16,6 +16,8 @@ type Observation struct {
 	SinceKey, SinceClick, SinceScroll time.Duration
 	Front                             Front
 	Locked                            bool
+	Slept                             bool
+	PreviousTick                      time.Time
 	ScreenPermission                  PermState
 	PausedUntil                       time.Time
 	Stop                              bool
@@ -44,19 +46,19 @@ type Action struct {
 }
 
 type Machine struct {
-	Phase                                               Phase
-	Block                                               BlockReason
-	active                                              bool
-	idle                                                time.Duration
-	lastTick, lastInput, lastKey, lastClick, lastScroll time.Time
-	front                                               string
-	initialized, locked, typing                         bool
-	lastAttempt, lastSaved, lastProbe                   time.Time
-	inFlight, probing                                   bool
-	pending, flying                                     Trigger
-	failures                                            int
-	retryAt                                             time.Time
-	probeFactor                                         int
+	Phase                                     Phase
+	Block                                     BlockReason
+	active                                    bool
+	idle                                      time.Duration
+	lastInput, lastKey, lastClick, lastScroll time.Time
+	front                                     string
+	initialized, locked, typing               bool
+	lastAttempt, lastSaved, lastProbe         time.Time
+	inFlight, probing                         bool
+	pending, flying                           Trigger
+	failures                                  int
+	retryAt                                   time.Time
+	probeFactor                               int
 }
 
 func (m *Machine) Step(o Observation, s Settings) []Action {
@@ -118,10 +120,9 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		m.typing = false
 		return actions
 	}
-	slept := !m.lastTick.IsZero() && now.Sub(m.lastTick) > 5*time.Second
-	m.lastTick = now
-	if slept {
-		closeSession(EndSuspend)
+	if o.Slept && m.active {
+		actions = append(actions, Action{Kind: ActionCloseSession, Reason: EndSuspend, At: o.PreviousTick})
+		m.active = false
 	}
 	if o.Locked {
 		closeSession(EndLock)

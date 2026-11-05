@@ -362,7 +362,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 	var inFlight bool
 	var front Front
 	var locked bool
-	var lastSystem time.Time
+	var lastSystem, previousTick time.Time
 	finish := func(res captureResult, now time.Time, stopping bool) {
 		inFlight = false
 		r.mu.Lock()
@@ -432,7 +432,8 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 			if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
 				r.pausedUntil = time.Time{}
 			}
-			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil}
+			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil, PreviousTick: previousTick, Slept: !previousTick.IsZero() && now.Round(0).Sub(previousTick.Round(0)) > 5*time.Second}
+			previousTick = now
 			r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
 			r.mu.Unlock()
 		}
@@ -462,7 +463,7 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 			r.session = &Session{ID: r.st.NewSnapshotID(now), Start: now}
 		case ActionCloseSession:
 			if r.session != nil {
-				r.session.End = now
+				r.session.End = a.At
 				r.session.EndReason = a.Reason
 				if *inFlight && r.flightSession == r.session.ID {
 					r.closed[r.session.ID] = closedSession{r.session, r.st, r.storage}

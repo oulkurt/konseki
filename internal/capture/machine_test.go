@@ -45,7 +45,7 @@ func TestMachineSessionClosures(t *testing.T) {
 		name   string
 		reason EndReason
 		change func(*Observation)
-	}{{"idle", EndIdle, func(o *Observation) { o.Now = o.Now.Add(2 * time.Second) }}, {"lock", EndLock, func(o *Observation) { o.Now = o.Now.Add(time.Second); o.Locked = true }}, {"suspend", EndSuspend, func(o *Observation) { o.Now = o.Now.Add(6 * time.Second) }}, {"stop", EndStop, func(o *Observation) { o.Stop = true }}} {
+	}{{"idle", EndIdle, func(o *Observation) { o.Now = o.Now.Add(2 * time.Second) }}, {"lock", EndLock, func(o *Observation) { o.Now = o.Now.Add(time.Second); o.Locked = true }}, {"suspend", EndSuspend, func(o *Observation) { o.PreviousTick = o.Now; o.Now = o.Now.Add(8 * time.Hour); o.Slept = true }}, {"stop", EndStop, func(o *Observation) { o.Stop = true }}} {
 		t.Run(tc.name, func(t *testing.T) {
 			now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 			s := Settings{Idle: time.Second}
@@ -299,4 +299,29 @@ func TestMachineIdleWhileBlocked(t *testing.T) {
 	if x.m.Phase != PhaseBlocked || x.m.Block != BlockSensitiveApp {
 		t.Fatal(x.m)
 	}
+}
+
+func TestMachineSuspendEndsAtPreviousTick(t *testing.T) {
+	// macOS 的单调钟在睡眠中不走，必须用墙钟差值判断。
+	before := time.Date(2026, 11, 5, 23, 0, 0, 0, time.Local)
+	after := before.Add(8 * time.Hour)
+	m := Machine{}
+	cfg := Settings{Idle: 24 * time.Hour}
+	o := Observation{Now: before.Add(-time.Second), SinceKey: time.Hour, SinceClick: time.Hour, SinceScroll: time.Hour, Front: Front{Bundle: "a"}}
+	m.Step(o, cfg)
+	o.Now = before
+	o.SinceClick = 0
+	m.Step(o, cfg)
+	o.Now = after
+	o.SinceClick = 8 * time.Hour
+	o.SinceKey += 8 * time.Hour
+	o.SinceScroll += 8 * time.Hour
+	o.PreviousTick = before
+	o.Slept = after.Round(0).Sub(before.Round(0)) > 5*time.Second
+	for _, a := range m.Step(o, cfg) {
+		if a.Kind == ActionCloseSession && a.Reason == EndSuspend && a.At.Equal(before) {
+			return
+		}
+	}
+	t.Fatal("睡眠关闭时间不正确")
 }
