@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖平台采集接口、运行设置和事实存储。
+ * [OUTPUT]: 提供 Runner、状态快照与时间轴聚合。
+ * [POS]: 采集循环的协调边界，隔离平台与界面。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 // 采样循环与时间轴聚合。
@@ -15,31 +21,14 @@ import (
 	"time"
 )
 
-// Config 是采集器的运行参数。
-type Config struct {
-	Root      string        // 数据根目录
-	Heartbeat time.Duration // 无变化时的取样间隔
-	Idle      time.Duration // 多久无输入算闲置
-	MinGap    time.Duration // 两次截图的硬性最小间隔
-}
-
-// DefaultConfig 给出一组适合日常使用的参数。
-func DefaultConfig() Config {
-	home, _ := os.UserHomeDir()
-	return Config{
-		Root:      filepath.Join(home, "Library", "Application Support", "Konseki"),
-		Heartbeat: 2 * time.Minute,
-		Idle:      5 * time.Minute,
-		MinGap:    20 * time.Second,
-	}
-}
-
 // Runner 是采集循环的运行实例。
 type Runner struct {
-	cfg Config
-	st  *Store
-	scr Screen
-	ocr OCREngine
+	cfg         Settings
+	st          *Store
+	storage     *Storage
+	pausedUntil time.Time
+	scr         Screen
+	ocr         OCREngine
 
 	mu      sync.Mutex
 	running bool
@@ -49,67 +38,81 @@ type Runner struct {
 	// 最近一次采集的摘要，给 UI 轮询显示
 	lastLastApp   string
 	lastLastTitle string
+	lastPID       int
 	lastShotAt    time.Time
 	sampleCount   int
 	blankStreak   int
 	lastErr       error
 }
 
-// New 创建一个 Runner。root 为空时用默认路径。
-func New(cfg Config) (*Runner, error) {
-	if cfg.Root == "" {
-		cfg.Root = DefaultConfig().Root
-	}
-	if cfg.Heartbeat == 0 {
-		cfg.Heartbeat = 2 * time.Minute
-	}
-	if cfg.Idle == 0 {
-		cfg.Idle = 5 * time.Minute
-	}
-	if cfg.MinGap == 0 {
-		cfg.MinGap = 20 * time.Second
-	}
+// New 创建采集循环和存储句柄。
+func New(cfg Settings) (*Runner, error) {
 	st, err := NewStore(cfg.Root)
 	if err != nil {
 		return nil, err
 	}
-	return &Runner{
-		cfg:  cfg,
-		st:   st,
-		scr:  newScreen(),
-		ocr:  newOCR(),
-		stop: make(chan struct{}),
-		done: make(chan struct{}),
-	}, nil
+	r := &Runner{st: st, storage: NewStorage(cfg.Root), scr: newScreen(), ocr: newOCR()}
+	r.Apply(cfg)
+	return r, nil
 }
-
-// Status 是给 UI 看的采集状态快照。
-type Status struct {
-	Running    bool
-	App        string
-	Title      string
-	LastShot   time.Time
-	Samples    int
-	Blank      bool
-	Permission PermState
-	Err        error
+func (r *Runner) Apply(s Settings) {
+	s.SensitiveApps = append([]string(nil), s.SensitiveApps...)
+	s.OCR.Languages = append([]string(nil), s.OCR.Languages...)
+	r.mu.Lock()
+	r.cfg = s
+	r.mu.Unlock()
 }
-
-// Status 返回当前状态，可安全并发调用。
+func (r *Runner) Storage() *Storage     { return r.storage }
+func (r *Runner) Pause(until time.Time) { r.mu.Lock(); r.pausedUntil = until; r.mu.Unlock() }
+func (r *Runner) Resume()               { r.Pause(time.Time{}) }
+func (r *Runner) paused(now time.Time) bool {
+	if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
+		r.pausedUntil = time.Time{}
+	}
+	return !r.pausedUntil.IsZero()
+}
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return Status{
-		Running:    r.running,
-		App:        r.lastLastApp,
-		Title:      r.lastLastTitle,
-		LastShot:   r.lastShotAt,
-		Samples:    r.sampleCount,
-		Blank:      r.blankStreak >= 3,
-		Permission: r.scr.Permission(false),
-		Err:        r.lastErr,
+	phase := PhaseOff
+	block := BlockNone
+	if r.running {
+		if r.paused(time.Now()) {
+			phase = PhasePaused
+		} else if r.blankStreak >= 3 {
+			phase = PhaseBlocked
+			block = BlockScreenLocked
+		} else {
+			phase = PhaseActive
+		}
 	}
+	return Status{Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: Front{App: r.lastLastApp, Title: r.lastLastTitle, PID: r.lastPID}, Usage: r.storage.Usage(), Perms: Perms{Screen: r.scr.Permission(false), Accessibility: PermUnknown}, LastShot: r.lastShotAt, LastErr: r.lastErr}
 }
+func (r *Runner) RecentSessions(n int) []Session {
+	if n <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(r.st.root, "sessions"))
+	if err != nil {
+		return nil
+	}
+	var result []Session
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		rows, err := r.st.ReadSessions(strings.TrimSuffix(e.Name(), ".jsonl"))
+		if err == nil {
+			result = append(result, rows...)
+		}
+	}
+	sort.SliceStable(result, func(i, j int) bool { return result[i].End.After(result[j].End) })
+	if len(result) > n {
+		result = result[:n]
+	}
+	return result
+}
+func (r *Runner) ClearAll() (Cleared, error) { return r.storage.ClearAll() }
 
 // Start 启动采样。重复调用无副作用。
 func (r *Runner) Start() {
@@ -156,7 +159,17 @@ func (r *Runner) loop(stop, done chan struct{}) {
 		case <-stop:
 			return
 		case now := <-tick.C:
+			r.mu.Lock()
+			paused := r.paused(now)
+			heartbeat := r.cfg.Heartbeat
+			r.mu.Unlock()
+			if paused {
+				continue
+			}
 			app, title, pid := r.scr.FrontWindow()
+			r.mu.Lock()
+			r.lastLastApp, r.lastLastTitle, r.lastPID = app, title, pid
+			r.mu.Unlock()
 			if app == "" {
 				continue // 锁屏或权限缺失
 			}
@@ -166,13 +179,13 @@ func (r *Runner) loop(stop, done chan struct{}) {
 				idleSince = now
 				lastApp, lastTitle = app, title
 			}
-			if now.Sub(idleSince) > r.cfg.Idle && !changed {
+			if now.Sub(idleSince) > 5*time.Minute && !changed {
 				continue
 			}
-			if !changed && now.Sub(lastShot) < r.cfg.Heartbeat {
+			if !changed && now.Sub(lastShot) < heartbeat {
 				continue
 			}
-			if now.Sub(lastShot) < r.cfg.MinGap {
+			if now.Sub(lastShot) < 20*time.Second {
 				continue
 			}
 
@@ -319,50 +332,4 @@ func (r *Runner) Snapshots(dateKey string) ([]Snapshot, error) {
 }
 
 // Root 返回数据根目录，导出 skill 时要用。
-func (r *Runner) Root() string { return r.cfg.Root }
-
-// Prune 删掉超过 keepDays 天的原始采样与截图。
-//
-// 只删原始数据，不删摘要 —— 摘要小得多，也更有价值。
-// 按「一整天」为单位判断而不是逐条按时间戳：边界上少删一天比
-// 留下半天的孤儿截图好排查。
-func (r *Runner) Prune(keepDays int) (int, error) {
-	if keepDays <= 0 {
-		return 0, nil
-	}
-	cutoff := time.Now().AddDate(0, 0, -keepDays).Format("2006-01-02")
-	ents, err := os.ReadDir(r.cfg.Root)
-	if err != nil {
-		return 0, err
-	}
-	removed := 0
-	for _, e := range ents {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".jsonl") {
-			continue
-		}
-		day := strings.TrimSuffix(name, ".jsonl")
-		if len(day) != 10 || day >= cutoff {
-			continue
-		}
-		if err := os.Remove(filepath.Join(r.cfg.Root, name)); err != nil {
-			continue
-		}
-		removed++
-	}
-	// 截图按文件名里的日期清。shots/20261104-150405.jpg
-	shotDir := filepath.Join(r.cfg.Root, "shots")
-	if files, err := os.ReadDir(shotDir); err == nil {
-		cut := cutoff[:4] + cutoff[5:7] + cutoff[8:10]
-		for _, f := range files {
-			n := f.Name()
-			if len(n) < 8 {
-				continue
-			}
-			if d := n[:8]; d < cut {
-				os.Remove(filepath.Join(shotDir, n))
-			}
-		}
-	}
-	return removed, nil
-}
+func (r *Runner) Root() string { r.mu.Lock(); defer r.mu.Unlock(); return r.cfg.Root }
