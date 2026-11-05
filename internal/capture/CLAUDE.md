@@ -3,6 +3,8 @@
 CLAUDE.md: 描述本模块的成员与职责边界。
 collector.go: 定义屏幕与 OCR 接口，隔离平台实现。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
+machine.go: 根据观测决定会话、采集与探测动作。
+machine_test.go: 用人工时间验证采集决策。
 macos.go: 连接 macOS 原生屏幕与文字识别能力。
 perms.go: 汇总平台权限和诊断信息。
 runner.go: 协调采集循环与时间轴聚合。
