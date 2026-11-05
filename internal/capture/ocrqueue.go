@@ -52,9 +52,12 @@ func (q *ocrQueue) submit(session string, cfg OCRSettings, task ocrTask) {
 	}
 	task.languages = append([]string(nil), cfg.Languages...)
 	if len(q.tasks) == 2 {
+		releaseFrame(q.tasks[0].frame)
+		q.tasks[0] = ocrTask{}
 		q.tasks = q.tasks[1:]
 		q.dropped++
 	}
+	task.frame = retainFrame(task.frame)
 	q.tasks = append(q.tasks, task)
 	select {
 	case q.wake <- struct{}{}:
@@ -63,6 +66,15 @@ func (q *ocrQueue) submit(session string, cfg OCRSettings, task ocrTask) {
 }
 func (q *ocrQueue) run() {
 	defer close(q.done)
+	defer func() {
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		for i := range q.tasks {
+			releaseFrame(q.tasks[i].frame)
+			q.tasks[i] = ocrTask{}
+		}
+		q.tasks = nil
+	}()
 	for {
 		select {
 		case <-q.stop:
@@ -76,6 +88,7 @@ func (q *ocrQueue) run() {
 				break
 			}
 			task := q.tasks[0]
+			q.tasks[0] = ocrTask{}
 			q.tasks = q.tasks[1:]
 			q.mu.Unlock()
 			q.recognize(task)
@@ -96,6 +109,7 @@ func (q *ocrQueue) recognize(task ocrTask) {
 	ch := make(chan answer, 1)
 	start := time.Now()
 	go func() {
+		defer releaseFrame(task.frame)
 		text, lines, err := q.engine.Recognize(task.frame, task.languages)
 		ch <- answer{text, lines, err}
 	}()

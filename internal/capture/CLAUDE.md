@@ -3,6 +3,7 @@
 CLAUDE.md: 描述本模块的成员与职责边界。
 collector.go: 定义屏幕、OCR、系统观测与时钟接口。
 dedup.go: 比较帧的亮度哈希、直方图和像素。
+frame_other.go: 为非 macOS 平台提供帧生命周期桩。
 dedup_test.go: 用合成画面验证去重阈值。
 input_darwin_test.go: 冒烟验证 macOS 只读系统观测。
 input_darwin.go: 读取 macOS 输入间隔、前台应用和锁屏状态。
@@ -12,6 +13,8 @@ maintenance.go: 在后台调度用量对账、保留和容量清理。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。
 macos.go: 连接 macOS 原生屏幕与文字识别能力。
+native_darwin_test.go: 用合成图和 Vision 样本验证原生管线与性能。
+testdata/: 保存不含用户数据的 Vision 测试图。
 ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
 ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和诊断信息。

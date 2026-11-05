@@ -117,12 +117,8 @@ func (darwinScreen) Grab() (f *Frame) {
 		if img == 0 {
 			return
 		}
-		defer cfRelease(img)
-		f = &Frame{W: int(cgGetW(img)), H: int(cgGetH(img))}
+		f = &Frame{W: int(cgGetW(img)), H: int(cgGetH(img)), native: img}
 		f.Blank = isBlank(img)
-		if !f.Blank {
-			f.RGBA = imageToRGBA(img)
-		}
 	})
 	return
 }
@@ -133,7 +129,10 @@ func newOCR() OCREngine { return darwinOCR{} }
 
 func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int, err error) {
 	withPool(func() {
-		img := rgbaToImage(f)
+		img := frameImage(f)
+		if img != 0 {
+			defer cfRelease(img)
+		}
 		if img == 0 {
 			err = errors.New("OCR 图像无效")
 			return
@@ -145,20 +144,12 @@ func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int
 
 var _ = time.Now
 
-// platformSaveThumb 把 Frame 缩成小图存盘（磁盘上只留视觉凭证）。
-func platformSaveThumb(f *Frame, path string) (ok bool) {
-	withPool(func() {
-		img := rgbaToImage(f)
-		if img != 0 {
-			ok = saveThumb(img, path)
-		}
-	})
-	return
-}
-
 func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
 	withPool(func() {
-		img := rgbaToImage(f)
+		img := frameImage(f)
+		if img != 0 {
+			defer cfRelease(img)
+		}
 		if img == 0 {
 			return
 		}
@@ -180,4 +171,34 @@ func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
 		ok = data != 0 && O(data, "writeToFile:atomically:", nsstr(path), 1) != 0
 	})
 	return
+}
+
+func frameImage(f *Frame) uintptr {
+	if f != nil && f.native != 0 {
+		return cfRetain(f.native)
+	}
+	return rgbaToImage(f)
+}
+func retainFrame(f *Frame) *Frame {
+	if f == nil {
+		return nil
+	}
+	copy := *f
+	if copy.native != 0 {
+		cfRetain(copy.native)
+	}
+	return &copy
+}
+func releaseFrame(f *Frame) {
+	if f != nil && f.native != 0 {
+		cfRelease(f.native)
+		f.native = 0
+	}
+}
+func nativePixels(f *Frame) []byte {
+	if f == nil || f.native == 0 {
+		return nil
+	}
+	pix, _ := bitmap(f.native, dedupWidth, dedupHeight, false)
+	return pix
 }

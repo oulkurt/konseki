@@ -22,15 +22,17 @@ var accessibilityTrusted func() bool
 
 func initPlatform() {
 	platformInit.Do(func() {
-		initRuntime()
-		initScreenPerm()
-		cg, _ := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
-		mustReg(cg, "CGEventSourceSecondsSinceLastEventType", &eventSeconds)
-		mustReg(cg, "CGSessionCopyCurrentDictionary", &sessionDictionary)
-		cf, _ := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
-		mustReg(cf, "CFRelease", &cfRelease)
-		ax, _ := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_NOW)
-		mustReg(ax, "AXIsProcessTrusted", &accessibilityTrusted)
+		withPool(func() {
+			initRuntime()
+			initScreenPerm()
+			cg, _ := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
+			mustReg(cg, "CGEventSourceSecondsSinceLastEventType", &eventSeconds)
+			mustReg(cg, "CGSessionCopyCurrentDictionary", &sessionDictionary)
+			cf, _ := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
+			mustReg(cf, "CFRelease", &cfRelease)
+			ax, _ := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_NOW)
+			mustReg(ax, "AXIsProcessTrusted", &accessibilityTrusted)
+		})
 	})
 }
 

@@ -72,7 +72,4 @@ func (windowsOCR) Recognize(f *Frame, languages []string) (string, int, error) {
 	return "", 0, errNotImplemented
 }
 
-// platformSaveThumb 未实现。
-func platformSaveThumb(f *Frame, path string) bool { return false }
-
 func platformSaveJPEG(f *Frame, path string, quality int) bool { return false }

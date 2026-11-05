@@ -306,7 +306,10 @@ func (r *Runner) grab(job captureJob) captureResult {
 		return result
 	}
 	f := r.deps.screen.Grab()
+	result.frame = f
 	if !validFront() {
+		releaseFrame(f)
+		result.frame = nil
 		return result
 	}
 	if f == nil {
@@ -320,7 +323,9 @@ func (r *Runner) grab(job captureJob) captureResult {
 	if !job.probe {
 		_, result.title, _ = r.deps.screen.FrontWindow()
 		if !validFront() {
-			return captureResult{job: job}
+			releaseFrame(f)
+			result.frame = nil
+			return result
 		}
 	}
 	fp := fingerprintFrame(f)
@@ -370,6 +375,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 	var lastSystem, previousTick time.Time
 	finish := func(res captureResult, now time.Time, stopping bool) {
 		inFlight = false
+		defer releaseFrame(res.frame)
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		o := Observation{Now: now, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
@@ -386,7 +392,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 		}
 		if res.job.probe {
 			o.ProbeDone = true
-			o.ProbeDuplicate = res.duplicate || res.frame == nil
+			o.ProbeDuplicate = res.duplicate || res.blank || res.frame == nil
 			if res.err != nil {
 				r.lastErr = res.err
 			}
@@ -400,7 +406,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 		if res.err != nil {
 			r.lastErr = res.err
 		}
-		if res.frame != nil && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && !sensitiveFront(front, r.cfg.SensitiveApps) && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
+		if res.frame != nil && !res.blank && res.err == nil && res.job.generation == r.generation && !locked && r.machine.Phase != PhaseBlocked && r.machine.Phase != PhasePaused && !sensitiveFront(front, r.cfg.SensitiveApps) && (r.pausedUntil.IsZero() || !now.Before(r.pausedUntil)) {
 			if !res.duplicate || res.job.trigger == TriggerHeartbeat {
 				if err := r.persist(res); err != nil {
 					r.lastErr = err

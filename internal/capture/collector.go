@@ -14,15 +14,12 @@ import "time"
 // 每个平台各自实现，主循环完全不关心底下是 CGDisplayCreateImage
 // 还是 BitBlt 还是 PipeWire。
 
-// Frame 是一帧屏幕画面。
-//
-// 抽象成 []byte 而不是各平台的原生句柄，是为了让 OCR 和编码这些
-// 后续处理能在平台之间共享一套代码。代价是多一次拷贝，
-// 但实测一轮 40-60ms 里拷贝只占 1-2ms，可以接受。
+// Frame 包含平台原生帧或测试用 RGBA 像素。
 type Frame struct {
-	W, H  int
-	RGBA  []byte // 固定 RGBA 顺序，各平台自己转
-	Blank bool   // 黑屏/全白（锁屏、显示器休眠、权限缺失）
+	W, H   int
+	RGBA   []byte
+	Blank  bool
+	native uintptr
 }
 
 // Screen 是一个平台的屏幕采集实现。

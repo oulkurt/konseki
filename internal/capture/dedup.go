@@ -18,17 +18,29 @@ type fingerprint struct {
 }
 
 func fingerprintFrame(f *Frame) *fingerprint {
-	if f == nil || f.W <= 0 || f.H <= 0 || len(f.RGBA) < f.W*f.H*4 {
+	if f == nil || f.W <= 0 || f.H <= 0 {
 		return nil
 	}
-	p := &fingerprint{pixels: make([]byte, dedupWidth*dedupHeight*4)}
+	pixels := nativePixels(f)
+	if pixels == nil {
+		if len(f.RGBA) < f.W*f.H*4 {
+			return nil
+		}
+		pixels = make([]byte, dedupWidth*dedupHeight*4)
+		for y := 0; y < dedupHeight; y++ {
+			for x := 0; x < dedupWidth; x++ {
+				src := ((y*f.H/dedupHeight)*f.W + x*f.W/dedupWidth) * 4
+				dst := (y*dedupWidth + x) * 4
+				copy(pixels[dst:dst+4], f.RGBA[src:src+4])
+			}
+		}
+	}
+	p := &fingerprint{pixels: pixels}
 	hash := fnv.New32a()
 	for y := 0; y < dedupHeight; y++ {
 		for x := 0; x < dedupWidth; x++ {
-			src := ((y*f.H/dedupHeight)*f.W + x*f.W/dedupWidth) * 4
 			dst := (y*dedupWidth + x) * 4
-			copy(p.pixels[dst:dst+4], f.RGBA[src:src+4])
-			lum := byte((77*int(f.RGBA[src]) + 150*int(f.RGBA[src+1]) + 29*int(f.RGBA[src+2])) >> 8)
+			lum := byte((77*int(pixels[dst]) + 150*int(pixels[dst+1]) + 29*int(pixels[dst+2])) >> 8)
 			hash.Write([]byte{lum})
 			p.hist[int(lum)/8]++
 		}
