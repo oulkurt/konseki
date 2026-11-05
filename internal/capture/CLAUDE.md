@@ -12,6 +12,6 @@ screen_windows.go: 提供 Windows 平台采集适配。
 session.go: 定义会话关闭记录与结束原因。
 settings.go: 定义采集运行参数，不依赖应用设置。
 status.go: 定义采集状态和权限快照。
-storage.go: 按日期清理采集数据并声明存储接口。
+storage.go: 用量缓存、按天保留、超额淘汰、warm/cold 重编码和清空的契约；只处理已落盘的截图和按日期命名的 JSONL，不碰摘要与设置。
 store.go: 快照、OCR、会话各写一份按天分文件的 JSONL，只追加；截图路径由快照 id 推出，读快照时按 id 回填 OCR，旧格式照常可读。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
