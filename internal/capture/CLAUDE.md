@@ -2,6 +2,10 @@
 > L2 | 父级: ../CLAUDE.md
 CLAUDE.md: 描述本模块的成员与职责边界。
 collector.go: 定义屏幕与 OCR 接口，隔离平台实现。
+dedup.go: 比较帧的亮度哈希、直方图和像素。
+dedup_test.go: 用合成画面验证去重阈值。
+input_darwin.go: 读取 macOS 输入间隔、前台应用和锁屏状态。
+input_other.go: 为其他平台提供观测桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。

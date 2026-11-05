@@ -1,5 +1,11 @@
 //go:build darwin
 
+/*
+ * [INPUT]: 依赖平台屏幕与文字识别能力。
+ * [OUTPUT]: 提供采集接口的平台实现。
+ * [POS]: 采集模块的平台适配，与外壳隔离。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 // macOS 实现：CGDisplayCreateImage + Vision OCR。
@@ -84,8 +90,7 @@ func probeCapture() (ok bool, blank bool) {
 type darwinScreen struct{}
 
 func newScreen() Screen {
-	initRuntime()
-	initScreenPerm()
+	initPlatform()
 	return darwinScreen{}
 }
 
@@ -121,12 +126,12 @@ type darwinOCR struct{}
 
 func newOCR() OCREngine { return darwinOCR{} }
 
-func (darwinOCR) Recognize(f *Frame) (string, int, error) {
+func (darwinOCR) Recognize(f *Frame, languages []string) (string, int, error) {
 	img := rgbaToImage(f)
 	if img == 0 {
 		return "", 0, nil
 	}
-	text, n := ocrImage(img)
+	text, n := ocrImage(img, languages)
 	return text, n, nil
 }
 

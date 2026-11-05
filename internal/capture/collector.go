@@ -1,4 +1,12 @@
+/*
+ * [INPUT]: 依赖平台实现提供帧、识别结果和系统观测。
+ * [OUTPUT]: 提供采集外壳可替换的依赖接口。
+ * [POS]: 采集外壳与平台实现之间的契约。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
+
+import "time"
 
 // 平台无关的接口定义。
 //
@@ -59,5 +67,29 @@ func (p PermState) String() string {
 type OCREngine interface {
 	// Recognize 识别一帧里的文字，返回文本和行数。
 	// 应当能处理中英日混排。
-	Recognize(f *Frame) (text string, lines int, err error)
+	Recognize(f *Frame, languages []string) (text string, lines int, err error)
 }
+
+// InputSource 返回距最近一次输入的时间。
+type InputSource interface {
+	Intervals() (key, click, scroll time.Duration)
+}
+type FrontSource interface{ Front() Front }
+type LockSource interface{ Locked() bool }
+type Clock interface {
+	Now() time.Time
+	Ticks() (<-chan time.Time, func())
+}
+type PermissionSource interface{ Accessibility() PermState }
+type systemClock struct{}
+
+func (systemClock) Now() time.Time { return time.Now() }
+func (systemClock) Ticks() (<-chan time.Time, func()) {
+	t := time.NewTicker(250 * time.Millisecond)
+	return t.C, t.Stop
+}
+
+const (
+	ScreenPermissionSettingsURL        = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+	AccessibilityPermissionSettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+)

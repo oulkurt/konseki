@@ -1,5 +1,11 @@
 //go:build linux
 
+/*
+ * [INPUT]: 依赖平台屏幕与文字识别能力。
+ * [OUTPUT]: 提供采集接口的平台实现。
+ * [POS]: 采集模块的平台适配，与外壳隔离。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 // Linux 实现骨架。
@@ -62,7 +68,7 @@ type linuxOCR struct{}
 
 func newOCR() OCREngine { return linuxOCR{} }
 
-func (linuxOCR) Recognize(f *Frame) (string, int, error) {
+func (linuxOCR) Recognize(f *Frame, languages []string) (string, int, error) {
 	// TODO: Tesseract
 	return "", 0, errLinuxNotImplemented
 }

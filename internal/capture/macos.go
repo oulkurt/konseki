@@ -1,5 +1,11 @@
 //go:build darwin
 
+/*
+ * [INPUT]: 依赖平台屏幕与文字识别能力。
+ * [OUTPUT]: 提供采集接口的平台实现。
+ * [POS]: 采集模块的平台适配，与外壳隔离。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 import (
@@ -180,12 +186,12 @@ func grab() uintptr { return imgFn(dispFn()) }
 // 磁盘上只留 1200px 的缩略图当视觉参考。
 // 于是「识别准」和「占空间小」不再互相牺牲——
 // 实测缩到 1400px 再 OCR，中文界面会糊成 "'•¥s.JJ •.'# *\""。
-func ocrImage(img uintptr) (string, int) {
+func ocrImage(img uintptr, languages []string) (string, int) {
 	data := writeJPEGData(img, 0.92)
 	if data == 0 {
 		return "", 0
 	}
-	return ocrData(data)
+	return ocrData(data, languages)
 }
 
 // isBlank 判断是不是黑屏/白屏。
@@ -354,7 +360,7 @@ func downscale(img uintptr) uintptr {
 }
 
 // ocrData 用 Vision 框架识别文字。accurate 模式，中英日都能认。
-func ocrData(data uintptr) (string, int) {
+func ocrData(data uintptr, langs []string) (string, int) {
 	if data == 0 {
 		return "", 0
 	}
@@ -362,7 +368,7 @@ func ocrData(data uintptr) (string, int) {
 	O(req, "setRecognitionLevel:", 1) // accurate
 	O(req, "setUsesLanguageCorrection:", 1)
 	// 显式指定语言：不指定时 Vision 对中英混排的识别会明显退化
-	langs := []string{"zh-Hans", "zh-Hant", "en-US", "ja-JP"}
+
 	if marr := mutableArray(); marr != 0 {
 		for _, l := range langs {
 			O(marr, "addObject:", nsstr(l))

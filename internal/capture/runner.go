@@ -234,7 +234,7 @@ func (r *Runner) loop(stop, done chan struct{}) {
 			var shotRel string
 
 			t0 := time.Now()
-			text, n, ocrErr := r.ocr.Recognize(frame)
+			text, n, ocrErr := r.ocr.Recognize(frame, r.cfg.OCR.Languages)
 			ocrMs := int(time.Since(t0).Milliseconds())
 			if ocrErr != nil {
 				r.mu.Lock()
