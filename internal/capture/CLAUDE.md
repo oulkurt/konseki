@@ -9,7 +9,7 @@ input_darwin_test.go: 冒烟验证 macOS 只读系统观测。
 input_darwin.go: 读取输入间隔、工作区前台、实时窗口所有者和锁屏状态。
 input_other.go: 为其他平台提供观测桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
-maintenance.go: 用可注入时钟调度对账、保留、降级和容量清理。
+maintenance.go: 用可注入时钟调度维护；停止不等待，清空等待旧任务。
 maintenance_test.go: 验证维护周期、退出与容量请求合并。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。

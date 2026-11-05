@@ -50,32 +50,33 @@ type dependencies struct {
 	maintenanceOps *maintenanceOps
 }
 type Runner struct {
-	mu            sync.Mutex
-	lifecycle     sync.Mutex
-	cfg           Settings
-	configured    bool
-	st            *Store
-	storage       *Storage
-	deps          dependencies
-	running       bool
-	stop          chan struct{}
-	done          chan struct{}
-	pausedUntil   time.Time
-	machine       Machine
-	session       *Session
-	front         Front
-	lastShot      time.Time
-	lastErr       error
-	perms         Perms
-	baseline      *fingerprint
-	generation    uint64
-	flightSession string
-	closed        map[string]closedSession
-	lastPath      string
-	lastW, lastH  int
-	blankFrames   int
-	queue         *ocrQueue
-	enforce       chan struct{}
+	mu              sync.Mutex
+	lifecycle       sync.Mutex
+	cfg             Settings
+	configured      bool
+	st              *Store
+	storage         *Storage
+	deps            dependencies
+	running         bool
+	stop            chan struct{}
+	done            chan struct{}
+	pausedUntil     time.Time
+	machine         Machine
+	session         *Session
+	front           Front
+	lastShot        time.Time
+	lastErr         error
+	perms           Perms
+	baseline        *fingerprint
+	generation      uint64
+	flightSession   string
+	closed          map[string]closedSession
+	lastPath        string
+	lastW, lastH    int
+	blankFrames     int
+	queue           *ocrQueue
+	enforce         chan struct{}
+	maintenanceDone []<-chan struct{}
 }
 
 func New(cfg Settings) (*Runner, error) {
@@ -213,7 +214,8 @@ func (r *Runner) start() {
 	if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
 		r.setError(err)
 	}
-	go r.loop(stop, done, enforce)
+	r.startMaintenance(stop, enforce)
+	go r.loop(stop, done)
 }
 func cleanCaptureTemps(root string, now time.Time) error {
 	dir := filepath.Join(root, "shots")
@@ -265,6 +267,7 @@ func (r *Runner) ClearAll() (Cleared, error) {
 	if wasRunning {
 		r.stopLoop()
 	}
+	r.waitMaintenance()
 	r.mu.Lock()
 	storage := r.storage
 	r.mu.Unlock()
@@ -406,12 +409,10 @@ func (r *Runner) grab(job captureJob) captureResult {
 	}
 	return result
 }
-func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan struct{}) {
+func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	ticks, cancel := r.deps.clock.Ticks()
 	defer cancel()
-	maintenanceDone := make(chan struct{})
-	go r.maintenance(stop, maintenanceDone, enforce)
 	results := make(chan captureResult, 1)
 	var inFlight bool
 	var front Front

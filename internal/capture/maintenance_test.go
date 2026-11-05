@@ -110,3 +110,35 @@ func TestMaintenanceCoalescesEnforce(t *testing.T) {
 		t.Fatal("重复请求未合并")
 	}
 }
+
+func TestClearAllWaitsForStoppedMaintenance(t *testing.T) {
+	d, _, _ := fakeDependencies()
+	started, release := make(chan struct{}), make(chan struct{})
+	ops := defaultMaintenanceOps()
+	ops.enforce = func(*Storage, int64) (int64, error) { close(started); <-release; return 0, nil }
+	d.maintenanceOps = &ops
+	r, err := newRunner(Settings{Root: t.TempDir(), MaxStorage: 100}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	r.mu.Lock()
+	r.requestEnforce()
+	r.mu.Unlock()
+	<-started
+	r.Stop()
+	done := make(chan struct{})
+	go func() { defer close(done); _, _ = r.ClearAll() }()
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("清空没有等待已停止的维护任务")
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("维护结束后清空未返回")
+	}
+}
