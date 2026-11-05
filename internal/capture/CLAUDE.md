@@ -13,5 +13,5 @@ session.go: 定义会话关闭记录与结束原因。
 settings.go: 定义采集运行参数，不依赖应用设置。
 status.go: 定义采集状态和权限快照。
 storage.go: 按日期清理采集数据并声明存储接口。
-store.go: 追加快照、OCR 和会话，兼容历史记录。
+store.go: 快照、OCR、会话各写一份按天分文件的 JSONL，只追加；截图路径由快照 id 推出，读快照时按 id 回填 OCR，旧格式照常可读。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

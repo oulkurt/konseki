@@ -11,11 +11,11 @@ import "time"
 type Phase uint8
 
 const (
-	PhaseOff Phase = iota
-	PhasePaused
-	PhaseWaiting
-	PhaseActive
-	PhaseBlocked
+	PhaseOff     Phase = iota // 总开关关闭
+	PhasePaused               // 暂停到 PausedUntil
+	PhaseWaiting              // 开着但没有会话，人不在电脑前
+	PhaseActive               // 会话中
+	PhaseBlocked              // 开着但被拦截，原因见 Block
 )
 
 type BlockReason uint8

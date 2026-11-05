@@ -89,7 +89,16 @@ func (r *Runner) Status() Status {
 			phase = PhaseActive
 		}
 	}
-	return Status{Phase: phase, Block: block, PausedUntil: r.pausedUntil, Front: Front{App: r.lastLastApp, Title: r.lastLastTitle, PID: r.lastPID}, Usage: r.storage.Usage(), Perms: Perms{Screen: r.scr.Permission(false), Accessibility: PermUnknown}, LastShot: r.lastShotAt, LastErr: r.lastErr}
+	return Status{
+		Phase:       phase,
+		Block:       block,
+		PausedUntil: r.pausedUntil,
+		Front:       Front{App: r.lastLastApp, Title: r.lastLastTitle, PID: r.lastPID},
+		Usage:       r.storage.Usage(),
+		Perms:       Perms{Screen: r.scr.Permission(false), Accessibility: PermUnknown},
+		LastShot:    r.lastShotAt,
+		LastErr:     r.lastErr,
+	}
 }
 
 func (r *Runner) RecentSessions(n int) []Session {
@@ -100,8 +109,11 @@ func (r *Runner) RecentSessions(n int) []Session {
 	if err != nil {
 		return nil
 	}
+	// 会话按结束日期分文件，文件名排序即时间顺序。从最新的一天往回读，
+	// 凑够 n 条就停，不必每次读完全部历史。
 	var result []Session
-	for _, e := range entries {
+	for i := len(entries) - 1; i >= 0 && len(result) < n; i-- {
+		e := entries[i]
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}

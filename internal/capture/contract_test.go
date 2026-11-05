@@ -53,9 +53,10 @@ func TestStoreContracts(t *testing.T) {
 	if err != nil || len(sessions) != 1 || sessions[0].ID != "s" || !sessions[0].End.Equal(now) || !reflect.DeepEqual(sessions[0].Apps, session.Apps) {
 		t.Fatalf("会话 %v %v", sessions, err)
 	}
-	a, b := s.NewShotPath(now), s.NewShotPath(now)
-	if a == b || filepath.Dir(a) != filepath.Join(root, "shots", day) {
-		t.Fatalf("截图路径 %s %s", a, b)
+	id, other := s.NewSnapshotID(now), s.NewSnapshotID(now)
+	path := s.ShotFile(id)
+	if id == other || filepath.Dir(path) != filepath.Join(root, "shots", day) || filepath.Base(path) != id[9:]+".jpg" {
+		t.Fatalf("截图路径 %s 对不上快照 id %s（另一个 id %s）", path, id, other)
 	}
 	for _, d := range []string{"2099-01-01"} {
 		if rows, err := s.ReadOCR(d); err != nil || rows != nil {

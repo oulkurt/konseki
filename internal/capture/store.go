@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖采集根目录中的快照、OCR 和会话 JSONL。
- * [OUTPUT]: 提供快照读写、证据路径及 OCR 索引。
+ * [OUTPUT]: 提供快照、OCR 结果和会话的追加与读取，快照 id 及由它推出的截图路径，OCR 索引。
  * [POS]: 采集事实的追加存储，兼容旧快照格式。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -127,6 +127,8 @@ var shotIDs struct {
 	used      map[uint16]struct{}
 }
 
+// NewSnapshotID 生成形如 20261105-143502.120-1a2b 的快照 id，同一进程内同一毫秒不重复。
+// 截图路径由 ShotFile 从 id 推出，两者同源。
 func (s *Store) NewSnapshotID(t time.Time) string {
 	stamp := t.Format("20060102-150405.000")
 	shotIDs.Lock()
@@ -151,9 +153,11 @@ func (s *Store) NewSnapshotID(t time.Time) string {
 	}
 }
 
-func (s *Store) NewShotPath(t time.Time) string {
-	id := s.NewSnapshotID(t)
-	return filepath.Join(s.root, "shots", t.Format("2006-01-02"), id[9:]+".jpg")
+// ShotFile 返回快照 id 对应的截图路径。文件名取自 id，日期目录取自 id 的日期段，
+// 拿到任何一张截图都能反查到它的快照行。
+func (s *Store) ShotFile(id string) string {
+	day := id[:4] + "-" + id[4:6] + "-" + id[6:8]
+	return filepath.Join(s.root, "shots", day, id[9:]+".jpg")
 }
 
 func (s *Store) AppendOCR(day string, r OCRResult) error {
