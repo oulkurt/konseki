@@ -195,3 +195,28 @@ func TestRunnerDuplicateUsesStoredDimensions(t *testing.T) {
 		t.Fatal(rows)
 	}
 }
+
+func TestRunnerSuspendPersistsPreviousTick(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: 24 * time.Hour, Idle: 24 * time.Hour}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.scroll = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Session != nil })
+	before := c.Now()
+	// 墙钟跨过睡眠，macOS 单调钟却不包含睡眠时长。
+	c.advance(8 * time.Hour)
+	eventually(t, func() bool { return r.Status().Session == nil })
+	sessions := r.RecentSessions(1)
+	if len(sessions) != 1 || sessions[0].EndReason != EndSuspend || !sessions[0].End.Equal(before) {
+		t.Fatal(sessions)
+	}
+}
