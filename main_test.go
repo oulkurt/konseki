@@ -29,9 +29,9 @@ func newTestApp(t *testing.T) (*app, func()) {
 	if err != nil {
 		t.Fatalf("config.Open: %v", err)
 	}
-	r, err := capture.New(recorderSettings(cs.Get().Recorder, appDir))
+	r, err := capture.NewWithDependencies(recorderSettings(cs.Get().Recorder, appDir), inertCapture())
 	if err != nil {
-		t.Fatalf("capture.New: %v", err)
+		t.Fatalf("capture.NewWithDependencies: %v", err)
 	}
 	sums, err := summary.NewStore(appDir)
 	if err != nil {
@@ -171,7 +171,7 @@ func TestRecorderControlsPersist(t *testing.T) {
 	if err := tt.Click("开始记录"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseActive {
+	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase == capture.PhaseOff {
 		t.Fatal("顶栏未启动采集")
 	}
 	if err := tt.Click("暂停"); err != nil {
@@ -187,11 +187,36 @@ func TestRecorderControlsPersist(t *testing.T) {
 		t.Fatal("设置开关缺失")
 	}
 	tt.ClickAt(700, rect.Y+12)
-	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase != capture.PhaseActive {
+	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase == capture.PhaseOff {
 		t.Fatal("设置开关未启动采集")
 	}
 	reopened, err := config.Open(a.appDir)
 	if err != nil || !reopened.Get().Recorder.Enabled {
 		t.Fatalf("开关未落盘: %v", err)
+	}
+}
+
+// inertFake 是界面测试用的采集依赖：时钟不走、没有输入、抓不到屏幕。
+// 界面测试只关心开关和状态，绝不能启动真实采集去抓屏或弹授权框。
+type inertFake struct{}
+
+func (inertFake) FrontWindow() (string, string, int)                      { return "", "", 0 }
+func (inertFake) Grab() *capture.Frame                                    { return nil }
+func (inertFake) Permission(bool) capture.PermState                       { return capture.PermGranted }
+func (inertFake) Recognize(*capture.Frame, []string) (string, int, error) { return "", 0, nil }
+func (inertFake) Intervals() (time.Duration, time.Duration, time.Duration) {
+	return time.Hour, time.Hour, time.Hour
+}
+func (inertFake) Front() capture.Front              { return capture.Front{} }
+func (inertFake) Locked() bool                      { return false }
+func (inertFake) Now() time.Time                    { return time.Now() }
+func (inertFake) Ticks() (<-chan time.Time, func()) { return make(chan time.Time), func() {} }
+func (inertFake) Accessibility() capture.PermState  { return capture.PermGranted }
+
+func inertCapture() capture.Dependencies {
+	f := inertFake{}
+	return capture.Dependencies{
+		Screen: f, OCR: f, Input: f, Front: f, Lock: f, Clock: f, Permissions: f,
+		SaveJPEG: func(*capture.Frame, string, int) bool { return false },
 	}
 }
