@@ -1,8 +1,8 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖 CoreGraphics、NSWorkspace 与辅助功能权限查询。
- * [OUTPUT]: 提供输入间隔、前台应用、锁屏和权限读取。
+ * [INPUT]: 依赖 CoreGraphics、NSWorkspace、窗口所有者与辅助功能权限。
+ * [OUTPUT]: 提供输入间隔、前台应用、实时窗口所有者、锁屏和权限读取。
  * [POS]: macOS 只读观测边界，不注册输入监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -64,6 +64,19 @@ func (nativeObservations) Front() Front {
 		front = Front{App: gostr(O(app, "localizedName")), Bundle: gostr(O(app, "bundleIdentifier")), PID: int(O(app, "processIdentifier"))}
 	})
 	return front
+}
+
+// LiveFront 从窗口所有者读取进程信息，避开主线程滞后的工作区缓存。
+func (nativeObservations) LiveFront() (front Front) {
+	initPlatform()
+	withPool(func() {
+		front.App, front.Title, front.PID = frontWindow()
+		if front.PID != 0 {
+			app := O(cls("NSRunningApplication"), "runningApplicationWithProcessIdentifier:", uintptr(front.PID))
+			front.Bundle = gostr(O(app, "bundleIdentifier"))
+		}
+	})
+	return
 }
 func (nativeObservations) Locked() bool {
 	initPlatform()

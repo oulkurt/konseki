@@ -6,7 +6,7 @@ dedup.go: 比较帧的亮度哈希、直方图和像素。
 frame_other.go: 为非 macOS 平台提供帧生命周期桩。
 dedup_test.go: 用合成画面验证去重阈值。
 input_darwin_test.go: 冒烟验证 macOS 只读系统观测。
-input_darwin.go: 读取 macOS 输入间隔、前台应用和锁屏状态。
+input_darwin.go: 读取输入间隔、工作区前台、实时窗口所有者和锁屏状态。
 input_other.go: 为其他平台提供观测桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
 maintenance.go: 在后台调度用量对账、保留和容量清理。

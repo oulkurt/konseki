@@ -38,6 +38,7 @@ type fakeSystem struct {
 	front                 Front
 	locked                bool
 	frontReads, lockReads int
+	live                  Front
 }
 
 func (s *fakeSystem) Intervals() (time.Duration, time.Duration, time.Duration) {
@@ -46,7 +47,15 @@ func (s *fakeSystem) Intervals() (time.Duration, time.Duration, time.Duration) {
 	now := s.clock.Now()
 	return now.Sub(s.key), now.Sub(s.click), now.Sub(s.scroll)
 }
-func (s *fakeSystem) Front() Front           { s.mu.Lock(); defer s.mu.Unlock(); s.frontReads++; return s.front }
+func (s *fakeSystem) Front() Front { s.mu.Lock(); defer s.mu.Unlock(); s.frontReads++; return s.front }
+func (s *fakeSystem) LiveFront() Front {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.live.Bundle != "" {
+		return s.live
+	}
+	return s.front
+}
 func (s *fakeSystem) Locked() bool           { s.mu.Lock(); defer s.mu.Unlock(); s.lockReads++; return s.locked }
 func (*fakeSystem) Accessibility() PermState { return PermGranted }
 
@@ -421,5 +430,35 @@ func TestRunnerUsesObservationTimeAfterInput(t *testing.T) {
 	r.mu.Unlock()
 	if !got.Equal(event) {
 		t.Fatalf("同一次点击被重复计算: %v", got)
+	}
+}
+
+func TestRunnerRejectsLiveSensitiveWindow(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Hour, SensitiveApps: []string{"secret.app"}}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.live = Front{Bundle: "secret.app", PID: 77}
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.machine.initialized && !r.machine.inFlight && r.session != nil
+	})
+	rows, err := r.Snapshots(c.Now().Format("2006-01-02"))
+	if err != nil || len(rows) != 0 {
+		t.Fatal(rows, err)
+	}
+	entries, err := os.ReadDir(filepath.Join(r.Root(), "shots"))
+	if err != nil || len(entries) != 0 {
+		t.Fatal(entries, err)
 	}
 }

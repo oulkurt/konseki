@@ -323,6 +323,17 @@ func (r *Runner) grab(job captureJob) captureResult {
 		result.blank = true
 		return result
 	}
+	if source, ok := r.deps.front.(interface{ LiveFront() Front }); ok {
+		live := source.LiveFront()
+		r.mu.Lock()
+		sensitive := sensitiveFront(live, r.cfg.SensitiveApps)
+		r.mu.Unlock()
+		if sensitive {
+			releaseFrame(f)
+			result.frame = nil
+			return result
+		}
+	}
 	if !job.probe {
 		_, result.title, _ = r.deps.screen.FrontWindow()
 		if !validFront() {
