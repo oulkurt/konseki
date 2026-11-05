@@ -82,8 +82,7 @@ func TestReceiptNewLineFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.lastLoad = time.Time{}
-	a.refresh()
-	tt.Frame()
+	tt.Advance(time.Second)
 	if a.feedRevision == before || a.feedDistance <= 0 {
 		t.Fatalf("新条目没有送纸：%d %f", a.feedRevision, a.feedDistance)
 	}
@@ -91,5 +90,22 @@ func TestReceiptNewLineFeed(t *testing.T) {
 	tt.Advance(time.Second)
 	if bytes.Equal(start, tt.Image().Pix) {
 		t.Fatal("新条目送纸没有位移")
+	}
+}
+
+func TestReceiptShowAt(t *testing.T) {
+	a, tt := receiptTestApp(t)
+	for _, entry := range a.sumEntries {
+		if err := a.sums.Upsert(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tt.SetSize(780, 400)
+	at := time.Date(2026, 11, 4, 9, 30, 0, 0, time.Local)
+	a.showReceiptAt(at, at)
+	tt.Frame()
+	if a.tab != 0 || a.dayKey() != "2026-11-04" || a.receiptTarget != "" || a.scrollState.Y <= 0 {
+		t.Fatalf("定位失败：日期=%s 偏移=%v 目标=%q", a.dayKey(), a.scrollState.Y, a.receiptTarget)
 	}
 }

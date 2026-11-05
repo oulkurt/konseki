@@ -9,6 +9,7 @@ package main
 import (
 	"konseki/internal/capture"
 	"konseki/locales"
+	"time"
 
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
@@ -16,6 +17,7 @@ import (
 
 func (a *app) view(c *ui.Context) {
 	a.refresh()
+	c.After(2 * time.Second)
 	pal := themePalette(c)
 	msg := locales.In(c.Locale())
 	t := c.Theme()

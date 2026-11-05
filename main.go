@@ -52,6 +52,7 @@ type app struct {
 	receipt           ReceiptDay
 	receiptStore      *capture.Store
 	receiptRevision   int
+	receiptTarget     string
 	feedDay           string
 	feedRevision      int
 	feedStart         time.Time

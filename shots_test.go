@@ -52,7 +52,11 @@ func shotDay(t *testing.T, a *app) {
 			Topics: []string{"MyGo", "动画"}, Open: []string{"长标题换行观感未验证"}, Decisions: []string{"使用悬挂式小票"}, Files: []string{"receipt.go"}},
 	}
 	a.dayFilter = "2026-11-04"
-	a.receipt = buildReceipt(at(0, 0), a.sumEntries, a.blocks, nil)
+	a.receipt = buildReceipt(at(0, 0), a.sumEntries, a.blocks, []capture.Session{
+		{Start: at(9, 0), End: at(10, 8)},
+		{Start: at(11, 15), End: at(12, 2)},
+		{Start: at(13, 40), End: at(15, 32)},
+	})
 	a.expanded["2026-11-04-1300"] = true
 }
 

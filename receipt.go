@@ -35,6 +35,21 @@ func (a *app) renderTimelinePage(c *ui.Context, pal palette, inset float32) {
 	})
 }
 
+// showReceiptAt 供最近会话定位对应的摘要或待摘要条目。
+func (a *app) showReceiptAt(day, at time.Time) {
+	a.tab = 0
+	a.dayFilter = day.In(time.Local).Format("2006-01-02")
+	a.lastLoad = time.Time{}
+	a.refresh()
+	a.receiptTarget = ""
+	for _, line := range a.receipt.Lines {
+		if !at.Before(line.Start) && at.Before(line.End) {
+			a.receiptTarget = line.ID
+			break
+		}
+	}
+}
+
 func (a *app) renderPrinter(c *ui.Context, width float32) {
 	msg := locales.In(c.Locale())
 	now := a.currentTime()

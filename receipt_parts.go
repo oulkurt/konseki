@@ -145,6 +145,10 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, first bool) {
 	if first {
 		row.Bind(&a.receiptLineHandle)
 	}
+	if a.receiptTarget == line.ID && a.receiptTarget != "" {
+		row.ScrollIntoView()
+		a.receiptTarget = ""
+	}
 	row.Children(func() {
 		ui.Column(c).FillWidth().Gap(4).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(9).Children(func() {
