@@ -448,8 +448,9 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 			return
 		case res := <-results:
 			finish(res, r.deps.clock.Now(), false)
-		case now := <-ticks:
+		case <-ticks:
 			key, click, scroll := r.deps.input.Intervals()
+			now := r.deps.clock.Now()
 			if lastPermissions.IsZero() || now.Sub(lastPermissions) >= 5*time.Second {
 				perms = Perms{Screen: r.deps.screen.Permission(false), Accessibility: r.deps.perms.Accessibility()}
 				lastPermissions = now

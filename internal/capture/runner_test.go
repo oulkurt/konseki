@@ -384,3 +384,33 @@ func TestRunnerObservationRates(t *testing.T) {
 		t.Fatalf("前台 %d 次，锁屏 %d 次", sys.frontReads, sys.lockReads)
 	}
 }
+
+func TestRunnerUsesObservationTimeAfterInput(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Hour}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	c.mu.Lock()
+	stale := c.now.Add(250 * time.Millisecond)
+	c.now = c.now.Add(2 * time.Second)
+	event := c.now.Add(-100 * time.Millisecond)
+	c.mu.Unlock()
+	sys.mu.Lock()
+	sys.click = event
+	sys.mu.Unlock()
+	c.ticks <- stale
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.lastClick.Equal(event) })
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.machine.inFlight })
+	r.mu.Lock()
+	got := r.machine.lastClick
+	r.mu.Unlock()
+	if !got.Equal(event) {
+		t.Fatalf("同一次点击被重复计算: %v", got)
+	}
+}
