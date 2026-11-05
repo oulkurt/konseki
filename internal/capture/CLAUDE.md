@@ -25,7 +25,7 @@ runner.go: 协调采集生命周期、异步抓帧与时间轴聚合；开放依
 screen_darwin.go: 提供 macOS 平台采集适配。
 screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。
-sessions.go: 根据最近两天的磁盘记录恢复崩溃会话。
+sessions.go: 从最新日期向前查找快照并恢复未关闭会话。
 sessions_test.go: 验证崩溃恢复与幂等性。
 session.go: 定义会话关闭记录与结束原因。
 settings.go: 定义采集运行参数，不依赖应用设置。
