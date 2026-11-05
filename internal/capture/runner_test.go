@@ -7,6 +7,7 @@
 package capture
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,10 +269,11 @@ func TestRunnerClearAllRestarts(t *testing.T) {
 	sys.mu.Unlock()
 	c.advance(250 * time.Millisecond)
 	eventually(t, func() bool { return r.Status().Session != nil })
+	r.setError(errors.New("清除前错误"))
 	if _, err := r.ClearAll(); err != nil {
 		t.Fatal(err)
 	}
-	if status := r.Status(); status.Phase != PhaseWaiting || status.Session != nil {
+	if status := r.Status(); status.Phase != PhaseWaiting || status.Session != nil || status.LastErr != nil {
 		t.Fatal(status)
 	}
 	c.advance(250 * time.Millisecond)

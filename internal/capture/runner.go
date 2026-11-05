@@ -72,6 +72,7 @@ type Runner struct {
 	flightSession string
 	closed        map[string]closedSession
 	lastPath      string
+	lastW, lastH  int
 	blankFrames   int
 	queue         *ocrQueue
 	enforce       chan struct{}
@@ -279,6 +280,9 @@ func (r *Runner) ClearAll() (Cleared, error) {
 	r.closed = nil
 	r.lastPath = ""
 	r.lastShot = time.Time{}
+	r.lastW, r.lastH = 0, 0
+	r.lastErr = nil
+	r.blankFrames = 0
 	r.mu.Unlock()
 	if wasRunning {
 		r.start()
@@ -517,6 +521,7 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 			r.generation++
 			r.baseline = nil
 			r.lastPath = ""
+			r.lastW, r.lastH = 0, 0
 		case ActionOpenSession:
 			root, _ := filepath.Abs(r.cfg.Root)
 			if r.st.root != root {
@@ -534,6 +539,7 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 					r.baseline = nil
 					r.generation++
 					r.lastPath = ""
+					r.lastW, r.lastH = 0, 0
 				}
 			}
 			r.session = &Session{ID: r.st.NewSnapshotID(now), Start: now}
@@ -588,6 +594,9 @@ func (r *Runner) persist(res captureResult) error {
 	path := r.lastPath
 	size := int64(0)
 	w, h := res.frame.W, res.frame.H
+	if res.duplicate {
+		w, h = r.lastW, r.lastH
+	}
 	r.mu.Unlock()
 	err := func() error {
 		if !res.duplicate {
@@ -643,6 +652,7 @@ func (r *Runner) persist(res captureResult) error {
 	if !res.duplicate {
 		r.baseline = res.fingerprint
 		r.lastPath = path
+		r.lastW, r.lastH = w, h
 		job.storage.Account(size)
 		if r.cfg.MaxStorage > 0 && job.storage.Usage().Bytes > r.cfg.MaxStorage {
 			r.requestEnforce()

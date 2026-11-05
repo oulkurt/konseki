@@ -144,3 +144,54 @@ func TestRunnerOCRSettingsSampling(t *testing.T) {
 		t.Fatal(rows, ocr)
 	}
 }
+
+type resizeDuplicateScreen struct {
+	fakeScreen
+	mu sync.Mutex
+	n  int
+}
+
+func (s *resizeDuplicateScreen) Grab() *Frame {
+	s.mu.Lock()
+	s.n++
+	n := s.n
+	s.mu.Unlock()
+	f := s.fakeScreen.Grab()
+	if n == 1 {
+		return f
+	}
+	wide := &Frame{W: f.W * 2, H: f.H * 2, RGBA: make([]byte, f.W*f.H*16)}
+	for y := 0; y < wide.H; y++ {
+		for x := 0; x < wide.W; x++ {
+			src := ((y/2)*f.W + x/2) * 4
+			dst := (y*wide.W + x) * 4
+			copy(wide.RGBA[dst:dst+4], f.RGBA[src:src+4])
+		}
+	}
+	return wide
+}
+func TestRunnerDuplicateUsesStoredDimensions(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	d.screen = &resizeDuplicateScreen{}
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Second}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	day := c.Now().Format("2006-01-02")
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 1 })
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.machine.inFlight })
+	c.advance(time.Second)
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 2 })
+	rows, _ := r.Snapshots(day)
+	if !rows[1].Dup || rows[1].W != rows[0].W || rows[1].H != rows[0].H {
+		t.Fatal(rows)
+	}
+}
