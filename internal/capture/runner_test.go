@@ -9,6 +9,7 @@ package capture
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -261,5 +262,49 @@ func TestRunnerCleansOldCaptureTemps(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+type blankScreen struct {
+	mu    sync.Mutex
+	grabs int
+}
+
+func (*blankScreen) FrontWindow() (string, string, int) { return "", "", 0 }
+func (*blankScreen) Permission(bool) PermState          { return PermGranted }
+func (s *blankScreen) Grab() *Frame {
+	s.mu.Lock()
+	s.grabs++
+	s.mu.Unlock()
+	return &Frame{Blank: true}
+}
+func (s *blankScreen) count() int { s.mu.Lock(); defer s.mu.Unlock(); return s.grabs }
+
+func TestRunnerBlankBackoff(t *testing.T) {
+	d, c, _ := fakeDependencies()
+	screen := &blankScreen{}
+	d.screen = screen
+	r, err := newRunner(Settings{Root: t.TempDir(), ScreenPoll: time.Second, Heartbeat: time.Hour}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	for i, interval := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
+		c.advance(interval)
+		eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.blankFrames == i+1 && !r.machine.probing })
+	}
+	if got := screen.count(); got != 3 {
+		t.Fatalf("grabs=%d", got)
+	}
+	if err := r.Status().LastErr; err == nil || !strings.Contains(err.Error(), "截图全黑") || !strings.Contains(err.Error(), "重启 Konseki") {
+		t.Fatal(err)
+	}
+	c.advance(time.Second)
+	eventually(t, func() bool { return c.Now().Equal(r.deps.clock.Now()) })
+	if got := screen.count(); got != 3 {
+		t.Fatalf("退避失效: %d", got)
 	}
 }

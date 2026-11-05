@@ -325,3 +325,18 @@ func TestMachineSuspendEndsAtPreviousTick(t *testing.T) {
 	}
 	t.Fatal("睡眠关闭时间不正确")
 }
+
+func TestMachineBlankAdvancesHeartbeatAndBackoff(t *testing.T) {
+	x := newMachineScenario()
+	x.s.Heartbeat = 4 * time.Second
+	x.s.ScreenPoll = time.Second
+	x.step(0)
+	requireAction(t, x.step(4*time.Second), ActionCapture, TriggerHeartbeat)
+	x.o.CaptureDone, x.o.CaptureSkipped = true, true
+	x.step(0)
+	x.o.CaptureDone, x.o.CaptureSkipped = false, false
+	if a := x.step(time.Second); hasAction(a, ActionCapture, "") || hasAction(a, ActionProbe, "") {
+		t.Fatal(a)
+	}
+	requireAction(t, x.step(time.Second), ActionProbe, "")
+}

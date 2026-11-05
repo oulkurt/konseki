@@ -68,6 +68,7 @@ type Runner struct {
 	flightSession  string
 	closed         map[string]closedSession
 	lastPath       string
+	blankFrames    int
 	queue          *ocrQueue
 	enforce        chan struct{}
 	enforcePending bool
@@ -264,6 +265,8 @@ func (r *Runner) setError(err error) {
 	}
 }
 
+var errBlankScreen = errors.New("截图全黑，屏幕录制授权后需要重启 Konseki 才能生效")
+
 type closedSession struct {
 	session *Session
 	store   *Store
@@ -287,6 +290,7 @@ type captureResult struct {
 	frame       *Frame
 	fingerprint *fingerprint
 	duplicate   bool
+	blank       bool
 	title       string
 	tmp         string
 	err         error
@@ -310,6 +314,7 @@ func (r *Runner) grab(job captureJob) captureResult {
 		return result
 	}
 	if f.Blank {
+		result.blank = true
 		return result
 	}
 	if !job.probe {
@@ -368,6 +373,17 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		o := Observation{Now: now, Front: front, Locked: locked, ScreenPermission: r.deps.screen.Permission(false), PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
+		if res.blank {
+			r.blankFrames++
+			if r.blankFrames >= 3 {
+				r.lastErr = errBlankScreen
+			}
+		} else if res.frame != nil {
+			r.blankFrames = 0
+			if r.lastErr == errBlankScreen {
+				r.lastErr = nil
+			}
+		}
 		if res.job.probe {
 			o.ProbeDone = true
 			o.ProbeDuplicate = res.duplicate || res.frame == nil
@@ -380,6 +396,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, enforce chan s
 		}
 		o.CaptureDone = true
 		o.CaptureFailed = res.err != nil
+		o.CaptureSkipped = res.blank
 		if res.err != nil {
 			r.lastErr = res.err
 		}

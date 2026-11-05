@@ -24,6 +24,7 @@ type Observation struct {
 	CaptureDone                       bool
 	CaptureFailed                     bool
 	CaptureSaved                      bool
+	CaptureSkipped                    bool
 	ProbeDone                         bool
 	ProbeDuplicate                    bool
 }
@@ -89,9 +90,12 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 			m.failures = 0
 			m.retryAt = time.Time{}
 		}
-		if o.CaptureSaved {
+		if o.CaptureSaved || o.CaptureSkipped {
 			m.lastSaved = now
 			m.lastProbe = now
+		}
+		if o.CaptureSkipped {
+			m.backoffProbe()
 		}
 	}
 	if o.ProbeDone {
@@ -236,6 +240,14 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		add(ActionProbe, "", "")
 	}
 	return actions
+}
+func (m *Machine) backoffProbe() {
+	if m.probeFactor < 1 {
+		m.probeFactor = 1
+	}
+	if m.probeFactor < 8 {
+		m.probeFactor *= 2
+	}
 }
 func eventTime(now time.Time, d time.Duration) time.Time {
 	if d >= 365*24*time.Hour {
