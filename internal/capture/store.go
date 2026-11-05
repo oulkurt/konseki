@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync/atomic"
+	"sync"
 	"time"
 )
 
@@ -115,16 +115,34 @@ func (s *Store) ShotPath(t time.Time) string {
 	return filepath.Join(s.root, "shots", t.Format("20060102-150405")+".jpg")
 }
 
-var shotSequence = func() uint32 {
-	var b [2]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(err)
-	}
-	return uint32(binary.BigEndian.Uint16(b[:]))
-}()
+var shotIDs struct {
+	sync.Mutex
+	timestamp string
+	used      map[uint16]struct{}
+}
 
 func (s *Store) NewSnapshotID(t time.Time) string {
-	return fmt.Sprintf("%s-%04x", t.Format("20060102-150405.000"), atomic.AddUint32(&shotSequence, 1)&0xffff)
+	stamp := t.Format("20060102-150405.000")
+	shotIDs.Lock()
+	defer shotIDs.Unlock()
+	if shotIDs.timestamp != stamp {
+		shotIDs.timestamp = stamp
+		shotIDs.used = make(map[uint16]struct{})
+	}
+	if len(shotIDs.used) == 1<<16 {
+		panic("capture: snapshot ID space exhausted")
+	}
+	for {
+		var b [2]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			panic(err)
+		}
+		value := binary.BigEndian.Uint16(b[:])
+		if _, exists := shotIDs.used[value]; !exists {
+			shotIDs.used[value] = struct{}{}
+			return fmt.Sprintf("%s-%04x", stamp, value)
+		}
+	}
 }
 func (s *Store) NewShotPath(t time.Time) string {
 	id := s.NewSnapshotID(t)
