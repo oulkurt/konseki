@@ -17,7 +17,21 @@ import (
 	"konseki/internal/config"
 	"konseki/internal/skill"
 	"konseki/internal/summary"
+	"konseki/locales"
 )
+
+func TestClearFailureMessagePlural(t *testing.T) {
+	for _, tc := range []struct {
+		lang string
+		n    int
+		want string
+	}{{"zh-Hans", 2, "2 个文件无法删除"}, {"en", 1, "1 file could not be deleted"}, {"en", 2, "2 files could not be deleted"}} {
+		got := locales.Catalog.Format(tc.lang, "recorderDeleteFailed", map[string]any{"count": tc.n})
+		if got != tc.want {
+			t.Errorf("%s/%d: %q", tc.lang, tc.n, got)
+		}
+	}
+}
 
 func TestClearSequenceWaitsAndStopsOnFailure(t *testing.T) {
 	done := make(chan struct{})

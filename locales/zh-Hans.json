@@ -1,5 +1,10 @@
 {
   "@@locale": "zh-Hans",
+  "recorderDeleteFailed": "{count, plural, other {# 个文件无法删除}}",
+  "@recorderDeleteFailed": {
+    "description": "危险区清除活动数据时，显示无法删除的文件数量。",
+    "placeholders": {"count": {"type": "int", "example": "2"}}
+  },
   "shellNow": "· 现在：{app} — {title}",
   "@shellNow": {
     "description": "顶栏前台应用和窗口标题"

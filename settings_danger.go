@@ -7,11 +7,12 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"time"
 
 	"konseki/internal/skill"
+	"konseki/locales"
 )
 
 // clearSequence 等待摘要退出，再依次清除采集、摘要和导出。
@@ -42,6 +43,7 @@ func (a *app) clearActivity() {
 	runner, sums := a.runner, a.sums
 	opts := skill.Options{Dir: a.cfgNow.Skill.ExportDir, Days: a.cfgNow.Skill.Days, IncludeOCR: a.cfgNow.Skill.IncludeOCR, Owner: ownerName()}
 	post := a.post
+	lang := a.cfgNow.Language
 	go func() {
 		err := clearSequence(done, func() error {
 			cleared, err := runner.ClearAll()
@@ -49,7 +51,7 @@ func (a *app) clearActivity() {
 				return err
 			}
 			if cleared.Failed != 0 {
-				return fmt.Errorf("%d files could not be deleted", cleared.Failed)
+				return errors.New(locales.In(lang).RecorderDeleteFailed(cleared.Failed))
 			}
 			return nil
 		}, sums.Clear, func() error {

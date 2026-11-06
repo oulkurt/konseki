@@ -34,6 +34,20 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderDeleteFailed says "{count, plural, other {# 个文件无法删除}}"
+// in the language the app shows.
+//
+// 危险区清除活动数据时，显示无法删除的文件数量。
+func RecorderDeleteFailed(count int) string { return In(i18n.Locale()).RecorderDeleteFailed(count) }
+
+// RecorderDeleteFailed says "{count, plural, other {# 个文件无法删除}}"
+// in the language of msgs.
+//
+// 危险区清除活动数据时，显示无法删除的文件数量。
+func (msgs Messages) RecorderDeleteFailed(count int) string {
+	return Catalog.Format(msgs.locale, "recorderDeleteFailed", map[string]any{"count": count})
+}
+
 // ShellNow says "· 现在：{app} — {title}"
 // in the language the app shows.
 //
