@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,5 +53,35 @@ func TestSummaryBackgroundPublication(t *testing.T) {
 	}
 	if a.sumErr != "" || len(a.sumEntries) != 1 || a.sumEntries[0].Headline != "测试摘要" {
 		t.Fatalf("摘要回写失败: entries=%+v error=%q", a.sumEntries, a.sumErr)
+	}
+}
+
+func TestConnectionReportsModelAndLatency(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": "actual-model", "choices": []any{map[string]any{"message": map[string]string{"content": "ok"}}}})
+	}))
+	defer server.Close()
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.llmc.HTTP = server.Client()
+	if err := a.cfg.Update(func(c *config.Config) {
+		c.Language = "en"
+		c.Providers = []config.ProviderConfig{{Preset: "test", ChatBase: server.URL, DefaultModel: "requested"}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a.cfgNow = a.cfg.Get()
+	jobs := make(chan func(), 1)
+	a.post = func(f func()) { jobs <- f }
+	a.testConnection(0)
+	select {
+	case f := <-jobs:
+		f()
+	case <-time.After(5 * time.Second):
+		t.Fatal("连接测试超时")
+	}
+	if !a.testOK || !strings.Contains(a.testResult, "actual-model") || !strings.Contains(a.testResult, "ms") {
+		t.Fatalf("连接结果错误：%q", a.testResult)
 	}
 }

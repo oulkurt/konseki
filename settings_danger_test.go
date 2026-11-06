@@ -85,6 +85,30 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	}
 }
 
+func TestClearFailureStaysInSettings(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	if err := os.RemoveAll(filepath.Join(a.appDir, "summaries")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.appDir, "summaries"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a.tab = 1
+	posted := make(chan func(), 1)
+	a.post = func(f func()) { posted <- f }
+	a.clearActivity()
+	select {
+	case f := <-posted:
+		f()
+	case <-time.After(5 * time.Second):
+		t.Fatal("清除超时")
+	}
+	if a.clearErr == "" || a.tab != 1 || a.shred.pending {
+		t.Fatalf("失败后状态错误：tab=%d error=%q shred=%v", a.tab, a.clearErr, a.shred.pending)
+	}
+}
+
 func TestClearFailureMessagePlural(t *testing.T) {
 	for _, tc := range []struct {
 		lang string
