@@ -64,6 +64,8 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	a.sumDone = done
 	a.sumRunning = true
 	a.sumCancel = func() { canceled = true }
+	a.receipt = ReceiptDay{Lines: []ReceiptLine{{ID: "old"}}}
+	a.lastLoad = time.Now()
 	posted := make(chan func(), 1)
 	a.post = func(f func()) { posted <- f }
 	a.clearActivity()
@@ -89,6 +91,12 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	if a.clearErr != "" {
 		t.Fatal(a.clearErr)
 	}
+	if len(a.receipt.Lines) != 0 || !a.lastLoad.IsZero() {
+		t.Fatalf("清除后小票或刷新节流未清空: %#v, %v", a.receipt, a.lastLoad)
+	}
+	if len(a.clearReceipt.Lines) != 1 || a.clearReceipt.Lines[0].ID != "old" {
+		t.Fatal("未保留确认时的小票")
+	}
 	if got := a.sums.Days(); len(got) != 0 {
 		t.Fatalf("摘要残留: %v", got)
 	}
@@ -96,5 +104,16 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(exportDir, "days", old.Day+ext)); !os.IsNotExist(err) {
 			t.Fatalf("导出残留: %v", err)
 		}
+	}
+}
+
+func TestRefreshDoesNotReadDuringClear(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.clearRunning = true
+	a.receipt = ReceiptDay{Lines: []ReceiptLine{{ID: "保留"}}}
+	a.refresh()
+	if !a.lastLoad.IsZero() || len(a.receipt.Lines) != 1 || a.receipt.Lines[0].ID != "保留" {
+		t.Fatal("清除期间刷新了磁盘缓存")
 	}
 }

@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"konseki/internal/skill"
 )
@@ -31,6 +32,7 @@ func (a *app) clearActivity() {
 		return
 	}
 	a.clearRunning = true
+	a.clearReceipt = a.receipt
 	a.clearErr = ""
 	a.sumEpoch++
 	if a.sumCancel != nil {
@@ -75,8 +77,9 @@ func (a *app) clearActivity() {
 			a.sumEntries = nil
 			a.blocks = nil
 			a.receiptStore = nil
+			a.receipt = ReceiptDay{}
 			a.status = runner.Status()
-			a.lastLoad = a.currentTime()
+			a.lastLoad = time.Time{}
 		})
 	}()
 }

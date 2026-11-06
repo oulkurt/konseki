@@ -90,6 +90,7 @@ type app struct {
 	sumEpoch     uint64
 	clearRunning bool
 	clearErr     string
+	clearReceipt ReceiptDay
 	// 摘要生成时的进度文字，UI 上直接显示。
 	sumProgress string
 	// 本次生成的脱敏命中数，给用户一个「遮了多少」的反馈。
@@ -113,6 +114,9 @@ func (a *app) ensureInit() {
 // refresh 重新读一次数据和状态。每帧调用，但内部按 2 秒节流，
 // 避免每秒都在扫 JSONL。
 func (a *app) refresh() {
+	if a.clearRunning {
+		return
+	}
 	a.ensureInit()
 	if time.Since(a.lastLoad) < 2*time.Second {
 		return
