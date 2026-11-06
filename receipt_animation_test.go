@@ -32,7 +32,7 @@ func TestReceiptAnimationArtifacts(t *testing.T) {
 	}
 	_, feed := receiptTestApp(t)
 	frames := receiptFrames(feed)
-	writeReceiptGIF(t, filepath.Join(dir, "receipt-feed.gif"), frames)
+	writeReceiptGIF(t, filepath.Join(dir, "receipt-feed.gif"), frames, receiptFrameStep)
 	w, h := frames[0].Bounds().Dx(), frames[0].Bounds().Dy()
 	sheet := image.NewRGBA(image.Rect(0, 0, w*4, h))
 	for i, index := range []int{0, 5, 12, len(frames) - 1} {
@@ -67,8 +67,12 @@ func TestReceiptAnimationArtifacts(t *testing.T) {
 	a.lastLoad = time.Time{}
 	a.refresh()
 	newline.Frame()
-	writeReceiptGIF(t, filepath.Join(dir, "receipt-newline.gif"), receiptFrames(newline))
+	writeReceiptGIF(t, filepath.Join(dir, "receipt-newline.gif"), receiptFrames(newline), receiptFrameStep)
 }
+
+// receiptFrameStep 是送纸 GIF 的截帧间隔。
+const receiptFrameStep = 40 * time.Millisecond
+
 func receiptFrames(tt *ui.Tester) []*image.RGBA {
 	frames := make([]*image.RGBA, 0, 24)
 	for i := 0; i < 24; i++ {
@@ -76,19 +80,22 @@ func receiptFrames(tt *ui.Tester) []*image.RGBA {
 		copy := image.NewRGBA(source.Bounds())
 		draw.Draw(copy, copy.Bounds(), source, image.Point{}, draw.Src)
 		frames = append(frames, copy)
-		tt.Advance(40 * time.Millisecond)
+		tt.Advance(receiptFrameStep)
 		tt.Frame()
 	}
 	return frames
 }
-func writeReceiptGIF(t *testing.T, path string, frames []*image.RGBA) {
+
+// writeReceiptGIF 把帧写成 GIF，每帧停 step，最后一帧停两秒。
+// step 必须等于截帧间隔，否则播放速度和真实时间不一致。
+func writeReceiptGIF(t *testing.T, path string, frames []*image.RGBA, step time.Duration) {
 	t.Helper()
 	g := &gif.GIF{}
 	for i, frame := range frames {
 		p := image.NewPaletted(frame.Bounds(), colorpalette.Plan9)
 		draw.FloydSteinberg.Draw(p, p.Bounds(), frame, image.Point{})
 		g.Image = append(g.Image, p)
-		delay := 4
+		delay := int(step / (10 * time.Millisecond))
 		if i == len(frames)-1 {
 			delay = 200
 		}
