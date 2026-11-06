@@ -215,7 +215,10 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, interactive boo
 			meta = append([]string{msg.ReceiptPending()}, line.Apps...)
 		}
 	}
-	row := ui.ButtonBase(c.Key("receipt-line-" + line.ID)).FillWidth().AlignItems(ui.Start).Disabled(!interactive)
+	row := ui.ButtonBase(c.Key("receipt-line-" + line.ID)).FillWidth().AlignItems(ui.Start)
+	if !interactive {
+		row.PassThrough()
+	}
 	if a.receiptTarget == line.ID && a.receiptTarget != "" {
 		row.ScrollIntoView()
 		a.receiptTarget = ""
