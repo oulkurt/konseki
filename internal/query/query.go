@@ -65,7 +65,7 @@ func Main(args []string, env Env, stdout, stderr io.Writer) int {
 			help = true
 			break
 		}
-		if valueFlags[strings.TrimPrefix(a, "--")] {
+		if strings.HasPrefix(a, "--") && valueFlags[strings.TrimPrefix(a, "--")] {
 			i++
 		}
 	}

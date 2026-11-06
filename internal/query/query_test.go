@@ -423,10 +423,15 @@ func TestReviewRegressions(t *testing.T) {
 		}
 		decode[searchOutput](t, out)
 	}
-	for _, args := range [][]string{{"--help"}, {"help"}, {"search", "--help"}} {
+	for _, args := range [][]string{
+		{"--help"}, {"help"},
+		{"status", "--help"}, {"days", "--help"}, {"day", "--help"},
+		{"snapshots", "--help"}, {"search", "--help"},
+		{"search", "days", "--help"}, {"search", "limit", "--help"},
+	} {
 		out, _, code := runQuery(t, f.env, args...)
 		if code != 0 || !strings.Contains(out, "usage:") {
-			t.Fatal(out)
+			t.Fatalf("%v: code=%d output=%q", args, code, out)
 		}
 	}
 	for _, cmd := range []string{"day", "days", "status", "snapshots"} {

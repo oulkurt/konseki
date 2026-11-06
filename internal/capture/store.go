@@ -83,7 +83,7 @@ func OpenStore(root string) (*Store, error) {
 	return &Store{root: abs}, nil
 }
 
-// Days 列出根目录里日期命名的快照文件，最新的在前。
+// Days 合并快照和会话文件的日期，最新的在前。
 func (s *Store) Days() ([]string, error) {
 	entries, err := os.ReadDir(s.root)
 	if errors.Is(err, os.ErrNotExist) {
