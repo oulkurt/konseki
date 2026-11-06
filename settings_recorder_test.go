@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用配置、采集参数字段表、供应商预设和运行应用注入。
- * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加与供应商区域切换。
+ * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加和去重、供应商区域切换。
  * [POS]: 记录与模型设置交互边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -78,6 +78,43 @@ func TestSensitiveAppsRunningPicker(t *testing.T) {
 	}
 	if !slices.Contains(a.cfg.Get().Recorder.SensitiveApps, "org.whispersystems.signal-desktop") {
 		t.Fatalf("未加入敏感应用: %v", a.cfg.Get().Recorder.SensitiveApps)
+	}
+}
+
+// 已在列表里的应用不再出现在菜单里，重复添加也不会写两遍。
+func TestSensitiveAppsPickerSkipsListed(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	calls := 0
+	a.runningApps = func() []capture.Front {
+		calls++
+		return []capture.Front{
+			{App: "1Password", Bundle: "COM.1password.1password"},
+			{App: "Signal", Bundle: "org.whispersystems.signal-desktop"},
+		}
+	}
+	for _, f := range a.candidateSensitiveApps() {
+		if strings.EqualFold(f.Bundle, "com.1password.1password") {
+			t.Fatalf("已在列表里的应用又出现在菜单里：%+v", f)
+		}
+	}
+	a.addSensitiveApp("org.whispersystems.signal-desktop")
+	a.addSensitiveApp("org.whispersystems.signal-desktop")
+	n := 0
+	for _, b := range a.cfg.Get().Recorder.SensitiveApps {
+		if b == "org.whispersystems.signal-desktop" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("Signal 在敏感应用里出现 %d 次", n)
+	}
+	if got := a.candidateSensitiveApps(); slices.ContainsFunc(got, func(f capture.Front) bool { return f.App == "Signal" }) {
+		t.Fatalf("加入以后菜单里还有 Signal：%v", got)
+	}
+	// 菜单每帧重建，两秒内只查一次运行中的应用。
+	if calls != 1 {
+		t.Fatalf("两秒内查了 %d 次运行中的应用", calls)
 	}
 }
 

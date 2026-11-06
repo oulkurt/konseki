@@ -2,7 +2,7 @@
 
 /*
  * [INPUT]: 依赖 macOS 的只读输入、前台应用和锁屏查询。
- * [OUTPUT]: 验证系统观测可调用且返回合理值。
+ * [OUTPUT]: 验证系统观测和运行中应用列表可调用且返回合理值。
  * [POS]: 平台桥接冒烟测试，不请求权限或抓屏。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -10,6 +10,8 @@ package capture
 
 import (
 	"runtime"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -22,6 +24,22 @@ func TestNativeObservationsSmoke(t *testing.T) {
 	t.Logf("输入间隔: key=%v click=%v scroll=%v；前台: app=%q bundle=%q pid=%d；锁屏: %v", key, click, scroll, front.App, front.Bundle, front.PID, locked)
 	if key < 0 || click < 0 || scroll < 0 || front.PID < 0 {
 		t.Fatal("系统观测值无效")
+	}
+}
+
+// 登录会话里访达总在运行，列表不该为空；每一项都要有 bundle ID，并按名字排好。
+func TestNativeRunningApps(t *testing.T) {
+	apps := RunningApps()
+	if !slices.ContainsFunc(apps, func(f Front) bool { return f.Bundle == "com.apple.finder" }) {
+		t.Fatalf("运行中应用里没有访达：%v", apps)
+	}
+	for i, f := range apps {
+		if f.Bundle == "" || f.PID <= 0 {
+			t.Fatalf("第 %d 项缺少 bundle ID 或进程号：%+v", i, f)
+		}
+		if i > 0 && strings.ToLower(apps[i-1].App) > strings.ToLower(f.App) {
+			t.Fatalf("没有按名字排序：%q 排在 %q 前面", apps[i-1].App, f.App)
+		}
 	}
 }
 

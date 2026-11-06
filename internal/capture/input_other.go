@@ -2,7 +2,7 @@
 
 /*
  * [INPUT]: 依赖非 macOS 平台的现有采集桩。
- * [OUTPUT]: 提供无输入观测、未知权限及授权请求桩。
+ * [OUTPUT]: 提供无输入观测、空的运行中应用列表、未知权限及授权请求桩。
  * [POS]: 非 macOS 构建的采集观测适配层。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -21,3 +21,6 @@ func (nativeObservations) Accessibility() PermState { return PermUnknown }
 func RequestScreenPermission() PermState            { return newScreen().Permission(true) }
 
 func RequestAccessibility() PermState { return PermUnknown }
+
+// RunningApps 在其他平台返回空列表，设置页只提供当前前台应用。
+func RunningApps() []Front { return nil }

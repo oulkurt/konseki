@@ -36,6 +36,7 @@ type app struct {
 	showFolder           func(string)
 	defaultSkillDir      func() string
 	runningApps          func() []capture.Front
+	running              runningAppsCache
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -347,6 +348,7 @@ func main() {
 		openSettings:         mygo.Shell.OpenExternal,
 		showFolder:           mygo.Shell.ShowItemInFolder,
 		defaultSkillDir:      skill.DefaultDir,
+		runningApps:          capture.RunningApps,
 	}
 	a.rebuildGenerator()
 

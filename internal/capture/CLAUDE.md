@@ -5,8 +5,8 @@ collector.go: 定义屏幕、OCR、系统观测与时钟接口。
 dedup.go: 比较帧的亮度哈希、直方图和像素。
 frame_other.go: 为非 macOS 平台提供帧生命周期桩。
 dedup_test.go: 用合成画面验证去重阈值。
-input_darwin_test.go: 验证 macOS 只读观测并测量窗口查询。
-input_darwin.go: 读取输入间隔、工作区前台、实时窗口所有者和锁屏状态。
+input_darwin_test.go: 验证 macOS 只读观测和运行中应用列表，并测量窗口查询。
+input_darwin.go: 读取输入间隔、工作区前台、运行中应用、实时窗口所有者和锁屏状态；运行中应用只列有 Dock 图标的，供设置页加入敏感应用。
 input_other.go: 为其他平台提供观测桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
 maintenance.go: 用可注入时钟调度维护；停止不等待，清空等待旧任务。
