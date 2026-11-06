@@ -161,7 +161,7 @@ func TestSettingsLanguages(t *testing.T) {
 				a.settingsTab = sub
 				tt := ui.NewTester(a.view, 780, 2600)
 				tt.SetLocale(lang)
-				user := []string{a.cfgNow.Recorder.Dir(a.appDir), a.skillDirDraft, a.appDir}
+				user := []string{a.cfgNow.Recorder.Dir(a.appDir), a.appDir}
 				sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
 				if bad := langViolations(stripUserData(tt.Texts(), user...), lang, allow); len(bad) != 0 {
 					t.Fatalf("设置子页 %d (%s) 混入其他语言 %q，文本：%q", sub, lang, bad, tt.Texts())

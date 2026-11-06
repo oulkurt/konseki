@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"konseki/internal/capture"
-	"konseki/internal/config"
 	"konseki/internal/skill"
 	"konseki/internal/summary"
 	"konseki/locales"
@@ -218,16 +217,22 @@ func TestClearSequenceWaitsAndStopsOnFailure(t *testing.T) {
 func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
-	exportDir := filepath.Join(t.TempDir(), "export")
-	if err := a.cfg.Update(func(c *config.Config) { c.Skill.ExportDir = exportDir }); err != nil {
+	legacyDir := a.legacyDir()
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	a.cfgNow = a.cfg.Get()
+	if err := os.CopyFS(legacyDir, os.DirFS(filepath.Join("internal", "skill", "testdata", "legacy"))); err != nil {
+		t.Fatal(err)
+	}
+	newSkill := "---\nname: konseki\ndescription: \"new skill\"\n---\n\n# Konseki\n"
+	if err := os.WriteFile(filepath.Join(legacyDir, "SKILL.md"), []byte(newSkill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if files, err := skill.FindLegacy(legacyDir); err != nil || len(files) != 3 {
+		t.Fatalf("夹具: %v %v", files, err)
+	}
 	old := summary.Entry{ID: "old", Day: "2026-11-04", Headline: "private"}
 	if err := a.sums.Upsert(old); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := skill.Export(skill.Options{Dir: exportDir}, []skill.DayData{{Day: old.Day, Entries: []summary.Entry{old}}}); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
@@ -271,10 +276,16 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	if got := a.sums.Days(); len(got) != 0 {
 		t.Fatalf("摘要残留: %v", got)
 	}
-	for _, ext := range []string{".md", ".json"} {
-		if _, err := os.Stat(filepath.Join(exportDir, "days", old.Day+ext)); !os.IsNotExist(err) {
-			t.Fatalf("导出残留: %v", err)
-		}
+	if files, err := skill.FindLegacy(legacyDir); err != nil || len(files) != 0 {
+		t.Fatalf("旧导出残留: %v %v", files, err)
+	}
+	b, err := os.ReadFile(filepath.Join(legacyDir, "SKILL.md"))
+	if err != nil || string(b) != newSkill {
+		t.Fatalf("新技能的 SKILL.md 被改动: %v", err)
+	}
+	entries, err := os.ReadDir(legacyDir)
+	if err != nil || len(entries) != 1 || entries[0].Name() != "SKILL.md" {
+		t.Fatalf("清除写入了其他文件: %v %v", entries, err)
 	}
 }
 

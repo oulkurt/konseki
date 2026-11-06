@@ -29,16 +29,16 @@ func (blockedTestTransport) RoundTrip(*http.Request) (*http.Response, error) {
 	return nil, errors.New("测试禁止真实网络请求")
 }
 
-func TestTestAppClearExportIsIsolated(t *testing.T) {
+func TestTestAppLegacyDirIsIsolated(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
-	dir := a.cfgNow.Skill.ExportDir
+	dir := a.legacyDir()
 	rel, err := filepath.Rel(a.appDir, dir)
 	if dir == "" || err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		t.Fatalf("清除对账目录 %q 不在临时应用目录 %q 内", dir, a.appDir)
+		t.Fatalf("旧导出目录 %q 不在临时应用目录 %q 内", dir, a.appDir)
 	}
-	if resolved := a.skillDefaultDirectory(); resolved != dir {
-		t.Fatalf("空目录回退到了 %q", resolved)
+	if resolved := a.legacySkillDir(); resolved != dir {
+		t.Fatalf("注入的目录 %q 和实际使用的不一致", resolved)
 	}
 }
 
@@ -121,9 +121,6 @@ func newTestApp(t testing.TB) (*app, func()) {
 	if err != nil {
 		t.Fatalf("config.Open: %v", err)
 	}
-	if err := cs.Update(func(c *config.Config) { c.Skill.ExportDir = filepath.Join(appDir, "skill") }); err != nil {
-		t.Fatalf("隔离 Skill 导出目录: %v", err)
-	}
 	r, err := capture.NewWithDependencies(recorderSettings(cs.Get().Recorder, appDir), inertCapture())
 	if err != nil {
 		t.Fatalf("capture.NewWithDependencies: %v", err)
@@ -148,7 +145,7 @@ func newTestApp(t testing.TB) (*app, func()) {
 	a.requestAccessibility = func() capture.PermState { return capture.PermGranted }
 	a.openExternal = func(string) error { return nil }
 	a.showFolder = func(string) {}
-	a.defaultSkillDir = func() string { return filepath.Join(appDir, "skill") }
+	a.legacySkillDir = func() string { return filepath.Join(appDir, "skill") }
 	scanTestCredentials(t, a, nil)
 	a.rebuildGenerator()
 	return a, func() { r.Stop() }

@@ -1,14 +1,13 @@
 /*
- * [INPUT]: 依赖摘要任务、采集清除操作与 Skill 导出目录。
+ * [INPUT]: 依赖摘要任务、采集清除操作与旧版技能导出文件。
  * [OUTPUT]: 提供确认界面与按顺序执行的后台清除流程。
- * [POS]: 设置页危险操作的边界；完成状态只在界面线程发布。
+ * [POS]: 设置页危险操作的边界；最后一步删除旧导出文件，不写任何文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
 
 import (
 	"errors"
-	"os"
 	"time"
 
 	"konseki/internal/skill"
@@ -47,12 +46,12 @@ func (a *app) renderDanger(c *ui.Context, pal palette) {
 	}
 }
 
-// clearSequence 等待摘要退出，再依次清除采集、摘要和导出。
-func clearSequence(done <-chan struct{}, captureClear, summaryClear, reconcile func() error) error {
+// clearSequence 等待摘要退出，再依次清除采集、摘要和旧导出文件。
+func clearSequence(done <-chan struct{}, captureClear, summaryClear, removeLegacy func() error) error {
 	if done != nil {
 		<-done
 	}
-	for _, step := range []func() error{captureClear, summaryClear, reconcile} {
+	for _, step := range []func() error{captureClear, summaryClear, removeLegacy} {
 		if err := step(); err != nil {
 			return err
 		}
@@ -73,10 +72,7 @@ func (a *app) clearActivity() {
 	}
 	done := a.sumDone
 	runner, sums := a.runner, a.sums
-	opts := skill.Options{Dir: a.cfgNow.Skill.ExportDir, Days: 7, Owner: ownerName()}
-	if opts.Dir == "" {
-		opts.Dir = a.skillDefaultDirectory()
-	}
+	legacyDir := a.legacyDir()
 	post := a.post
 	lang := a.cfgNow.Language
 	go func() {
@@ -90,13 +86,7 @@ func (a *app) clearActivity() {
 			}
 			return nil
 		}, sums.Clear, func() error {
-			dir := opts.Dir
-			if _, err := os.Stat(dir); os.IsNotExist(err) {
-				return nil
-			} else if err != nil {
-				return err
-			}
-			_, err := skill.Reconcile(opts, nil)
+			_, err := skill.RemoveLegacy(legacyDir)
 			return err
 		})
 		post(func() {
@@ -122,6 +112,7 @@ func (a *app) clearActivity() {
 			a.scrollState.Y = 0
 			a.shred.pending = true
 			a.shred.start = time.Time{}
+			a.resetLegacy()
 		})
 	}()
 }

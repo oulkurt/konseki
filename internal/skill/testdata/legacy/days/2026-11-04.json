@@ -1,0 +1,75 @@
+{
+  "blocks": [
+    {
+      "start": "2026-11-04T09:00:00+08:00",
+      "end": "2026-11-04T09:30:00+08:00",
+      "app": "Editor",
+      "titles": [
+        "skill.go"
+      ],
+      "samples": 3,
+      "minutes": 30
+    },
+    {
+      "start": "2026-11-04T09:40:00+08:00",
+      "end": "2026-11-04T10:10:00+08:00",
+      "app": "Terminal",
+      "titles": [
+        "go test"
+      ],
+      "samples": 2,
+      "minutes": 30
+    },
+    {
+      "start": "2026-11-04T10:20:00+08:00",
+      "end": "2026-11-04T11:00:00+08:00",
+      "app": "Browser",
+      "titles": [
+        "GitHub"
+      ],
+      "samples": 4,
+      "minutes": 40
+    }
+  ],
+  "day": "2026-11-04",
+  "entries": [
+    {
+      "id": "2026-11-04-aaaa",
+      "day": "2026-11-04",
+      "start": "2026-11-04T09:00:00+08:00",
+      "end": "2026-11-04T10:00:00+08:00",
+      "headline": "整理旧导出",
+      "summary": "第一段摘要。",
+      "apps": [
+        "Editor"
+      ],
+      "topics": [
+        "skill"
+      ],
+      "open": [
+        "删除旧代码"
+      ],
+      "usage": {
+        "input": 0,
+        "output": 0
+      },
+      "createdAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "id": "2026-11-04-bbbb",
+      "day": "2026-11-04",
+      "start": "2026-11-04T10:00:00+08:00",
+      "end": "2026-11-04T11:00:00+08:00",
+      "headline": "写测试",
+      "summary": "第二段摘要。",
+      "apps": [
+        "Terminal"
+      ],
+      "usage": {
+        "input": 0,
+        "output": 0
+      },
+      "createdAt": "0001-01-01T00:00:00Z"
+    }
+  ]
+}

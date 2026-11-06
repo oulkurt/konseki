@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -34,7 +33,7 @@ type app struct {
 	requestAccessibility func() capture.PermState
 	openExternal         func(string) error
 	showFolder           func(string)
-	defaultSkillDir      func() string
+	legacySkillDir       func() string
 	runningApps          func() []capture.Front
 	running              runningAppsCache
 	// linkErr 是启动时维护数据目录软链接失败的说明，显示在 Agent 技能卡片上。
@@ -124,11 +123,30 @@ type app struct {
 	sumRedactions int
 	showRedactLog bool
 
-	// ---- Skill ----
-	skillExportMsg  string
-	skillExportedAt time.Time
-	skillDirDraft   string
-	skillDirFocus   bool
+	// ---- Agent 技能 ----
+	// 旧版导出的文件列表只在通用页第一次渲染时检查一次，结果缓存。
+	legacyFiles   []string
+	legacyChecked bool
+	legacyErr     string
+}
+
+// legacyDir 返回要检查旧导出文件的目录。
+// 设置里留过目录时优先用它，其次是测试注入的目录，最后是旧导出器的默认目录。
+func (a *app) legacyDir() string {
+	if a.cfgNow.Skill.ExportDir != "" {
+		return a.cfgNow.Skill.ExportDir
+	}
+	if a.legacySkillDir != nil {
+		return a.legacySkillDir()
+	}
+	return skill.LegacyDir()
+}
+
+// resetLegacy 让下一次渲染重新检查旧导出文件。
+func (a *app) resetLegacy() {
+	a.legacyChecked = false
+	a.legacyFiles = nil
+	a.legacyErr = ""
 }
 
 func (a *app) ensureInit() {
@@ -261,7 +279,6 @@ func (a *app) runSummary(force bool) {
 
 	key := a.dayKey()
 	blocks := a.blocks
-	root := a.runner.Root()
 	gen := a.gen
 	window := time.Duration(a.cfgNow.Summary.WindowMinutes) * time.Minute
 	if window <= 0 {
@@ -294,27 +311,8 @@ func (a *app) runSummary(force bool) {
 				return
 			}
 			a.sumEntries = entries
-			a.stampSkill(root)
 		})
 	}()
-}
-
-// stampSkill 在摘要变化后重新导出 skill。
-//
-// 这是让外部 Agent 真能读到东西的关键：摘要生成完但没导出，
-// 别的工具就还是看不到。导出本身很快（纯写文件），不值得再起
-// 一个 goroutine。
-func (a *app) stampSkill(root string) {
-	_ = root // 保留参数是为了以后按数据目录分桶导出；现在 exporter 自己取路径
-	if a.cfgNow.Skill.ExportDir == "" {
-		return
-	}
-	if n, err := a.exportSkill(); err == nil {
-		a.skillExportMsg = fmt.Sprintf("已导出 %d 个文件", n)
-		a.skillExportedAt = time.Now()
-	} else {
-		a.skillExportMsg = "导出失败：" + err.Error()
-	}
 }
 
 func main() {
@@ -355,7 +353,7 @@ func main() {
 		requestAccessibility: capture.RequestAccessibility,
 		openExternal:         mygo.Shell.OpenExternal,
 		showFolder:           mygo.Shell.ShowItemInFolder,
-		defaultSkillDir:      skill.DefaultDir,
+		legacySkillDir:       skill.LegacyDir,
 		runningApps:          capture.RunningApps,
 		linkErr:              linkErr,
 	}
