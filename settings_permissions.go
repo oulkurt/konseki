@@ -55,7 +55,10 @@ func (a *app) renderRecorderPermissions(c *ui.Context, pal palette) {
 					}
 				})
 			}
-			ui.Text(c, msg.RecorderPermissionRestart()).FontSize(11).TextColor(pal.textSecondary)
+			// 系统设置里授权以后，要重启 Konseki 才生效，这期间状态仍是未授权。生效以后不再提示。
+			if a.status.Perms.Screen != capture.PermGranted {
+				ui.Text(c, msg.RecorderPermissionRestart()).FontSize(11).TextColor(pal.textSecondary)
+			}
 		})
 	})
 }

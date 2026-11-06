@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖可注入的清除步骤和摘要完成信号。
- * [OUTPUT]: 验证清除顺序、等待、错误短路、失败提示、清除期间禁用录制入口和停止读盘。
+ * [OUTPUT]: 验证清除顺序、等待、错误短路、失败提示、无数据时置灰、清除期间禁用录制入口和停止读盘。
  * [POS]: 危险操作的并发和失败路径回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -85,6 +85,31 @@ func TestDangerCancelPreservesData(t *testing.T) {
 	}
 	if a.clearRunning || len(a.sums.Days()) != 1 {
 		t.Fatal("取消后删除了数据")
+	}
+}
+
+// 没有数据时清除按钮置灰，点了也不弹确认框；有了一条摘要以后才能点。
+func TestDangerDisabledWithoutData(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	a.refresh()
+	tt := ui.NewTester(a.view, 760, 2600)
+	_ = tt.Click("清除全部活动数据")
+	if a.clearConfirm || tt.HasText("删除全部活动数据？") {
+		t.Fatal("没有数据时清除按钮仍能打开确认框")
+	}
+	if err := a.sums.Upsert(summary.Entry{ID: "old", Day: "2026-11-04"}); err != nil {
+		t.Fatal(err)
+	}
+	a.lastLoad = time.Time{}
+	a.refresh()
+	tt.Frame()
+	if err := tt.Click("清除全部活动数据"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("删除全部活动数据？") {
+		t.Fatal("有数据时清除按钮打不开确认框")
 	}
 }
 

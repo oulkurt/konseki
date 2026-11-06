@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用配置、采集参数字段表、供应商预设和运行应用注入。
- * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加和去重、供应商区域切换。
+ * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加和去重、供应商区域切换、屏幕录制生效前才提示重启。
  * [POS]: 记录与模型设置交互边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -135,5 +135,24 @@ func TestProviderRegionSwitch(t *testing.T) {
 	got := a.cfg.Get().Providers[0]
 	if got.Region != "coding" || got.ChatBase != "https://open.bigmodel.cn/api/coding/paas/v4" {
 		t.Fatalf("区域未切换: %+v", got)
+	}
+}
+
+// 屏幕录制生效以后不再提示重启。
+func TestPermissionRestartHintOnlyBeforeGrant(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	a.lastLoad = time.Now().Add(time.Hour)
+	hint := "屏幕录制授权后，请重启 Konseki。"
+	a.status.Perms.Screen = capture.PermDenied
+	tt := ui.NewTester(a.view, 760, 2600)
+	if !tt.HasText(hint) {
+		t.Fatal("屏幕录制未生效时缺少重启提示")
+	}
+	a.status.Perms.Screen = capture.PermGranted
+	tt.Frame()
+	if tt.HasText(hint) {
+		t.Fatal("屏幕录制已生效仍提示重启")
 	}
 }
