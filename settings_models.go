@@ -172,6 +172,34 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 		if a.openProvider != providerKey(pc) {
 			return
 		}
+		if preset, ok := providers.ByID(pc.Preset); ok {
+			if eps := providers.Endpoints(preset); len(eps) > 1 {
+				ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
+					for _, ep := range eps {
+						active := pc.Region == ep.ID || (pc.Region == "" && ep.ID == eps[0].ID)
+						btn := ui.Button(c.Key("provider-region-"+pc.Preset+"-"+ep.ID), ep.Name)
+						if active {
+							btn.Background(pal.switchOn).TextColor(ui.Hex("#FFFFFF"))
+						}
+						if btn.Clicked() {
+							a.saveProviderField(idx, func(p *config.ProviderConfig) {
+								p.Region = ep.ID
+								p.ChatBase = ep.Chat
+								p.AnthropicBase = ep.Anthropic
+								if len(ep.Models) > 0 {
+									p.DefaultModel = ep.Models[0]
+								}
+							})
+							a.baseURLDraft = ep.Chat
+							if len(ep.Models) > 0 {
+								a.modelDraft = ep.Models[0]
+							}
+							a.rebuildGenerator()
+						}
+					}
+				})
+			}
+		}
 		ui.Text(c, msg.ModelsKey()).FontSize(12).TextColor(pal.textPrimary)
 		ui.TextInput(c.Key("key-"+pc.Preset), &a.apiKeyDraft).FillWidth().Password().Label(msg.ModelsKey())
 		if a.apiKeyDraft != pc.APIKey {

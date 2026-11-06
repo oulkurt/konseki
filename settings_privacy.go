@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"konseki/internal/capture"
 	"konseki/internal/config"
 	"konseki/locales"
 
@@ -22,6 +23,33 @@ func (a *app) updateRecorder(fn func(*config.Recorder)) {
 		return
 	}
 	a.applyRecorder()
+}
+
+func (a *app) candidateSensitiveApps() []capture.Front {
+	seen := map[string]bool{}
+	var out []capture.Front
+	add := func(f capture.Front) {
+		b := strings.TrimSpace(f.Bundle)
+		if b == "" || seen[strings.ToLower(b)] {
+			return
+		}
+		seen[strings.ToLower(b)] = true
+		out = append(out, capture.Front{App: f.App, Bundle: b})
+	}
+	if a.runningApps != nil {
+		for _, f := range a.runningApps() {
+			add(f)
+		}
+	}
+	add(a.status.Front)
+	return out
+}
+
+func (a *app) addSensitiveApp(bundle string) {
+	a.updateRecorder(func(r *config.Recorder) {
+		r.SensitiveApps = append(r.SensitiveApps, bundle)
+	})
+	a.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
 }
 
 func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
@@ -70,8 +98,28 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 	a.renderRecorderSummary(c, pal)
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(7).Children(func() {
-			ui.Text(c, msg.RecorderSensitive()).Bold().TextColor(pal.textPrimary)
-			ui.Text(c, msg.RecorderSensitiveHelp()).FontSize(12).TextColor(pal.textSecondary)
+			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).Gap(3).Children(func() {
+					ui.Text(c, msg.RecorderSensitive()).Bold().TextColor(pal.textPrimary)
+					ui.Text(c, msg.RecorderSensitiveHelp()).FontSize(12).TextColor(pal.textSecondary)
+				})
+				renderSelectPill(c, "recorder-sensitive-add", msg.RecorderSensitiveAdd(), 145, pal.textPrimary, pal, func(m *ui.Menu) {
+					candidates := a.candidateSensitiveApps()
+					if len(candidates) == 0 {
+						m.Item(msg.RecorderSensitiveEmpty()).Disabled(true)
+						return
+					}
+					for _, cand := range candidates {
+						label := cand.Bundle
+						if cand.App != "" {
+							label = cand.App + " · " + cand.Bundle
+						}
+						if m.Item(label).Chosen() {
+							a.addSensitiveApp(cand.Bundle)
+						}
+					}
+				})
+			})
 			if !a.sensitiveFocus {
 				a.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
 			}

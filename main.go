@@ -35,6 +35,7 @@ type app struct {
 	openSettings         func(string) error
 	showFolder           func(string)
 	defaultSkillDir      func() string
+	runningApps          func() []capture.Front
 
 	// ---- 持久层 ----
 	cfg    *config.Store

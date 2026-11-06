@@ -68,6 +68,8 @@
   "recorderOCREveryHelp": "Recognize every N snapshots, from 1 to 20.",
   "recorderSensitive": "Sensitive apps",
   "recorderSensitiveHelp": "Enter one app bundle ID per line.",
+  "recorderSensitiveAdd": "Add from running apps",
+  "recorderSensitiveEmpty": "No running apps found",
   "recorderRecent": "Recent sessions",
   "recorderSessionFallback": "Session",
   "recorderSessionDetails": "{minutes} min · {count, plural, one {# snapshot} other {# snapshots}}",

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖界面文本、白名单和注入的用户数据。
- * [OUTPUT]: 验证小票中英混排，并提供用户数据剔除工具。
+ * [OUTPUT]: 验证小票与设置三子页中英混排，并提供用户数据剔除工具。
  * [POS]: 根模块的文案验收工具。页面级语言测试先剔除用户数据，再用它判断界面文案是否混入另一种语言。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -144,5 +144,29 @@ func TestLanguageSetting(t *testing.T) {
 	a.setLanguage("en")
 	if selected != "en" || a.cfg.Get().Language != "en" || a.cfgNow.Language != "en" {
 		t.Fatalf("语言未保存或应用：选择=%q 配置=%q", selected, a.cfg.Get().Language)
+	}
+}
+
+func TestSettingsLanguages(t *testing.T) {
+	allow := []string{
+		"痕跡 Konseki", "Konseki", "MB", "ms", "API", "bundle", "ID", "English", "简体中文",
+		"zh-Hans, en-US", "com.1password.1password", "com.apple.keychainaccess", "com.bitwarden.desktop",
+	}
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, sub := range []int{0, 1, 2} {
+			t.Run(lang, func(t *testing.T) {
+				a, cleanup := newTestApp(t)
+				defer cleanup()
+				a.tab = 1
+				a.settingsTab = sub
+				tt := ui.NewTester(a.view, 780, 2600)
+				tt.SetLocale(lang)
+				user := []string{a.cfgNow.Recorder.Dir(a.appDir), a.skillDirDraft, a.appDir}
+				sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
+				if bad := langViolations(stripUserData(tt.Texts(), user...), lang, allow); len(bad) != 0 {
+					t.Fatalf("设置子页 %d (%s) 混入其他语言 %q，文本：%q", sub, lang, bad, tt.Texts())
+				}
+			})
+		}
 	}
 }

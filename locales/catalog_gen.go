@@ -988,6 +988,34 @@ func (msgs Messages) RecorderSensitiveHelp() string {
 	return Catalog.Format(msgs.locale, "recorderSensitiveHelp", nil)
 }
 
+// RecorderSensitiveAdd says "从运行中的应用添加"
+// in the language the app shows.
+//
+// 记录设置页敏感应用卡片右上角按钮，从正在运行的应用列表中点选添加。
+func RecorderSensitiveAdd() string { return In(i18n.Locale()).RecorderSensitiveAdd() }
+
+// RecorderSensitiveAdd says "从运行中的应用添加"
+// in the language of msgs.
+//
+// 记录设置页敏感应用卡片右上角按钮，从正在运行的应用列表中点选添加。
+func (msgs Messages) RecorderSensitiveAdd() string {
+	return Catalog.Format(msgs.locale, "recorderSensitiveAdd", nil)
+}
+
+// RecorderSensitiveEmpty says "暂无运行中的应用"
+// in the language the app shows.
+//
+// 记录设置页敏感应用添加菜单为空时的提示。
+func RecorderSensitiveEmpty() string { return In(i18n.Locale()).RecorderSensitiveEmpty() }
+
+// RecorderSensitiveEmpty says "暂无运行中的应用"
+// in the language of msgs.
+//
+// 记录设置页敏感应用添加菜单为空时的提示。
+func (msgs Messages) RecorderSensitiveEmpty() string {
+	return Catalog.Format(msgs.locale, "recorderSensitiveEmpty", nil)
+}
+
 // RecorderRecent says "最近会话"
 // in the language the app shows.
 //
