@@ -34,6 +34,104 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderModelSettings says "模型设置"
+// in the language the app shows.
+//
+// 记录设置页摘要模型卡片中打开模型子页的按钮。
+func RecorderModelSettings() string { return In(i18n.Locale()).RecorderModelSettings() }
+
+// RecorderModelSettings says "模型设置"
+// in the language of msgs.
+//
+// 记录设置页摘要模型卡片中打开模型子页的按钮。
+func (msgs Messages) RecorderModelSettings() string {
+	return Catalog.Format(msgs.locale, "recorderModelSettings", nil)
+}
+
+// RecorderNoModel says "尚未选择模型"
+// in the language the app shows.
+//
+// 记录设置页摘要模型卡片中尚未选择模型时的提示。
+func RecorderNoModel() string { return In(i18n.Locale()).RecorderNoModel() }
+
+// RecorderNoModel says "尚未选择模型"
+// in the language of msgs.
+//
+// 记录设置页摘要模型卡片中尚未选择模型时的提示。
+func (msgs Messages) RecorderNoModel() string {
+	return Catalog.Format(msgs.locale, "recorderNoModel", nil)
+}
+
+// RecorderPause says "暂停记录"
+// in the language the app shows.
+//
+// 活动记录器卡片中打开暂停时长菜单的按钮。
+func RecorderPause() string { return In(i18n.Locale()).RecorderPause() }
+
+// RecorderPause says "暂停记录"
+// in the language of msgs.
+//
+// 活动记录器卡片中打开暂停时长菜单的按钮。
+func (msgs Messages) RecorderPause() string {
+	return Catalog.Format(msgs.locale, "recorderPause", nil)
+}
+
+// RecorderResume says "恢复记录"
+// in the language the app shows.
+//
+// 暂停记录菜单中立即恢复的选项。
+func RecorderResume() string { return In(i18n.Locale()).RecorderResume() }
+
+// RecorderResume says "恢复记录"
+// in the language of msgs.
+//
+// 暂停记录菜单中立即恢复的选项。
+func (msgs Messages) RecorderResume() string {
+	return Catalog.Format(msgs.locale, "recorderResume", nil)
+}
+
+// RecorderPauseMinutes says "{count, plural, other {暂停 # 分钟}}"
+// in the language the app shows.
+//
+// 暂停记录菜单中的分钟数选项。
+func RecorderPauseMinutes(count int) string { return In(i18n.Locale()).RecorderPauseMinutes(count) }
+
+// RecorderPauseMinutes says "{count, plural, other {暂停 # 分钟}}"
+// in the language of msgs.
+//
+// 暂停记录菜单中的分钟数选项。
+func (msgs Messages) RecorderPauseMinutes(count int) string {
+	return Catalog.Format(msgs.locale, "recorderPauseMinutes", map[string]any{"count": count})
+}
+
+// RecorderFooterRunning says "运行中 · 多数参数即时生效，空闲阈值和输出目录的改动在下个会话生效。"
+// in the language the app shows.
+//
+// 记录设置页页脚，说明运行状态和参数生效时机。
+func RecorderFooterRunning() string { return In(i18n.Locale()).RecorderFooterRunning() }
+
+// RecorderFooterRunning says "运行中 · 多数参数即时生效，空闲阈值和输出目录的改动在下个会话生效。"
+// in the language of msgs.
+//
+// 记录设置页页脚，说明运行状态和参数生效时机。
+func (msgs Messages) RecorderFooterRunning() string {
+	return Catalog.Format(msgs.locale, "recorderFooterRunning", nil)
+}
+
+// RecorderFooterStopped says "已关闭 · 多数参数即时生效，空闲阈值和输出目录的改动在下个会话生效。"
+// in the language the app shows.
+//
+// 记录器关闭时的页脚，说明参数生效时机。
+func RecorderFooterStopped() string { return In(i18n.Locale()).RecorderFooterStopped() }
+
+// RecorderFooterStopped says "已关闭 · 多数参数即时生效，空闲阈值和输出目录的改动在下个会话生效。"
+// in the language of msgs.
+//
+// 记录器关闭时的页脚，说明参数生效时机。
+func (msgs Messages) RecorderFooterStopped() string {
+	return Catalog.Format(msgs.locale, "recorderFooterStopped", nil)
+}
+
 // ModelsEffortOff says "关闭"
 // in the language the app shows.
 //

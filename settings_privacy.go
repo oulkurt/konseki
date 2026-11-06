@@ -67,6 +67,7 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 			})
 		})
 	})
+	a.renderRecorderSummary(c, pal)
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(7).Children(func() {
 			ui.Text(c, msg.RecorderSensitive()).Bold().TextColor(pal.textPrimary)
@@ -81,6 +82,31 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 				a.updateRecorder(func(r *config.Recorder) { r.SensitiveApps = values })
 			}
 			a.sensitiveFocus = focused
+		})
+	})
+}
+
+func (a *app) renderRecorderSummary(c *ui.Context, pal palette) {
+	msg := locales.In(c.Locale())
+	model := a.cfgNow.Summary.Model
+	if model == "" {
+		model = msg.RecorderNoModel()
+	}
+	a.settingsCard(c, pal, func() {
+		ui.Column(c).FillWidth().Children(func() {
+			a.settingsRow(c, msg.ModelsSummary(), model, pal, func() {
+				if ui.Button(c.Key("recorder-model-settings"), msg.RecorderModelSettings()).Clicked() {
+					a.settingsTab = 1
+					a.scrollState.Y = 0
+				}
+			})
+			a.settingsRow(c, msg.ModelsAuto(), "", pal, func() {
+				on := a.cfgNow.Summary.Auto
+				if renderPillSwitch(c, "recorder-summary-auto", &on, pal) {
+					a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = on })
+					a.cfgNow = a.cfg.Get()
+				}
+			})
 		})
 	})
 }

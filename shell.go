@@ -124,6 +124,11 @@ func (a *app) view(c *ui.Context) {
 							a.renderRecorderStorage(c, pal)
 							a.renderRecentSessions(c, pal)
 							a.renderDanger(c, pal)
+							footer := msg.RecorderFooterStopped()
+							if a.cfgNow.Recorder.Enabled {
+								footer = msg.RecorderFooterRunning()
+							}
+							ui.Text(c, footer).FontSize(11).TextColor(pal.textSecondary)
 						case 1:
 							a.startCredentialScan()
 							a.renderModelsSettings(c, pal)

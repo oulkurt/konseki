@@ -1,5 +1,12 @@
 {
   "@@locale": "en",
+  "recorderModelSettings": "Model settings",
+  "recorderNoModel": "No model selected",
+  "recorderPause": "Pause recording",
+  "recorderResume": "Resume recording",
+  "recorderPauseMinutes": "{count, plural, one {Pause for # minute} other {Pause for # minutes}}",
+  "recorderFooterRunning": "Running · Most changes apply immediately. Idle threshold and output folder changes apply to the next session.",
+  "recorderFooterStopped": "Off · Most changes apply immediately. Idle threshold and output folder changes apply to the next session.",
   "modelsEffortOff": "Off",
   "modelsEffortLow": "Low",
   "modelsEffortMedium": "Medium",

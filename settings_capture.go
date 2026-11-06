@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"konseki/internal/config"
 	"konseki/locales"
@@ -22,10 +23,24 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Children(func() {
 			a.settingsRow(c, msg.RecorderTitle(), msg.RecorderEnableDescription(), pal, func() {
-				enabled := a.cfgNow.Recorder.Enabled
-				if renderPillSwitch(c, "sw-enable-context", &enabled, pal) && a.runner != nil {
-					a.setRecorderEnabled(enabled)
-				}
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					if a.cfgNow.Recorder.Enabled {
+						renderSelectPill(c, "recorder-pause", msg.RecorderPause(), 100, pal.textPrimary, pal, func(m *ui.Menu) {
+							if m.Item(msg.RecorderResume()).Chosen() {
+								a.pauseRecorder(time.Time{})
+							}
+							for _, minutes := range []int{15, 60, 240} {
+								if m.Item(msg.RecorderPauseMinutes(minutes)).Chosen() {
+									a.pauseRecorder(a.currentTime().Add(time.Duration(minutes) * time.Minute))
+								}
+							}
+						})
+					}
+					enabled := a.cfgNow.Recorder.Enabled
+					if renderPillSwitch(c, "sw-enable-context", &enabled, pal) && a.runner != nil {
+						a.setRecorderEnabled(enabled)
+					}
+				})
 			})
 			usage := a.status.Usage
 			current := msg.RecorderIdleState()
@@ -57,6 +72,20 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 			})
 		})
 	})
+}
+
+func (a *app) pauseRecorder(until time.Time) {
+	if err := a.cfg.Update(func(cfg *config.Config) { cfg.Recorder.PausedUntil = until }); err != nil {
+		a.err = err.Error()
+		return
+	}
+	a.cfgNow = a.cfg.Get()
+	if until.IsZero() {
+		a.runner.Resume()
+	} else {
+		a.runner.Pause(until)
+	}
+	a.status = a.runner.Status()
 }
 
 func (a *app) renderRecorderStorage(c *ui.Context, pal palette) {
