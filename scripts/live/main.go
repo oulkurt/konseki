@@ -102,7 +102,10 @@ func launch(bin, home, sock, lang string, recorder, seed bool) error {
 		}
 	}
 	cmd := exec.Command(bin)
-	cmd.Env = append(os.Environ(), "KONSEKI_HOME="+home, "MYGO_AUTOMATION="+sock)
+	cmd.Env = append(os.Environ(), "KONSEKI_HOME="+home, "MYGO_AUTOMATION="+sock, "KONSEKI_E2E_ALLOW_CAPTURE="+strconv.FormatBool(recorder))
+	if recorder {
+		cmd.Env = append(cmd.Env, "KONSEKI_E2E_ALLOW_CAPTURE=1")
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}

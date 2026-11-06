@@ -55,11 +55,17 @@ func (linuxScreen) FrontWindow() (string, string, int) {
 }
 
 func (linuxScreen) Permission(ask bool) PermState {
+	if !realCaptureAllowed() {
+		return PermDenied
+	}
 	// Wayland 下必须走 portal，没有「预授权」概念
 	return PermUnknown
 }
 
 func (linuxScreen) Grab() *Frame {
+	if !realCaptureAllowed() {
+		return nil
+	}
 	// TODO: X11 用 XGetImage；Wayland 走 portal + PipeWire
 	return nil
 }

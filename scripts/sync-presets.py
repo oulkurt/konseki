@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """从 magpie 同步供应商预设表。
 
+[INPUT]: 读取本地预设 JSON。
+[OUTPUT]: 生成并 gofmt 格式化 Go 预设表。
+[POS]: 离线数据生成入口。
+[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
 用法：
     # 1. 先在一个 magpie 的检出里导出 JSON
     cd /path/to/magpie
@@ -31,6 +36,7 @@ GO
 
 import json
 import sys
+import subprocess
 
 
 def golit(s):
@@ -120,6 +126,7 @@ def main():
 
     dest = "internal/providers/presets.go"
     open(dest, "w").write(out)
+    subprocess.run(["gofmt", "-w", dest], check=True)
     print(f"wrote {dest}: {len(kept)} presets ({len(raw) - len(kept)} decide-only dropped)")
 
 

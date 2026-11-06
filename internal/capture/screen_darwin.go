@@ -84,6 +84,9 @@ func (darwinScreen) FrontWindow() (app, title string, pid int) {
 }
 
 func (darwinScreen) Permission(ask bool) PermState {
+	if !realCaptureAllowed() {
+		return PermDenied
+	}
 	switch screenPermission(ask) {
 	case "granted":
 		return PermGranted
@@ -95,6 +98,9 @@ func (darwinScreen) Permission(ask bool) PermState {
 }
 
 func (darwinScreen) Grab() (f *Frame) {
+	if !realCaptureAllowed() {
+		return nil
+	}
 	withPool(func() {
 		img := grab()
 		if img == 0 {

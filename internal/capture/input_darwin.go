@@ -128,6 +128,9 @@ func (nativeObservations) Accessibility() PermState {
 	return PermDenied
 }
 func RequestScreenPermission() PermState {
+	if !realCaptureAllowed() {
+		return PermDenied
+	}
 	initPlatform()
 	if requestScreen == nil {
 		return PermUnknown
@@ -140,6 +143,9 @@ func RequestScreenPermission() PermState {
 
 // RequestAccessibility 请求辅助功能权限，应由用户操作触发。
 func RequestAccessibility() (state PermState) {
+	if !realCaptureAllowed() {
+		return PermDenied
+	}
 	initPlatform()
 	withPool(func() {
 		options := O(cls("NSDictionary"), "dictionaryWithObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), accessibilityPrompt)

@@ -38,3 +38,7 @@ storage.go: 用量缓存、按天保留、超额淘汰、warm 1280×720 q40 与 
 storage_test.go: 用临时目录和合成 JPEG 验证存储维护的磁盘行为，覆盖并发写入、删到一半中断、删除失败计数、降级幂等与解码次数；KONSEKI_STORAGE_PERF=1 时跑 300 张重编码的性能门槛。
 store.go: 按天追加快照、OCR 与会话；提供只读打开、快照与会话日期并集、快照读取、时间解析和截图路径。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+capture_gate_e2e.go: 默认禁止真实抓屏与权限请求；环境值 1 才放行。
+capture_gate_normal.go: 正式构建保持原有采集行为。
+capture_gate_e2e_test.go: 无窗口验证默认阻断与显式授权。
+capture_gate_normal_test.go: 验证正式构建不受环境开关影响。

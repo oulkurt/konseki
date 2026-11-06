@@ -18,9 +18,19 @@ func (nativeObservations) Intervals() (time.Duration, time.Duration, time.Durati
 func (nativeObservations) Front() Front             { return Front{} }
 func (nativeObservations) Locked() bool             { return false }
 func (nativeObservations) Accessibility() PermState { return PermUnknown }
-func RequestScreenPermission() PermState            { return newScreen().Permission(true) }
+func RequestScreenPermission() PermState {
+	if !realCaptureAllowed() {
+		return PermDenied
+	}
+	return newScreen().Permission(true)
+}
 
-func RequestAccessibility() PermState { return PermUnknown }
+func RequestAccessibility() PermState {
+	if !realCaptureAllowed() {
+		return PermDenied
+	}
+	return PermUnknown
+}
 
 // RunningApps 在其他平台返回空列表，设置页只提供当前前台应用。
 func RunningApps() []Front { return nil }
