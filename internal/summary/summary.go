@@ -181,6 +181,30 @@ func (s *Store) Days() []string {
 	return out
 }
 
+// Clear 删除摘要日期文件，并保留目录中的其他文件。
+func (s *Store) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".jsonl") {
+			continue
+		}
+		day := strings.TrimSuffix(name, ".jsonl")
+		if _, err := time.Parse("2006-01-02", day); err != nil {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.dir, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ---------- 生成 ----------
 
 // Generator 负责把采样喂给模型。

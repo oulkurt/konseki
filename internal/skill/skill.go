@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖采集时间块、摘要和导出目录。
+ * [OUTPUT]: 提供 Skill 导出与生成文件对账。
+ * [POS]: 将活动证据转换为外部 Agent 可读的文件，不修改采集数据。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 // Package skill 把 Konseki 的痕迹导出成别的 Agent 能读的东西。
 //
 // 想让 Claude Code / Codex / Cursor 这些工具了解「我在干什么」，
