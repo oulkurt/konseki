@@ -119,6 +119,7 @@ func (a *app) view(c *ui.Context) {
 						case 0:
 							a.renderCaptureSection(c, pal)
 							a.renderRecorderFields(c, pal)
+							a.renderRecorderPrivacy(c, pal)
 							a.renderRecentSessions(c, pal)
 							a.renderDanger(c, pal)
 						case 1:

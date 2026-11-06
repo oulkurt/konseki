@@ -71,6 +71,18 @@ func TestRecorderFieldLabels(t *testing.T) {
 	}
 }
 
+func TestRecorderPrivacyControls(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	tt := ui.NewTester(a.view, 800, 2400)
+	for _, label := range []string{"屏幕文字识别", "全局键鼠监听", "敏感应用"} {
+		if !tt.HasText(label) {
+			t.Errorf("缺少设置 %s", label)
+		}
+	}
+}
+
 func TestRecentSessionOpensReceipt(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()

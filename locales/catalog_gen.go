@@ -34,6 +34,146 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderOCR says "屏幕文字识别"
+// in the language the app shows.
+//
+// 记录设置页的屏幕文字识别开关。
+func RecorderOCR() string { return In(i18n.Locale()).RecorderOCR() }
+
+// RecorderOCR says "屏幕文字识别"
+// in the language of msgs.
+//
+// 记录设置页的屏幕文字识别开关。
+func (msgs Messages) RecorderOCR() string {
+	return Catalog.Format(msgs.locale, "recorderOCR", nil)
+}
+
+// RecorderOCRDescription says "在本机识别截图中的文字。"
+// in the language the app shows.
+//
+// 屏幕文字识别开关下的说明。
+func RecorderOCRDescription() string { return In(i18n.Locale()).RecorderOCRDescription() }
+
+// RecorderOCRDescription says "在本机识别截图中的文字。"
+// in the language of msgs.
+//
+// 屏幕文字识别开关下的说明。
+func (msgs Messages) RecorderOCRDescription() string {
+	return Catalog.Format(msgs.locale, "recorderOCRDescription", nil)
+}
+
+// RecorderInput says "全局键鼠监听"
+// in the language the app shows.
+//
+// 记录设置页的全局键鼠计数开关。
+func RecorderInput() string { return In(i18n.Locale()).RecorderInput() }
+
+// RecorderInput says "全局键鼠监听"
+// in the language of msgs.
+//
+// 记录设置页的全局键鼠计数开关。
+func (msgs Messages) RecorderInput() string {
+	return Catalog.Format(msgs.locale, "recorderInput", nil)
+}
+
+// RecorderInputDescription says "只记录按键和点击次数，不记录内容。"
+// in the language the app shows.
+//
+// 全局键鼠监听开关下的说明。
+func RecorderInputDescription() string { return In(i18n.Locale()).RecorderInputDescription() }
+
+// RecorderInputDescription says "只记录按键和点击次数，不记录内容。"
+// in the language of msgs.
+//
+// 全局键鼠监听开关下的说明。
+func (msgs Messages) RecorderInputDescription() string {
+	return Catalog.Format(msgs.locale, "recorderInputDescription", nil)
+}
+
+// RecorderOCRLanguages says "识别语言"
+// in the language the app shows.
+//
+// 屏幕文字识别语言列表字段。
+func RecorderOCRLanguages() string { return In(i18n.Locale()).RecorderOCRLanguages() }
+
+// RecorderOCRLanguages says "识别语言"
+// in the language of msgs.
+//
+// 屏幕文字识别语言列表字段。
+func (msgs Messages) RecorderOCRLanguages() string {
+	return Catalog.Format(msgs.locale, "recorderOCRLanguages", nil)
+}
+
+// RecorderOCRLanguagesHelp says "使用逗号分隔语言代码。"
+// in the language the app shows.
+//
+// 屏幕文字识别语言字段的输入格式。
+func RecorderOCRLanguagesHelp() string { return In(i18n.Locale()).RecorderOCRLanguagesHelp() }
+
+// RecorderOCRLanguagesHelp says "使用逗号分隔语言代码。"
+// in the language of msgs.
+//
+// 屏幕文字识别语言字段的输入格式。
+func (msgs Messages) RecorderOCRLanguagesHelp() string {
+	return Catalog.Format(msgs.locale, "recorderOCRLanguagesHelp", nil)
+}
+
+// RecorderOCREvery says "识别频率"
+// in the language the app shows.
+//
+// 屏幕文字识别每隔多少张快照运行。
+func RecorderOCREvery() string { return In(i18n.Locale()).RecorderOCREvery() }
+
+// RecorderOCREvery says "识别频率"
+// in the language of msgs.
+//
+// 屏幕文字识别每隔多少张快照运行。
+func (msgs Messages) RecorderOCREvery() string {
+	return Catalog.Format(msgs.locale, "recorderOCREvery", nil)
+}
+
+// RecorderOCREveryHelp says "每 N 张快照识别一次，范围为 1 到 20。"
+// in the language the app shows.
+//
+// 屏幕文字识别频率字段的范围。
+func RecorderOCREveryHelp() string { return In(i18n.Locale()).RecorderOCREveryHelp() }
+
+// RecorderOCREveryHelp says "每 N 张快照识别一次，范围为 1 到 20。"
+// in the language of msgs.
+//
+// 屏幕文字识别频率字段的范围。
+func (msgs Messages) RecorderOCREveryHelp() string {
+	return Catalog.Format(msgs.locale, "recorderOCREveryHelp", nil)
+}
+
+// RecorderSensitive says "敏感应用"
+// in the language the app shows.
+//
+// 记录设置页不采集的应用列表标题。
+func RecorderSensitive() string { return In(i18n.Locale()).RecorderSensitive() }
+
+// RecorderSensitive says "敏感应用"
+// in the language of msgs.
+//
+// 记录设置页不采集的应用列表标题。
+func (msgs Messages) RecorderSensitive() string {
+	return Catalog.Format(msgs.locale, "recorderSensitive", nil)
+}
+
+// RecorderSensitiveHelp says "每行输入一个应用的 bundle ID。"
+// in the language the app shows.
+//
+// 敏感应用列表的输入格式。
+func RecorderSensitiveHelp() string { return In(i18n.Locale()).RecorderSensitiveHelp() }
+
+// RecorderSensitiveHelp says "每行输入一个应用的 bundle ID。"
+// in the language of msgs.
+//
+// 敏感应用列表的输入格式。
+func (msgs Messages) RecorderSensitiveHelp() string {
+	return Catalog.Format(msgs.locale, "recorderSensitiveHelp", nil)
+}
+
 // RecorderRecent says "最近会话"
 // in the language the app shows.
 //
