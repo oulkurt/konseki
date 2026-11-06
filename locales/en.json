@@ -1,5 +1,12 @@
 {
   "@@locale": "en",
+  "modelsEffortOff": "Off",
+  "modelsEffortLow": "Low",
+  "modelsEffortMedium": "Medium",
+  "modelsEffortHigh": "High",
+  "modelsEffortMax": "Maximum",
+  "modelsRedactSecrets": "Credentials and passwords",
+  "modelsRedactPersonal": "Personal data",
   "modelsSummary": "Summary model",
   "modelsChoose": "Choose a model",
   "modelsEffort": "Reasoning effort",

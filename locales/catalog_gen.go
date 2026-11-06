@@ -34,6 +34,104 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// ModelsEffortOff says "关闭"
+// in the language the app shows.
+//
+// 摘要模型推理档位的关闭选项。
+func ModelsEffortOff() string { return In(i18n.Locale()).ModelsEffortOff() }
+
+// ModelsEffortOff says "关闭"
+// in the language of msgs.
+//
+// 摘要模型推理档位的关闭选项。
+func (msgs Messages) ModelsEffortOff() string {
+	return Catalog.Format(msgs.locale, "modelsEffortOff", nil)
+}
+
+// ModelsEffortLow says "低"
+// in the language the app shows.
+//
+// 摘要模型推理档位的低选项。
+func ModelsEffortLow() string { return In(i18n.Locale()).ModelsEffortLow() }
+
+// ModelsEffortLow says "低"
+// in the language of msgs.
+//
+// 摘要模型推理档位的低选项。
+func (msgs Messages) ModelsEffortLow() string {
+	return Catalog.Format(msgs.locale, "modelsEffortLow", nil)
+}
+
+// ModelsEffortMedium says "中"
+// in the language the app shows.
+//
+// 摘要模型推理档位的中选项。
+func ModelsEffortMedium() string { return In(i18n.Locale()).ModelsEffortMedium() }
+
+// ModelsEffortMedium says "中"
+// in the language of msgs.
+//
+// 摘要模型推理档位的中选项。
+func (msgs Messages) ModelsEffortMedium() string {
+	return Catalog.Format(msgs.locale, "modelsEffortMedium", nil)
+}
+
+// ModelsEffortHigh says "高"
+// in the language the app shows.
+//
+// 摘要模型推理档位的高选项。
+func ModelsEffortHigh() string { return In(i18n.Locale()).ModelsEffortHigh() }
+
+// ModelsEffortHigh says "高"
+// in the language of msgs.
+//
+// 摘要模型推理档位的高选项。
+func (msgs Messages) ModelsEffortHigh() string {
+	return Catalog.Format(msgs.locale, "modelsEffortHigh", nil)
+}
+
+// ModelsEffortMax says "最高"
+// in the language the app shows.
+//
+// 摘要模型推理档位的最高选项。
+func ModelsEffortMax() string { return In(i18n.Locale()).ModelsEffortMax() }
+
+// ModelsEffortMax says "最高"
+// in the language of msgs.
+//
+// 摘要模型推理档位的最高选项。
+func (msgs Messages) ModelsEffortMax() string {
+	return Catalog.Format(msgs.locale, "modelsEffortMax", nil)
+}
+
+// ModelsRedactSecrets says "凭据与密码"
+// in the language the app shows.
+//
+// 模型设置页中凭据与密码脱敏开关。
+func ModelsRedactSecrets() string { return In(i18n.Locale()).ModelsRedactSecrets() }
+
+// ModelsRedactSecrets says "凭据与密码"
+// in the language of msgs.
+//
+// 模型设置页中凭据与密码脱敏开关。
+func (msgs Messages) ModelsRedactSecrets() string {
+	return Catalog.Format(msgs.locale, "modelsRedactSecrets", nil)
+}
+
+// ModelsRedactPersonal says "个人数据"
+// in the language the app shows.
+//
+// 模型设置页中个人数据脱敏开关。
+func ModelsRedactPersonal() string { return In(i18n.Locale()).ModelsRedactPersonal() }
+
+// ModelsRedactPersonal says "个人数据"
+// in the language of msgs.
+//
+// 模型设置页中个人数据脱敏开关。
+func (msgs Messages) ModelsRedactPersonal() string {
+	return Catalog.Format(msgs.locale, "modelsRedactPersonal", nil)
+}
+
 // ModelsSummary says "摘要模型"
 // in the language the app shows.
 //

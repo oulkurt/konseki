@@ -38,10 +38,17 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 						}
 					}
 				})
-				renderSelectPill(c, "summary-effort", a.cfgNow.Summary.ThinkingEffort, 90, pal.textPrimary, pal, func(m *ui.Menu) {
-					for _, level := range []string{"off", "low", "medium", "high", "max"} {
-						if m.Item(level).Checked(a.cfgNow.Summary.ThinkingEffort == level).Chosen() {
-							a.setThinking(level)
+				efforts := []struct{ key, label string }{{"off", msg.ModelsEffortOff()}, {"low", msg.ModelsEffortLow()}, {"medium", msg.ModelsEffortMedium()}, {"high", msg.ModelsEffortHigh()}, {"max", msg.ModelsEffortMax()}}
+				effortLabel := msg.ModelsEffort()
+				for _, effort := range efforts {
+					if effort.key == a.cfgNow.Summary.ThinkingEffort {
+						effortLabel = effort.label
+					}
+				}
+				renderSelectPill(c, "summary-effort", effortLabel, 90, pal.textPrimary, pal, func(m *ui.Menu) {
+					for _, effort := range efforts {
+						if m.Item(effort.label).Checked(a.cfgNow.Summary.ThinkingEffort == effort.key).Chosen() {
+							a.setThinking(effort.key)
 						}
 					}
 				})
@@ -67,6 +74,25 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 					a.rebuildGenerator()
 				}
 			})
+			if a.cfgNow.Redact.Enabled {
+				for _, item := range []struct {
+					key, label string
+					value      bool
+					set        func(*config.Config, bool)
+				}{
+					{"sw-redact-secrets", msg.ModelsRedactSecrets(), a.cfgNow.Redact.Secrets, func(cfg *config.Config, v bool) { cfg.Redact.Secrets = v }},
+					{"sw-redact-personal", msg.ModelsRedactPersonal(), a.cfgNow.Redact.Personal, func(cfg *config.Config, v bool) { cfg.Redact.Personal = v }},
+				} {
+					a.settingsRow(c, item.label, "", pal, func() {
+						v := item.value
+						if renderPillSwitch(c, item.key, &v, pal) {
+							a.cfg.Update(func(cfg *config.Config) { item.set(cfg, v) })
+							a.cfgNow = a.cfg.Get()
+							a.rebuildGenerator()
+						}
+					})
+				}
+			}
 		})
 	})
 }

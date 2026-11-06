@@ -93,9 +93,11 @@ func TestRedactTogglePersists(t *testing.T) {
 		t.Fatal("默认应该开着凭据脱敏")
 	}
 	// 点「凭据与密码」旁边的开关
-	if err := tt.Click("sw-redact-secrets"); err != nil {
-		t.Skipf("找不到开关（布局可能变了）: %v", err)
+	rect, ok := tt.Find("凭据与密码")
+	if !ok {
+		t.Fatal("找不到凭据脱敏开关")
 	}
+	tt.ClickAt(700, rect.Y+12)
 	if a.cfg.Get().Redact.Secrets {
 		t.Error("点了开关但设置没变")
 	}
