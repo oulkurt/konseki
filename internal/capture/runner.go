@@ -714,7 +714,7 @@ func (b Block) Duration() time.Duration { return b.End.Sub(b.Start) }
 // dateKey 形如 2026-11-04；传空字符串表示今天。
 func (r *Runner) Timeline(dateKey string) ([]Block, error) {
 	if dateKey == "" {
-		dateKey = time.Now().Format("2006-01-02")
+		dateKey = r.deps.clock.Now().Format("2006-01-02")
 	}
 	r.mu.Lock()
 	st := r.st

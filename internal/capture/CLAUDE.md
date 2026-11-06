@@ -24,7 +24,7 @@ pool_darwin.go: 将后台 Objective-C 调用绑定线程和自动释放池。
 pool_test.go: 检查自动释放池的创建边界。
 runner_behavior_test.go: 验证采集停止、超额触发和 OCR 抽样。
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
-runner.go: 协调采集生命周期与异步抓帧；时间轴只读取快照，抓帧前后复查实时敏感窗口。
+runner.go: 协调采集生命周期与异步抓帧；时间轴按注入时钟读取快照，抓帧前后复查实时敏感窗口。
 screen_darwin.go: 编排 macOS 帧、权限、图像编码与 OCR 生命周期。
 screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。

@@ -153,3 +153,22 @@ func TestTimelineDoesNotReadOCR(t *testing.T) {
 		t.Fatal(blocks, err)
 	}
 }
+
+func TestTimelineTodayUsesInjectedClock(t *testing.T) {
+	d, c, _ := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir()}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.now = time.Date(2001, 2, 3, 12, 0, 0, 0, time.Local)
+	now := c.now
+	c.mu.Unlock()
+	if err := r.st.Append(Snapshot{TS: now.Format(time.RFC3339Nano), App: "Editor"}); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := r.Timeline("")
+	if err != nil || len(blocks) != 1 || blocks[0].App != "Editor" {
+		t.Fatal(blocks, err)
+	}
+}
