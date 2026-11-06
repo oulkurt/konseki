@@ -114,7 +114,7 @@ func TestRecentSessionOpensReceipt(t *testing.T) {
 // 视图能在没有窗口的情况下构建，这是 mygo native 模板的核心好处：
 // 界面逻辑可以纯查测试，不用起 GUI。
 
-func newTestApp(t *testing.T) (*app, func()) {
+func newTestApp(t testing.TB) (*app, func()) {
 	t.Helper()
 	appDir := t.TempDir()
 	cs, err := config.Open(appDir)
@@ -154,7 +154,7 @@ func newTestApp(t *testing.T) (*app, func()) {
 	return a, func() { r.Stop() }
 }
 
-func scanTestCredentials(t *testing.T, a *app, creds []providers.Credential) {
+func scanTestCredentials(t testing.TB, a *app, creds []providers.Credential) {
 	t.Helper()
 	queued := make(chan func(), 1)
 	a.post = func(f func()) { queued <- f }
