@@ -58,6 +58,7 @@ type Runner struct {
 	storage         *Storage
 	deps            dependencies
 	running         bool
+	skipRecovery    bool
 	stop            chan struct{}
 	done            chan struct{}
 	pausedUntil     time.Time
@@ -206,13 +207,14 @@ func (r *Runner) start() {
 	r.closed = make(map[string]closedSession)
 	r.queue = newOCRQueue(r.deps.ocr, 30*time.Second, r.setError)
 	stop, done, enforce := r.stop, r.done, r.enforce
-	st, storage := r.st, r.storage
+	st, storage, skipRecovery := r.st, r.storage, r.skipRecovery
+	r.skipRecovery = false
 	r.mu.Unlock()
 	if err := cleanCaptureTemps(st.root, r.deps.clock.Now()); err != nil {
 		r.setError(err)
 	}
 	r.startMaintenance(stop, enforce)
-	go r.loop(stop, done, st, storage)
+	go r.loop(stop, done, st, storage, skipRecovery)
 }
 func cleanCaptureTemps(root string, now time.Time) error {
 	dir := filepath.Join(root, "shots")
@@ -274,6 +276,7 @@ func (r *Runner) ClearAll() (Cleared, error) {
 	}
 	r.mu.Lock()
 	r.session = nil
+	r.skipRecovery = true
 	r.machine = Machine{}
 	r.baseline = nil
 	r.generation++
@@ -417,10 +420,12 @@ func (r *Runner) liveSensitive() bool {
 	return sensitiveFront(live, r.cfg.SensitiveApps)
 }
 
-func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, st *Store, storage *Storage) {
+func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, st *Store, storage *Storage, skipRecovery bool) {
 	defer close(done)
-	if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
-		r.setError(err)
+	if !skipRecovery {
+		if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
+			r.setError(err)
+		}
 	}
 	ticks, cancel := r.deps.clock.Ticks()
 	defer cancel()

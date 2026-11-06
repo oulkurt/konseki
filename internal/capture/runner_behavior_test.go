@@ -7,6 +7,10 @@
 package capture
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -218,5 +222,51 @@ func TestRunnerSuspendPersistsPreviousTick(t *testing.T) {
 	sessions := r.RecentSessions(1)
 	if len(sessions) != 1 || sessions[0].EndReason != EndSuspend || !sessions[0].End.Equal(before) {
 		t.Fatal(sessions)
+	}
+}
+
+func TestClearAllDoesNotRecoverResidualSession(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("需要目录权限限制")
+	}
+	for _, running := range []bool{true, false} {
+		t.Run(fmt.Sprintf("running=%v", running), func(t *testing.T) {
+			d, c, _ := fakeDependencies()
+			root := t.TempDir()
+			r, err := newRunner(Settings{Root: root, Heartbeat: time.Hour}, d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if running {
+				r.Start()
+				c.advance(250 * time.Millisecond)
+				eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+			}
+			now := c.Now()
+			if err := r.st.Append(Snapshot{TS: now.Format(time.RFC3339Nano), Session: "residual"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, "sessions"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(root, 0555); err != nil {
+				t.Fatal(err)
+			}
+			defer os.Chmod(root, 0755)
+			cleared, err := r.ClearAll()
+			if err != nil || cleared.Failed == 0 {
+				t.Fatal(cleared, err)
+			}
+			if !running {
+				r.Start()
+			}
+			c.advance(250 * time.Millisecond)
+			eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.initialized })
+			r.Stop()
+			rows, err := r.st.ReadSessions(now.Format("2006-01-02"))
+			if err != nil || len(rows) != 0 {
+				t.Fatalf("清空后恢复了残留会话: %v %v", rows, err)
+			}
+		})
 	}
 }
