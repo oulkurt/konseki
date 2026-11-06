@@ -61,8 +61,8 @@ func prepareHome(home, lang string, recorder bool) error {
 	if len(entries) != 0 {
 		return errors.New("home 必须为空目录")
 	}
-	// 技能导出目录默认是真实的 ~/.claude/skills/konseki，不跟 KONSEKI_HOME 走。
-	// 清除全部数据会对账这个目录，所以测试窗口把它指到 home 里面。
+	// 旧版导出目录默认是真实的 ~/.claude/skills/konseki，不跟 KONSEKI_HOME 走。
+	// 清除全部数据会删除这个目录里的旧版导出文件，所以测试窗口把它指到 home 里面。
 	b, err := json.Marshal(map[string]any{
 		"version":  2,
 		"language": lang,
