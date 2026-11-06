@@ -11,8 +11,10 @@ package capture
 import "testing"
 
 func TestNormalCaptureGate(t *testing.T) {
-	t.Setenv("KONSEKI_E2E_ALLOW_CAPTURE", "")
-	if !realCaptureAllowed() {
-		t.Fatal("production capture disabled")
+	for _, value := range []string{"", "0", "1"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv("KONSEKI_E2E_ALLOW_CAPTURE", value)
+			assertCaptureBackend(t, true)
+		})
 	}
 }

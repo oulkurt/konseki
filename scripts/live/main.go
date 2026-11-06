@@ -1,5 +1,5 @@
 /**
- * [INPUT]: 依赖自动化客户端、隔离目录、摘要存储和 ps 的进程采样。
+ * [INPUT]: 依赖自动化客户端、隔离目录、摘要存储和 ps 采样；子进程环境覆盖继承许可。
  * [OUTPUT]: 提供 launch、seed、shot、click、wait、perf、tree、act、key 九个命令；launch -seed 在启动前写入今天的摘要，seed 给运行中的 App 补数据。
  * [POS]: live 命令入口。启动隔离、种子数据和进程采样在这里，协议编码在 client.go。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -86,6 +86,23 @@ func socketBusy(path string) bool {
 	return true
 }
 
+// launchCommand 构造实际启动命令，清除继承许可后只写一个明确值。
+func launchCommand(bin, home, sock string, recorder bool) *exec.Cmd {
+	cmd := exec.Command(bin)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if key != "KONSEKI_HOME" && key != "MYGO_AUTOMATION" && key != "KONSEKI_E2E_ALLOW_CAPTURE" {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	permit := "0"
+	if recorder {
+		permit = "1"
+	}
+	cmd.Env = append(cmd.Env, "KONSEKI_HOME="+home, "MYGO_AUTOMATION="+sock, "KONSEKI_E2E_ALLOW_CAPTURE="+permit)
+	return cmd
+}
+
 func launch(bin, home, sock, lang string, recorder, seed bool) error {
 	if bin == "" || sock == "" {
 		return errors.New("必须指定 bin 和 sock")
@@ -101,11 +118,7 @@ func launch(bin, home, sock, lang string, recorder, seed bool) error {
 			return err
 		}
 	}
-	cmd := exec.Command(bin)
-	cmd.Env = append(os.Environ(), "KONSEKI_HOME="+home, "MYGO_AUTOMATION="+sock, "KONSEKI_E2E_ALLOW_CAPTURE="+strconv.FormatBool(recorder))
-	if recorder {
-		cmd.Env = append(cmd.Env, "KONSEKI_E2E_ALLOW_CAPTURE=1")
-	}
+	cmd := launchCommand(bin, home, sock, recorder)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

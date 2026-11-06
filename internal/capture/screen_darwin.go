@@ -1,7 +1,7 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖 macos.go 的原生原语和线程绑定自动释放池。
+ * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查；依赖 macos.go 的原生原语和线程绑定自动释放池。
  * [OUTPUT]: 实现屏幕、权限、JPEG、OCR 和帧引用生命周期。
  * [POS]: Runner 与 macOS 原生桥接层之间的适配边界。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -73,20 +73,18 @@ func screenPermission(ask bool) string {
 
 type darwinScreen struct{}
 
-func newScreen() Screen {
-	initPlatform()
+func newPlatformScreen() Screen {
 	return darwinScreen{}
 }
 
 func (darwinScreen) FrontWindow() (app, title string, pid int) {
+	initPlatform()
 	withPool(func() { app, title, pid = frontWindow() })
 	return
 }
 
 func (darwinScreen) Permission(ask bool) PermState {
-	if !realCaptureAllowed() {
-		return PermDenied
-	}
+	initPlatform()
 	switch screenPermission(ask) {
 	case "granted":
 		return PermGranted
@@ -98,9 +96,7 @@ func (darwinScreen) Permission(ask bool) PermState {
 }
 
 func (darwinScreen) Grab() (f *Frame) {
-	if !realCaptureAllowed() {
-		return nil
-	}
+	initPlatform()
 	withPool(func() {
 		img := grab()
 		if img == 0 {

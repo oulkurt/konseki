@@ -1,7 +1,7 @@
 //go:build linux
 
 /*
- * [INPUT]: 依赖平台屏幕与文字识别能力。
+ * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查；依赖平台屏幕与文字识别能力。
  * [OUTPUT]: 提供采集接口的平台实现。
  * [POS]: 采集模块的平台适配，与外壳隔离。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -44,7 +44,7 @@ var errLinuxNotImplemented = errors.New("linux backend not implemented yet")
 
 type linuxScreen struct{}
 
-func newScreen() Screen {
+func newPlatformScreen() Screen {
 	return linuxScreen{}
 }
 
@@ -55,17 +55,11 @@ func (linuxScreen) FrontWindow() (string, string, int) {
 }
 
 func (linuxScreen) Permission(ask bool) PermState {
-	if !realCaptureAllowed() {
-		return PermDenied
-	}
 	// Wayland 下必须走 portal，没有「预授权」概念
 	return PermUnknown
 }
 
 func (linuxScreen) Grab() *Frame {
-	if !realCaptureAllowed() {
-		return nil
-	}
 	// TODO: X11 用 XGetImage；Wayland 走 portal + PipeWire
 	return nil
 }

@@ -1,7 +1,7 @@
 //go:build !darwin
 
 /*
- * [INPUT]: 依赖非 macOS 平台的现有采集桩。
+ * [INPUT]: 依赖 capture_gate.go 保护公开授权入口；依赖非 macOS 平台的现有采集桩。
  * [OUTPUT]: 提供无输入观测、空的运行中应用列表、未知权限及授权请求桩。
  * [POS]: 非 macOS 构建的采集观测适配层。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -18,17 +18,11 @@ func (nativeObservations) Intervals() (time.Duration, time.Duration, time.Durati
 func (nativeObservations) Front() Front             { return Front{} }
 func (nativeObservations) Locked() bool             { return false }
 func (nativeObservations) Accessibility() PermState { return PermUnknown }
-func RequestScreenPermission() PermState {
-	if !realCaptureAllowed() {
-		return PermDenied
-	}
-	return newScreen().Permission(true)
+func platformRequestScreenPermission() PermState {
+	return newPlatformScreen().Permission(true)
 }
 
-func RequestAccessibility() PermState {
-	if !realCaptureAllowed() {
-		return PermDenied
-	}
+func platformRequestAccessibility() PermState {
 	return PermUnknown
 }
 

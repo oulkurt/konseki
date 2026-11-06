@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Unix 假服务端和临时隔离目录。
- * [OUTPUT]: 验证协议编码、回复匹配、错误、等待上限、启动配置、套接字占用、种子摘要和 CPU 时间解析。
+ * [OUTPUT]: 验证协议编码、回复匹配、错误、等待上限、启动配置、子进程许可环境、套接字占用、种子摘要和 CPU 时间解析。
  * [POS]: live 传输与配置的回归测试，不启动图形程序。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -192,5 +192,54 @@ func TestParseCPUTime(t *testing.T) {
 	}
 	if _, err := parseCPUTime("1:xx"); err == nil {
 		t.Error("坏输入没有报错")
+	}
+}
+
+func TestLaunchChildEnvironment(t *testing.T) {
+	if os.Getenv("KONSEKI_TEST_LAUNCH_ENV") == "1" {
+		out := map[string]string{}
+		for _, key := range []string{"KONSEKI_HOME", "MYGO_AUTOMATION", "KONSEKI_E2E_ALLOW_CAPTURE"} {
+			out[key] = os.Getenv(key)
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(out)
+		os.Exit(0)
+	}
+	bin, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, inherited := range []string{"", "0", "1", "true"} {
+		for _, recorder := range []bool{false, true} {
+			t.Setenv("KONSEKI_E2E_ALLOW_CAPTURE", inherited)
+			t.Setenv("KONSEKI_HOME", "inherited-home")
+			t.Setenv("MYGO_AUTOMATION", "inherited-socket")
+			cmd := launchCommand(bin, "fake-home", "fake-socket", recorder)
+			count := 0
+			for _, entry := range cmd.Env {
+				if strings.HasPrefix(entry, "KONSEKI_E2E_ALLOW_CAPTURE=") {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatalf("许可变量数量=%d", count)
+			}
+			cmd.Args = append(cmd.Args, "-test.run=^TestLaunchChildEnvironment$")
+			cmd.Env = append(cmd.Env, "KONSEKI_TEST_LAUNCH_ENV=1")
+			b, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]string
+			if err := json.Unmarshal(b, &got); err != nil {
+				t.Fatal(err)
+			}
+			want := "0"
+			if recorder {
+				want = "1"
+			}
+			if got["KONSEKI_E2E_ALLOW_CAPTURE"] != want || got["KONSEKI_HOME"] != "fake-home" || got["MYGO_AUTOMATION"] != "fake-socket" {
+				t.Fatalf("继承=%q recorder=%v: %v", inherited, recorder, got)
+			}
+		}
 	}
 }

@@ -1,7 +1,7 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖 CoreGraphics、NSWorkspace、窗口所有者与辅助功能权限。
+ * [INPUT]: 依赖 capture_gate.go 保护公开授权入口；依赖 CoreGraphics、NSWorkspace、窗口所有者与辅助功能权限。
  * [OUTPUT]: 提供系统观测、运行中应用列表、权限读取和辅助功能授权请求。
  * [POS]: macOS 只读观测边界，不注册输入监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -127,10 +127,7 @@ func (nativeObservations) Accessibility() PermState {
 	}
 	return PermDenied
 }
-func RequestScreenPermission() PermState {
-	if !realCaptureAllowed() {
-		return PermDenied
-	}
+func platformRequestScreenPermission() PermState {
 	initPlatform()
 	if requestScreen == nil {
 		return PermUnknown
@@ -142,10 +139,7 @@ func RequestScreenPermission() PermState {
 }
 
 // RequestAccessibility 请求辅助功能权限，应由用户操作触发。
-func RequestAccessibility() (state PermState) {
-	if !realCaptureAllowed() {
-		return PermDenied
-	}
+func platformRequestAccessibility() (state PermState) {
 	initPlatform()
 	withPool(func() {
 		options := O(cls("NSDictionary"), "dictionaryWithObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), accessibilityPrompt)

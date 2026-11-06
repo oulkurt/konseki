@@ -11,20 +11,10 @@ package capture
 import "testing"
 
 func TestE2ECaptureGate(t *testing.T) {
-	for _, value := range []string{"", "0", "true"} {
-		t.Setenv("KONSEKI_E2E_ALLOW_CAPTURE", value)
-		if realCaptureAllowed() {
-			t.Fatal("implicit authorization")
-		}
-		if newScreen().Grab() != nil {
-			t.Fatal("capture escaped gate")
-		}
-		if RequestScreenPermission() != PermDenied || RequestAccessibility() != PermDenied {
-			t.Fatal("permission escaped gate")
-		}
-	}
-	t.Setenv("KONSEKI_E2E_ALLOW_CAPTURE", "1")
-	if !realCaptureAllowed() {
-		t.Fatal("explicit authorization denied")
+	for _, value := range []string{"", "0", "true", "1"} {
+		t.Run("value="+value, func(t *testing.T) {
+			t.Setenv("KONSEKI_E2E_ALLOW_CAPTURE", value)
+			assertCaptureBackend(t, value == "1")
+		})
 	}
 }
