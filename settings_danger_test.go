@@ -8,9 +8,15 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	"konseki/internal/config"
+	"konseki/internal/skill"
+	"konseki/internal/summary"
 )
 
 func TestClearSequenceWaitsAndStopsOnFailure(t *testing.T) {
@@ -35,5 +41,60 @@ func TestClearSequenceWaitsAndStopsOnFailure(t *testing.T) {
 	}
 	if !reflect.DeepEqual(steps, []int{1, 2}) {
 		t.Fatalf("顺序 = %v", steps)
+	}
+}
+
+func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	exportDir := filepath.Join(t.TempDir(), "export")
+	if err := a.cfg.Update(func(c *config.Config) { c.Skill.ExportDir = exportDir }); err != nil {
+		t.Fatal(err)
+	}
+	a.cfgNow = a.cfg.Get()
+	old := summary.Entry{ID: "old", Day: "2026-11-04", Headline: "private"}
+	if err := a.sums.Upsert(old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := skill.Export(skill.Options{Dir: exportDir}, []skill.DayData{{Day: old.Day, Entries: []summary.Entry{old}}}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	canceled := false
+	a.sumDone = done
+	a.sumRunning = true
+	a.sumCancel = func() { canceled = true }
+	posted := make(chan func(), 1)
+	a.post = func(f func()) { posted <- f }
+	a.clearActivity()
+	if !canceled {
+		t.Fatal("未取消摘要")
+	}
+	// 模拟最后一段在收到取消后落盘，然后任务才退出。
+	if err := a.sums.Upsert(summary.Entry{ID: "late", Day: old.Day}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-posted:
+		t.Fatal("摘要退出前清除已完成")
+	default:
+	}
+	close(done)
+	select {
+	case f := <-posted:
+		f()
+	case <-time.After(5 * time.Second):
+		t.Fatal("清除超时")
+	}
+	if a.clearErr != "" {
+		t.Fatal(a.clearErr)
+	}
+	if got := a.sums.Days(); len(got) != 0 {
+		t.Fatalf("摘要残留: %v", got)
+	}
+	for _, ext := range []string{".md", ".json"} {
+		if _, err := os.Stat(filepath.Join(exportDir, "days", old.Day+ext)); !os.IsNotExist(err) {
+			t.Fatalf("导出残留: %v", err)
+		}
 	}
 }
