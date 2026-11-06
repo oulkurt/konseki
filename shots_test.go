@@ -92,9 +92,6 @@ func shot(t *testing.T, state, lang string, dark bool) []byte {
 	tt.SetLocale(lang)
 	tt.SetDark(dark)
 	if state == "settings" {
-		if err := tt.Click("配置"); err != nil {
-			t.Fatal(err)
-		}
 		if !tt.HasText("测试连接") {
 			t.Fatal("供应商编辑区没有展开，截图覆盖不到它")
 		}

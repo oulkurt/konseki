@@ -113,8 +113,10 @@ func TestAddProvider(t *testing.T) {
 	}
 
 	// 渲染一次，确认 tile 和编辑区都在
-	a.openProvider = "deepseek"
 	tt := ui.NewTester(a.view, 760, 1800)
+	if !tt.HasText("测试连接") {
+		t.Error("新增供应商后编辑区没有展开")
+	}
 	if !tt.HasText("DeepSeek") {
 		t.Error("供应商名没画出来")
 	}

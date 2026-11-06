@@ -82,7 +82,7 @@ func (a *app) renderConfiguredProvider(c *ui.Context, idx int, pal palette) {
 
 	// 解析一次，UI 上要显示最终生效的地址和协议。
 	resolved, rerr := llm.Resolve(pc, true)
-	isOpen := a.openProvider == pc.Preset+name
+	isOpen := a.openProvider == providerKey(pc)
 
 	a.settingsCard(c, pal, func() {
 		ui.Row(c).FillWidth().Padding(14, 18).AlignItems(ui.Center).Gap(12).Children(func() {
@@ -148,7 +148,7 @@ func (a *app) renderConfiguredProvider(c *ui.Context, idx int, pal palette) {
 				if isOpen {
 					a.openProvider = ""
 				} else {
-					a.openProvider = pc.Preset + name
+					a.openProvider = providerKey(pc)
 					a.apiKeyDraft = pc.APIKey
 					a.baseURLDraft = pc.ChatBase
 					a.modelDraft = pc.DefaultModel
@@ -643,6 +643,10 @@ func providerGlyph(p providers.Preset) string {
 
 // ---------- 供应商 CRUD ----------
 
+func providerKey(pc config.ProviderConfig) string {
+	return pc.Preset + "\x00" + pc.Label
+}
+
 func (a *app) addProvider(p providers.Preset) {
 	// 有档位的家默认落在第一档，并把该档的地址和模型一起带进来 ——
 	// 只存预设的根地址而 region 留空，会让 Resolve 又要回退一次，
@@ -673,7 +677,7 @@ func (a *app) addProvider(p providers.Preset) {
 	a.cfg.Update(func(c *config.Config) { c.Providers = append(c.Providers, pc) })
 	a.cfgNow = a.cfg.Get()
 	a.rebuildGenerator()
-	a.openProvider = pc.Preset + pc.Label
+	a.openProvider = providerKey(pc)
 	a.apiKeyDraft = ""
 	a.baseURLDraft = pc.ChatBase
 	a.modelDraft = model
