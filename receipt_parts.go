@@ -119,8 +119,11 @@ func receiptBarcode(c *ui.Context, seed string) {
 }
 
 func (a *app) renderReceiptContents(c *ui.Context) {
+	a.renderReceiptDayContents(c, a.receipt, true)
+}
+
+func (a *app) renderReceiptDayContents(c *ui.Context, day ReceiptDay, interactive bool) {
 	msg := locales.In(c.Locale())
-	day := a.receipt
 	if len(day.Lines) == 0 {
 		label := msg.ReceiptEmptyPast()
 		if a.dayKey() == a.currentTime().Format("2006-01-02") {
@@ -131,12 +134,16 @@ func (a *app) renderReceiptContents(c *ui.Context) {
 	}
 	receiptLeader(c, msg.ReceiptUntil(day.Lines[0].End.Format("15:04")), receiptHeadline(msg, day), true)
 	receiptDashed(c)
-	reveal, printing := a.printReveal(c)
+	var reveal float32
+	printing := false
+	if interactive {
+		reveal, printing = a.printReveal(c)
+	}
 	// 条目列不用父级的 Gap，间距写在每一块里：正在印出的第一块高度为 0 时，下面的旧条目才不会多出一道间距。
 	ui.Column(c).FillWidth().Children(func() {
 		for i, line := range day.Lines {
 			block := func() {
-				a.renderReceiptLine(c, line)
+				a.renderReceiptLine(c, line, interactive)
 				if i < len(day.Lines)-1 {
 					ui.Box(c).Height(9)
 					receiptDashed(c)
@@ -195,7 +202,7 @@ func (a *app) renderReceiptContents(c *ui.Context) {
 	})
 }
 
-func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine) {
+func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, interactive bool) {
 	msg := locales.In(c.Locale())
 	title, body, meta := line.Headline, line.Summary, line.Apps
 	bold := true
@@ -208,7 +215,7 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine) {
 			meta = append([]string{msg.ReceiptPending()}, line.Apps...)
 		}
 	}
-	row := ui.ButtonBase(c.Key("receipt-line-" + line.ID)).FillWidth().AlignItems(ui.Start)
+	row := ui.ButtonBase(c.Key("receipt-line-" + line.ID)).FillWidth().AlignItems(ui.Start).Disabled(!interactive)
 	if a.receiptTarget == line.ID && a.receiptTarget != "" {
 		row.ScrollIntoView()
 		a.receiptTarget = ""

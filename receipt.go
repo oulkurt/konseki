@@ -29,9 +29,13 @@ func (a *app) renderTimelinePage(c *ui.Context, pal palette, inset float32) {
 			}
 		})
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPrinter(c, paperWidth) })
-		ui.Scroll(c).TrackScroll(&a.scrollState).FillWidth().Grow(1).Clip().Children(func() {
-			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, paperWidth) })
-		})
+		if a.shred.pending {
+			a.renderShred(c, paperWidth)
+		} else {
+			ui.Scroll(c).TrackScroll(&a.scrollState).FillWidth().Grow(1).Clip().Children(func() {
+				ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, paperWidth) })
+			})
+		}
 	})
 }
 
@@ -76,6 +80,7 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 					d := now.AddDate(0, 0, -i)
 					key := d.Format("2006-01-02")
 					if m.Item(dayName(d)).Checked(a.dayKey() == key).Chosen() {
+						a.stopShred()
 						a.dayFilter = key
 						a.scrollState.Y = 0
 						a.lastLoad = time.Time{}

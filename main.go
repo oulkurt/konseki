@@ -106,6 +106,7 @@ type app struct {
 	clearRunning      bool
 	clearErr          string
 	clearReceipt      ReceiptDay
+	shred             shredAnimation
 	clearConfirm      bool
 	hasSummaries      bool
 	recentSessions    []recentSession

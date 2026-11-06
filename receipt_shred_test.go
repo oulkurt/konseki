@@ -10,6 +10,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestShredPhysicsDeterministic(t *testing.T) {
@@ -27,5 +29,41 @@ func TestShredPhysicsDeterministic(t *testing.T) {
 	}
 	if len(a.strips) != 74 || len(a.strips[0].nodes) == 0 {
 		t.Fatalf("纸条未送出: %d", len(a.strips))
+	}
+}
+
+func TestShredStagesAndReducedMotion(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	shotDay(t, a)
+	a.clearReceipt = a.receipt
+	a.receipt = ReceiptDay{}
+	a.dayFilter = ""
+	a.lastLoad = time.Now().Add(time.Hour)
+	a.shred.pending = true
+	tt := ui.NewTester(a.view, 300, 400)
+	if !a.shred.pending || a.shred.feedStarted {
+		t.Fatal("未从收回阶段开始")
+	}
+	tt.Advance(650 * time.Millisecond)
+	if !a.shred.feedStarted {
+		t.Fatal("收回后未开始碎纸")
+	}
+	if a.shred.height <= 0 || a.shred.mask == nil {
+		t.Fatal("未创建纸面蒙版")
+	}
+	tt.Advance(100 * time.Millisecond)
+	if len(a.shred.physics.strips[0].nodes) < 2 {
+		t.Fatal("碎纸没有送出")
+	}
+	a.stopShred()
+	if a.shred.pending || len(a.clearReceipt.Lines) != 0 {
+		t.Fatal("中途结束未释放旧小票")
+	}
+	a.shred.pending = true
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tt.Frame()
+	if a.shred.pending {
+		t.Fatal("减少动态效果时未立即结束")
 	}
 }

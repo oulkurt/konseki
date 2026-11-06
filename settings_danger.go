@@ -113,6 +113,11 @@ func (a *app) clearActivity() {
 			a.lastSessions = time.Time{}
 			a.status = runner.Status()
 			a.lastLoad = time.Time{}
+			a.tab = 0
+			a.dayFilter = ""
+			a.scrollState.Y = 0
+			a.shred.pending = true
+			a.shred.start = time.Time{}
 		})
 	}()
 }
