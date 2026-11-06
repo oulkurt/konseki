@@ -38,25 +38,6 @@ func (a *app) renderSkillSection(c *ui.Context, pal palette) {
 				a.cfgNow = a.cfg.Get()
 			}
 			a.skillDirFocus = focused
-			for _, item := range []struct {
-				key, label string
-				value      bool
-				set        func(*config.Config, bool)
-			}{
-				{"skill-ocr", msg.GeneralSkillOCR(), a.cfgNow.Skill.IncludeOCR, func(cfg *config.Config, v bool) { cfg.Skill.IncludeOCR = v }},
-				{"skill-redact", msg.GeneralSkillRedact(), a.cfgNow.Skill.RedactOnExport, func(cfg *config.Config, v bool) { cfg.Skill.RedactOnExport = v }},
-			} {
-				ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-					ui.Text(c, item.label).Grow(1).FontSize(12).TextColor(pal.textPrimary)
-					v := item.value
-					if renderPillSwitch(c, item.key, &v, pal) {
-						if err := a.cfg.Update(func(cfg *config.Config) { item.set(cfg, v) }); err != nil {
-							a.err = err.Error()
-						}
-						a.cfgNow = a.cfg.Get()
-					}
-				})
-			}
 			if ui.Button(c.Key("btn-skill-export"), msg.GeneralSkillExport()).Disabled(a.clearRunning).Clicked() {
 				if n, err := a.exportSkill(); err != nil {
 					a.skillExportMsg = msg.GeneralSkillError(err.Error())

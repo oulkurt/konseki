@@ -724,7 +724,7 @@ func (r *Runner) Timeline(dateKey string) ([]Block, error) {
 	r.mu.Lock()
 	st := r.st
 	r.mu.Unlock()
-	snaps, err := st.readSnapshots(dateKey)
+	snaps, err := st.ReadSnapshots(dateKey)
 	if err != nil {
 		return nil, err
 	}

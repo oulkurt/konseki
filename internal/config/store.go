@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖设置解析器和本地 JSON 文件。
- * [OUTPUT]: 提供 Store 的设置与密钥读写。
- * [POS]: 配置模块的持久化边界，分离密钥与设置。
+ * [OUTPUT]: 提供 Store 的设置与密钥读写，以及只读的 Read。
+ * [POS]: 配置模块的持久化边界，分离密钥与设置；Read 不建目录、不写文件、不读密钥。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package config
@@ -36,6 +36,23 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// Read 只读设置：不建目录、不写文件、不读 secrets.json。
+// 文件不存在时返回默认值，供只读命令和诊断使用。
+func Read(dir string) (Config, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return Default(), nil
+	}
+	if err != nil {
+		return Config{}, err
+	}
+	cfg, _, err := parse(b)
+	if err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func (s *Store) path() string       { return filepath.Join(s.dir, "config.json") }

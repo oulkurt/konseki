@@ -73,7 +73,7 @@ func (a *app) clearActivity() {
 	}
 	done := a.sumDone
 	runner, sums := a.runner, a.sums
-	opts := skill.Options{Dir: a.cfgNow.Skill.ExportDir, Days: a.cfgNow.Skill.Days, IncludeOCR: a.cfgNow.Skill.IncludeOCR, Owner: ownerName()}
+	opts := skill.Options{Dir: a.cfgNow.Skill.ExportDir, Days: 7, Owner: ownerName()}
 	if opts.Dir == "" {
 		opts.Dir = a.skillDefaultDirectory()
 	}

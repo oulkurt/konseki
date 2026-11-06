@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖采集根目录中的快照、OCR 和会话 JSONL。
- * [OUTPUT]: 追加并读取快照、OCR 和会话；可单独读取快照或回填 OCR。
- * [POS]: 采集事实的追加存储，兼容旧快照格式。
+ * [OUTPUT]: 追加并读取快照、OCR 和会话；只读打开、列出采集日期、解析时间、还原截图路径。
+ * [POS]: 采集事实的追加存储，兼容旧快照格式。只读接口不建目录、不写文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture
@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -70,6 +72,35 @@ func NewStore(root string) (*Store, error) {
 		return nil, err
 	}
 	return &Store{root: abs}, nil
+}
+
+// OpenStore 只读打开采集目录，不建目录、不写文件。目录不存在时返回的 Store 读出来是空的。
+func OpenStore(root string) (*Store, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{root: abs}, nil
+}
+
+// Days 列出根目录里日期命名的快照文件，最新的在前。
+func (s *Store) Days() ([]string, error) {
+	entries, err := os.ReadDir(s.root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || !dayJSON(e.Name()) {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(e.Name(), ".jsonl"))
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(out)))
+	return out, nil
 }
 
 func (s *Store) dayFile(t time.Time) string {
@@ -182,12 +213,30 @@ func (s *Store) ReadSessions(day string) ([]Session, error) {
 	return readJSON[Session](filepath.Join(s.root, "sessions", day+".jsonl"))
 }
 
-func (s *Store) readSnapshots(day string) ([]Snapshot, error) {
+// ReadSnapshots 只读快照行，不回填 OCR。需要屏幕文字时用 ReadDay。
+func (s *Store) ReadSnapshots(day string) ([]Snapshot, error) {
 	return readJSON[Snapshot](filepath.Join(s.root, day+".jsonl"))
 }
 
+// Time 解析快照的时间。时间格式由采集写入，解析失败说明这一行损坏。
+func (s Snapshot) Time() (time.Time, error) {
+	return parseTS(s.TS)
+}
+
+// ShotOf 返回截图文件的绝对路径。没写截图时返回空。
+// 写盘时存的是相对采集根目录的路径，见 runner.go 的 persist。
+func (s *Store) ShotOf(sn Snapshot) string {
+	if sn.Shot == "" {
+		return ""
+	}
+	if filepath.IsAbs(sn.Shot) {
+		return sn.Shot
+	}
+	return filepath.Join(s.root, sn.Shot)
+}
+
 func (s *Store) ReadDay(day string) ([]Snapshot, error) {
-	out, err := s.readSnapshots(day)
+	out, err := s.ReadSnapshots(day)
 	if err != nil {
 		return nil, err
 	}

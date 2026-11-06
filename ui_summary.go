@@ -21,7 +21,7 @@ func (a *app) exportSkill() (int, error) {
 	if a.runner == nil || a.sums == nil {
 		return 0, fmt.Errorf("还没准备好")
 	}
-	days := a.cfgNow.Skill.Days
+	days := 7
 	if days <= 0 {
 		days = 7
 	}
@@ -45,19 +45,13 @@ func (a *app) exportSkill() (int, error) {
 		}
 		entries, _ := a.sums.Load(day)
 		d := skill.DayData{Day: day, Blocks: blocks, Entries: entries}
-		if a.cfgNow.Skill.IncludeOCR {
-			if ocr, err := a.runner.OCRIndex(day); err == nil {
-				d.OCR = ocr
-			}
-		}
 		data = append(data, d)
 	}
 
 	opts := skill.Options{
-		Dir:        a.cfgNow.Skill.ExportDir,
-		Days:       days,
-		IncludeOCR: a.cfgNow.Skill.IncludeOCR,
-		Owner:      ownerName(),
+		Dir:   a.cfgNow.Skill.ExportDir,
+		Days:  days,
+		Owner: ownerName(),
 	}
 	if opts.Dir == "" {
 		opts.Dir = a.skillDefaultDirectory()

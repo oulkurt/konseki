@@ -31,7 +31,7 @@ func recoverSession(st *Store, storage *Storage, now time.Time) error {
 		}
 		day := strings.TrimSuffix(entry.Name(), ".jsonl")
 		if latest.Session == "" {
-			rows, err := st.readSnapshots(day)
+			rows, err := st.ReadSnapshots(day)
 			if err != nil {
 				return err
 			}

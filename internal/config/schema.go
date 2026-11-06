@@ -1,6 +1,6 @@
 /*
- * [INPUT]: 依赖 JSON 设置与本机目录环境变量。
- * [OUTPUT]: 提供设置类型、默认值与版本迁移。
+ * [INPUT]: 依赖 JSON 设置、本机目录环境变量和脱敏规则。
+ * [OUTPUT]: 提供设置类型、默认值、版本迁移和脱敏规则翻译。
  * [POS]: 配置模块的语义边界，供 store 持久化。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"konseki/internal/redact"
 )
 
 // ProviderConfig 是一个用户配好的模型供应商。
@@ -75,6 +77,22 @@ type RedactConfig struct {
 	ShowHits bool `json:"showHits"`
 }
 
+// Options 把界面上的脱敏开关翻译成脱敏规则。
+// 总开关关闭时返回零值，什么都不遮；以前这里仍会遮 Words 和显式打开的 Kinds，
+// 和界面语义不符。
+func (r RedactConfig) Options() redact.Options {
+	if !r.Enabled {
+		return redact.Options{}
+	}
+	return redact.Options{
+		Secrets:  r.Secrets,
+		Personal: r.Personal,
+		Kinds:    r.Kinds,
+		Allow:    r.Allow,
+		Words:    r.Words,
+	}
+}
+
 // SummaryConfig 控制自动摘要。
 type SummaryConfig struct {
 	// Auto 让 Konseki 在空闲时自己跑当天的摘要。
@@ -90,17 +108,10 @@ type SummaryConfig struct {
 	WindowMinutes int `json:"windowMinutes,omitempty"`
 }
 
-// SkillConfig 控制给外部 Agent 用的导出。
+// SkillConfig 保存旧版技能导出的目录。
 type SkillConfig struct {
-	// ExportDir 是 skill 的输出位置，空表示用默认目录。
+	// ExportDir 是旧版技能导出写到的目录。新版不再导出，只用它找旧文件。
 	ExportDir string `json:"exportDir,omitempty"`
-	// IncludeOCR 决定导出时带不带原始 OCR。默认关 —— 那是最脏的数据。
-	IncludeOCR bool `json:"includeOCR"`
-	// RedactOnExport 在导出前再遮一次。即使入库时已经遮过，导出
-	// 是第二道外发口，值得再走一遍。
-	RedactOnExport bool `json:"redactOnExport"`
-	// Days 是导出最近多少天。
-	Days int `json:"days,omitempty"`
 }
 
 type Config struct {
@@ -170,7 +181,6 @@ func Default() Config {
 		},
 		Redact:  RedactConfig{Enabled: true, Secrets: true, Personal: true, ShowHits: true},
 		Summary: SummaryConfig{IntervalMinutes: 30, ThinkingEffort: "medium", WindowMinutes: 60},
-		Skill:   SkillConfig{Days: 7, RedactOnExport: true},
 	}
 }
 
@@ -258,10 +268,7 @@ type wireSummary struct {
 }
 
 type wireSkill struct {
-	ExportDir      *string `json:"exportDir,omitempty"`
-	IncludeOCR     *bool   `json:"includeOCR,omitempty"`
-	RedactOnExport *bool   `json:"redactOnExport,omitempty"`
-	Days           *int    `json:"days,omitempty"`
+	ExportDir *string `json:"exportDir,omitempty"`
 }
 
 func parse(data []byte) (Config, bool, error) {

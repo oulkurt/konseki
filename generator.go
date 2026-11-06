@@ -9,7 +9,6 @@ package main
 import (
 	"konseki/internal/config"
 	"konseki/internal/llm"
-	"konseki/internal/redact"
 	"konseki/internal/summary"
 )
 
@@ -67,13 +66,7 @@ func (a *app) rebuildGenerator() {
 		Thinking:  a.cfgNow.Summary.ThinkingEffort,
 		Language:  a.cfgNow.Language,
 		MaxTokens: 4096,
-		Redact: redact.Options{
-			Secrets:  a.cfgNow.Redact.Enabled && a.cfgNow.Redact.Secrets,
-			Personal: a.cfgNow.Redact.Enabled && a.cfgNow.Redact.Personal,
-			Kinds:    a.cfgNow.Redact.Kinds,
-			Allow:    a.cfgNow.Redact.Allow,
-			Words:    a.cfgNow.Redact.Words,
-		},
+		Redact:    a.cfgNow.Redact.Options(),
 	}
 
 	if a.gen == nil {

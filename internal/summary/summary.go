@@ -76,13 +76,18 @@ type Store struct {
 	mu  sync.Mutex
 }
 
-// NewStore 打开摘要目录。
+// NewStore 打开摘要目录，目录不存在时创建。
 func NewStore(root string) (*Store, error) {
 	dir := filepath.Join(root, "summaries")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
 	return &Store{dir: dir}, nil
+}
+
+// OpenStore 只读打开摘要目录，不建目录、不写文件。目录不存在时读出来是空的。
+func OpenStore(root string) *Store {
+	return &Store{dir: filepath.Join(root, "summaries")}
 }
 
 func (s *Store) dayPath(day string) string {
