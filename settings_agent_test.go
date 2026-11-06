@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖测试应用、离屏渲染器、旧导出样本和剪贴板。
- * [OUTPUT]: 验证 Agent 卡片的复制、恢复、打开仓库、旧文件删除行和语言切换。
+ * [OUTPUT]: 验证 Agent 卡片的复制、恢复、打开仓库、旧文件删除行、语言切换和 shell 路径传递。
  * [POS]: 通用页 Agent 技能卡片的界面回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -8,6 +8,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -145,5 +146,28 @@ func TestAgentCardLegacyRow(t *testing.T) {
 				t.Fatalf("删除后仍显示删除行: %q", tt.Texts())
 			}
 		})
+	}
+}
+
+func TestShellPathsReachCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	for _, suffix := range []string{"plain", "with space", "quote\"'", "$dollar", "`tick`", `back\slash`} {
+		path := filepath.Join(home, suffix)
+		out, err := exec.Command("/bin/sh", "-c", "printf %s "+shellQuote(path)).Output()
+		if err != nil || string(out) != path {
+			t.Fatalf("路径 %q: %q %v", path, out, err)
+		}
+		if err := os.MkdirAll(path, 0755); err != nil {
+			t.Fatal(err)
+		}
+		script := "#!/bin/sh\nprintf '%s\\n' \"$KONSEKI_HOME\" \"$@\"\n"
+		if err := os.WriteFile(filepath.Join(path, "konseki"), []byte(script), 0755); err != nil {
+			t.Fatal(err)
+		}
+		out, err = exec.Command("/bin/sh", "-c", statusCmd(path)).Output()
+		if err != nil || string(out) != path+"\nquery\nstatus\n" {
+			t.Fatalf("查询 %q: %q %v", path, out, err)
+		}
 	}
 }

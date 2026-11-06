@@ -132,6 +132,7 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	if !a.clearRunning {
 		t.Fatal("清除没有启动")
 	}
+	a.checkLegacy(locales.In("zh-Hans"))
 	a.clearActivity()
 	select {
 	case f := <-posted:
@@ -267,6 +268,9 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 		f()
 	case <-time.After(5 * time.Second):
 		t.Fatal("清除超时")
+	}
+	if a.legacyChecked || len(a.legacyFiles) != 0 {
+		t.Fatal("旧文件缓存未刷新")
 	}
 	if a.clearErr != "" {
 		t.Fatal(a.clearErr)

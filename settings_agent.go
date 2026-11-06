@@ -24,9 +24,9 @@ const (
 	agentSkillInstall = "npx skills add oulkurt/konseki --skill konseki -g -y"
 )
 
-// statusCmd 是话术里的试查命令。路径在数据目录里，和软链接同名。
+// statusCmd 是话术里的试查命令。显式传入数据目录，路径与软链接同名。
 func statusCmd(appDir string) string {
-	return shellQuote(filepath.Join(appDir, query.LinkName)) + " query status"
+	return "KONSEKI_HOME=" + shellQuote(appDir) + " " + shellQuote(filepath.Join(appDir, query.LinkName)) + " query status"
 }
 
 // shellQuote 用双引号包住路径，让整条命令可以直接粘进终端。
@@ -47,9 +47,9 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	prompt := msg.GeneralAgentPromptText(agentSkillInstall, statusCmd(a.appDir))
 	a.settingsCard(c, pal, func() {
-		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
-			ui.Text(c, msg.GeneralAgent()).Bold().TextColor(pal.textPrimary)
-			ui.Text(c, msg.GeneralAgentDescription()).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.4)
+		ui.Column(c).FillWidth().Children(func() {
+			ui.Text(c, msg.GeneralAgent()).Padding(14, 18, 4, 18).Bold().TextColor(pal.textPrimary)
+			ui.Text(c, msg.GeneralAgentDescription()).Padding(0, 18, 0, 18).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.4)
 
 			a.settingsRow(c, msg.GeneralAgentPrompt(), msg.GeneralAgentPromptHelp(), pal, func() {
 				a.copyButton(c, msg, "btn-agent-copy-prompt", prompt)
@@ -74,7 +74,7 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 				})
 			})
 
-			ui.Text(c, msg.GeneralAgentRedact()).FontSize(12).TextColor(pal.textSecondary)
+			ui.Text(c, msg.GeneralAgentRedact()).Padding(0, 18, 14, 18).FontSize(12).TextColor(pal.textSecondary)
 			if a.linkErr != "" {
 				ui.Text(c, msg.GeneralAgentLinkError(a.linkErr)).FontSize(12).TextColor(c.Theme().Danger)
 			}
@@ -85,18 +85,20 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 
 // agentTextBox 是可选中的等宽或正文框，背景和行高与设置行区分开。
 func (a *app) agentTextBox(c *ui.Context, pal palette, text string, size float32, mono bool) {
-	el := ui.Text(c, text).
-		FillWidth().
-		Padding(10, 12).
-		Radius(8).
-		Background(pal.rowHoverBg).
-		FontSize(size).
-		LineHeight(1.45).
-		TextColor(pal.textPrimary).
-		Selectable()
-	if mono {
-		el.Font("monospace")
-	}
+	ui.Column(c).FillWidth().Padding(0, 18, 14, 18).Children(func() {
+		el := ui.Text(c, text).
+			FillWidth().
+			Padding(10, 12).
+			Radius(8).
+			Background(pal.rowHoverBg).
+			FontSize(size).
+			LineHeight(1.45).
+			TextColor(pal.textPrimary).
+			Selectable()
+		if mono {
+			el.Font("monospace")
+		}
+	})
 }
 
 // copyButton 写剪贴板，并让按钮文字在两秒内显示「已复制」。

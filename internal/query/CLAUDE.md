@@ -4,7 +4,7 @@ query.go: 解析命令与 flag，装配设置、采集、摘要和遮蔽器；�
 commands.go: 生成 status、days、day、snapshots 的 JSON 视图；字符字段逐个遮蔽，快照按半开时间窗筛选，重复 OCR 只标 ocrRepeat。
 search.go: 在摘要字段、窗口标题和屏幕文字里找候选，遮蔽整段后重新定位；合并同源命中，按新到旧排序并截断。
 link.go: 原子维护数据目录里的 konseki 软链接；新建、原地不动、替换到别处、拒绝覆盖普通文件。
-query_test.go: 用两天夹具断言四条命令的结构与值、空列表、只读指纹、用法错误、缺失目录和 Link 的四种情况。
+query_test.go: 用两天夹具断言四条命令的结构与值、空列表、只读指纹、用法错误、缺失目录、半开时间上界及 Link 的元信息与覆盖边界。
 search_test.go: 验证合并、排序、截断、遮蔽值内的命中丢弃和 flag 位置。
 redact_test.go: 在五个命令的输出里验证密钥、邮箱、词和放行值，以及总开关关闭后的原文。
 fixture_test.go: 用采集和摘要的写入接口造两天数据，固定 Env.Now。

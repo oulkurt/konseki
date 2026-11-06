@@ -397,7 +397,8 @@ func main() {
 	runner.Stop()
 }
 
-// summaryInterval 是两次自动摘要之间的最短间隔，不低于 5 分钟。// 设置页的说明也读它，所以说明里的分钟数和实际间隔一致。
+// summaryInterval 是两次自动摘要之间的最短间隔，不低于 5 分钟。
+// 设置页的说明也读它，所以说明里的分钟数和实际间隔一致。
 func summaryInterval(s config.SummaryConfig) time.Duration {
 	if interval := time.Duration(s.IntervalMinutes) * time.Minute; interval >= 5*time.Minute {
 		return interval

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -362,10 +363,15 @@ func TestLink(t *testing.T) {
 	if target, err := os.Readlink(link); err != nil || target != exe {
 		t.Fatalf("链接 = %q, %v", target, err)
 	}
+	beforeLink, _ := os.Lstat(link)
 	if err := Link(dir, exe); err != nil {
 		t.Fatalf("已经正确: %v", err)
 	}
 
+	afterLink, _ := os.Lstat(link)
+	if !os.SameFile(beforeLink, afterLink) || !reflect.DeepEqual(beforeLink, afterLink) {
+		t.Fatal("正确链接元信息变化")
+	}
 	other := filepath.Join(t.TempDir(), "Other")
 	if err := os.WriteFile(other, []byte("bin"), 0o755); err != nil {
 		t.Fatal(err)
@@ -390,5 +396,19 @@ func TestLink(t *testing.T) {
 
 	if err := Link(dir, "relative/exe"); err == nil {
 		t.Fatal("相对路径没有被拒绝")
+	}
+}
+
+func TestSnapshotsExcludeToBoundary(t *testing.T) {
+	f := standardFixture(t)
+	out, stderr, code := runQuery(t, f.env, "snapshots", "--from", "09:30", "--to", "10:00")
+	if code != 0 {
+		t.Fatal(stderr)
+	}
+	got := decode[struct {
+		Total int `json:"total"`
+	}](t, out)
+	if got.Total != 0 {
+		t.Fatalf("上界记录未排除: %s", out)
 	}
 }
