@@ -719,7 +719,7 @@ func (r *Runner) Timeline(dateKey string) ([]Block, error) {
 	r.mu.Lock()
 	st := r.st
 	r.mu.Unlock()
-	snaps, err := st.ReadDay(dateKey)
+	snaps, err := st.readSnapshots(dateKey)
 	if err != nil {
 		return nil, err
 	}

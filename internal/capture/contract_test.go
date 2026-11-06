@@ -130,3 +130,26 @@ func TestRunnerPauseAndSessions(t *testing.T) {
 		t.Fatal(rows)
 	}
 }
+
+func TestTimelineDoesNotReadOCR(t *testing.T) {
+	d, c, _ := fakeDependencies()
+	root := t.TempDir()
+	r, err := newRunner(Settings{Root: root}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.now = time.Date(2001, 2, 3, 12, 0, 0, 0, time.Local)
+	now := c.now
+	c.mu.Unlock()
+	if err := r.st.Append(Snapshot{TS: now.Format(time.RFC3339Nano), App: "Editor", Title: "file"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "ocr", now.Format("2006-01-02")+".jsonl"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	blocks, err := r.Timeline(now.Format("2006-01-02"))
+	if err != nil || len(blocks) != 1 || blocks[0].App != "Editor" {
+		t.Fatal(blocks, err)
+	}
+}
