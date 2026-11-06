@@ -7,6 +7,8 @@
 package main
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +21,16 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func TestTestAppClearExportIsIsolated(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	dir := a.cfgNow.Skill.ExportDir
+	rel, err := filepath.Rel(a.appDir, dir)
+	if dir == "" || err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Fatalf("清除对账目录 %q 不在临时应用目录 %q 内", dir, a.appDir)
+	}
+}
+
 // 视图能在没有窗口的情况下构建，这是 mygo native 模板的核心好处：
 // 界面逻辑可以纯查测试，不用起 GUI。
 
@@ -28,6 +40,9 @@ func newTestApp(t *testing.T) (*app, func()) {
 	cs, err := config.Open(appDir)
 	if err != nil {
 		t.Fatalf("config.Open: %v", err)
+	}
+	if err := cs.Update(func(c *config.Config) { c.Skill.ExportDir = filepath.Join(appDir, "skill") }); err != nil {
+		t.Fatalf("隔离 Skill 导出目录: %v", err)
 	}
 	r, err := capture.NewWithDependencies(recorderSettings(cs.Get().Recorder, appDir), inertCapture())
 	if err != nil {
