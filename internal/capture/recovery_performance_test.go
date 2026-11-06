@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖合成历史、临时存储与运行时内存统计。
- * [OUTPUT]: 验证恢复扫描成本不随历史长度增长。
+ * [OUTPUT]: 验证恢复扫描的分配量不随历史长度增长；耗时只记日志，不做断言。
  * [POS]: 会话恢复的性能回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -18,7 +18,8 @@ import (
 	"time"
 )
 
-// 审查用：合成 days 天历史，最新一天有未关闭会话，测 recoverSession 的耗时与分配量。
+// recoveryHistory 合成 days 天历史。每天 2000 张快照、每 3 张一条约 2.6 KB 的 OCR，
+// 最新一天的最后一个会话没有关闭记录，供恢复去找。
 func recoveryHistory(t *testing.T, days int) (string, time.Time) {
 	root := t.TempDir()
 	if _, err := NewStore(root); err != nil {
@@ -83,7 +84,9 @@ func TestRecoverSessionBoundedHistory(t *testing.T) {
 		allocs[i] = after.TotalAlloc - before.TotalAlloc
 		t.Logf("%d 天: %v, 分配 %d 字节", days, times[i], allocs[i])
 	}
-	if times[1] > 2*times[0] || allocs[1] > 2*allocs[0] {
-		t.Fatalf("30 天恢复超过 1 天的两倍：耗时 %v，分配 %v", times, allocs)
+	// 只断言分配量。30 天要比 1 天多扫一天才能确认会话到头，耗时比值本来就在 1.2 到 2 倍之间，
+	// -race 加负载时会越过 2 倍误报。扫完全部历史时分配量是 1 天的几十倍，不会漏掉。
+	if allocs[1] > 2*allocs[0] {
+		t.Fatalf("30 天恢复的分配量超过 1 天的两倍：%v（耗时 %v）", allocs, times)
 	}
 }

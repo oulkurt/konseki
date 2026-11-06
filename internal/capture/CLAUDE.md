@@ -30,7 +30,7 @@ screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。
 sessions.go: 从最新快照向前扫描连续会话，只查之后的关闭记录。
 sessions_test.go: 验证崩溃恢复、幂等性与异步启动。
-recovery_performance_test.go: 验证恢复成本不随历史天数增长。
+recovery_performance_test.go: 验证恢复的分配量不随历史天数增长；耗时只记日志不断言，-race 加负载时耗时比值会越过阈值。
 session.go: 定义会话关闭记录与结束原因。
 settings.go: 定义采集运行参数，不依赖应用设置。
 status.go: 定义采集状态和权限快照。

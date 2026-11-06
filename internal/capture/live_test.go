@@ -26,7 +26,8 @@ func (s *liveCountingScreen) Grab() *Frame {
 }
 func (s *liveCountingScreen) count() int { s.mu.Lock(); defer s.mu.Unlock(); return s.grabs }
 
-// 审查用：窗口所有者是敏感应用而工作区前台不是时，无输入状态下 20 拍（5 秒）里抓屏多少次。
+// liveGrabs 统计无输入的 20 拍（5 秒）里抓屏几次。liveSensitive 为真时，
+// 实时窗口所有者是敏感应用而工作区前台不是，比如密码管理器的浮窗。
 func liveGrabs(t *testing.T, liveSensitive bool) (int, Status) {
 	d, c, sys := fakeDependencies()
 	screen := &liveCountingScreen{}
