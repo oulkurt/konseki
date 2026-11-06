@@ -24,11 +24,15 @@ import (
 )
 
 type app struct {
-	runner          *capture.Runner
-	appDir          string
-	post            func(func())
-	setLocale       func(string)
-	scanCredentials func() []providers.Credential
+	runner               *capture.Runner
+	appDir               string
+	post                 func(func())
+	setLocale            func(string)
+	scanCredentials      func() []providers.Credential
+	requestScreen        func() capture.PermState
+	requestAccessibility func() capture.PermState
+	openSettings         func(string) error
+	showFolder           func(string)
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -320,15 +324,19 @@ func main() {
 	}
 
 	a := &app{
-		runner:          runner,
-		appDir:          appDir,
-		cfg:             cfg,
-		cfgNow:          cfg.Get(),
-		sums:            sums,
-		llmc:            llm.New(5 * time.Minute),
-		expanded:        map[string]bool{},
-		scanCredentials: providers.DetectLocal,
-		setLocale:       mygo.App.SetLocale,
+		runner:               runner,
+		appDir:               appDir,
+		cfg:                  cfg,
+		cfgNow:               cfg.Get(),
+		sums:                 sums,
+		llmc:                 llm.New(5 * time.Minute),
+		expanded:             map[string]bool{},
+		scanCredentials:      providers.DetectLocal,
+		setLocale:            mygo.App.SetLocale,
+		requestScreen:        capture.RequestScreenPermission,
+		requestAccessibility: capture.RequestAccessibility,
+		openSettings:         mygo.Shell.OpenExternal,
+		showFolder:           mygo.Shell.ShowItemInFolder,
 	}
 	a.rebuildGenerator()
 

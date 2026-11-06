@@ -141,6 +141,10 @@ func newTestApp(t *testing.T) (*app, func()) {
 	a.llmc.HTTP.Transport = blockedTestTransport{}
 	a.post = func(f func()) { f() }
 	a.setLocale = func(string) {}
+	a.requestScreen = func() capture.PermState { return capture.PermGranted }
+	a.requestAccessibility = func() capture.PermState { return capture.PermGranted }
+	a.openSettings = func(string) error { return nil }
+	a.showFolder = func(string) {}
 	scanTestCredentials(t, a, nil)
 	a.rebuildGenerator()
 	return a, func() { r.Stop() }

@@ -34,6 +34,118 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderPermissions says "系统权限"
+// in the language the app shows.
+//
+// 记录设置页的系统权限卡片标题。
+func RecorderPermissions() string { return In(i18n.Locale()).RecorderPermissions() }
+
+// RecorderPermissions says "系统权限"
+// in the language of msgs.
+//
+// 记录设置页的系统权限卡片标题。
+func (msgs Messages) RecorderPermissions() string {
+	return Catalog.Format(msgs.locale, "recorderPermissions", nil)
+}
+
+// RecorderScreenPermission says "屏幕录制"
+// in the language the app shows.
+//
+// 系统权限卡片中的屏幕录制权限名称。
+func RecorderScreenPermission() string { return In(i18n.Locale()).RecorderScreenPermission() }
+
+// RecorderScreenPermission says "屏幕录制"
+// in the language of msgs.
+//
+// 系统权限卡片中的屏幕录制权限名称。
+func (msgs Messages) RecorderScreenPermission() string {
+	return Catalog.Format(msgs.locale, "recorderScreenPermission", nil)
+}
+
+// RecorderAccessibility says "辅助功能"
+// in the language the app shows.
+//
+// 系统权限卡片中的辅助功能权限名称。
+func RecorderAccessibility() string { return In(i18n.Locale()).RecorderAccessibility() }
+
+// RecorderAccessibility says "辅助功能"
+// in the language of msgs.
+//
+// 系统权限卡片中的辅助功能权限名称。
+func (msgs Messages) RecorderAccessibility() string {
+	return Catalog.Format(msgs.locale, "recorderAccessibility", nil)
+}
+
+// RecorderPermissionGranted says "已授权"
+// in the language the app shows.
+//
+// 系统权限卡片中已授权的状态。
+func RecorderPermissionGranted() string { return In(i18n.Locale()).RecorderPermissionGranted() }
+
+// RecorderPermissionGranted says "已授权"
+// in the language of msgs.
+//
+// 系统权限卡片中已授权的状态。
+func (msgs Messages) RecorderPermissionGranted() string {
+	return Catalog.Format(msgs.locale, "recorderPermissionGranted", nil)
+}
+
+// RecorderPermissionMissing says "未授权"
+// in the language the app shows.
+//
+// 系统权限卡片中未授权或未知的状态。
+func RecorderPermissionMissing() string { return In(i18n.Locale()).RecorderPermissionMissing() }
+
+// RecorderPermissionMissing says "未授权"
+// in the language of msgs.
+//
+// 系统权限卡片中未授权或未知的状态。
+func (msgs Messages) RecorderPermissionMissing() string {
+	return Catalog.Format(msgs.locale, "recorderPermissionMissing", nil)
+}
+
+// RecorderPermissionRequest says "请求授权"
+// in the language the app shows.
+//
+// 系统权限卡片中主动请求权限的按钮。
+func RecorderPermissionRequest() string { return In(i18n.Locale()).RecorderPermissionRequest() }
+
+// RecorderPermissionRequest says "请求授权"
+// in the language of msgs.
+//
+// 系统权限卡片中主动请求权限的按钮。
+func (msgs Messages) RecorderPermissionRequest() string {
+	return Catalog.Format(msgs.locale, "recorderPermissionRequest", nil)
+}
+
+// RecorderPermissionSettings says "打开系统设置"
+// in the language the app shows.
+//
+// 系统权限卡片中打开对应系统设置的按钮。
+func RecorderPermissionSettings() string { return In(i18n.Locale()).RecorderPermissionSettings() }
+
+// RecorderPermissionSettings says "打开系统设置"
+// in the language of msgs.
+//
+// 系统权限卡片中打开对应系统设置的按钮。
+func (msgs Messages) RecorderPermissionSettings() string {
+	return Catalog.Format(msgs.locale, "recorderPermissionSettings", nil)
+}
+
+// RecorderPermissionRestart says "屏幕录制授权后，请重启 Konseki。"
+// in the language the app shows.
+//
+// 系统权限卡片中屏幕录制授权后的重启提示。
+func RecorderPermissionRestart() string { return In(i18n.Locale()).RecorderPermissionRestart() }
+
+// RecorderPermissionRestart says "屏幕录制授权后，请重启 Konseki。"
+// in the language of msgs.
+//
+// 系统权限卡片中屏幕录制授权后的重启提示。
+func (msgs Messages) RecorderPermissionRestart() string {
+	return Catalog.Format(msgs.locale, "recorderPermissionRestart", nil)
+}
+
 // RecorderOCR says "屏幕文字识别"
 // in the language the app shows.
 //

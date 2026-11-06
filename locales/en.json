@@ -1,5 +1,13 @@
 {
   "@@locale": "en",
+  "recorderPermissions": "System permissions",
+  "recorderScreenPermission": "Screen recording",
+  "recorderAccessibility": "Accessibility",
+  "recorderPermissionGranted": "Granted",
+  "recorderPermissionMissing": "Not granted",
+  "recorderPermissionRequest": "Request permission",
+  "recorderPermissionSettings": "Open system settings",
+  "recorderPermissionRestart": "Restart Konseki after granting screen recording access.",
   "recorderOCR": "Screen text recognition",
   "recorderOCRDescription": "Recognize screenshot text on this device.",
   "recorderInput": "Global input monitoring",

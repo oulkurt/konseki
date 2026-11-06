@@ -118,6 +118,7 @@ func (a *app) view(c *ui.Context) {
 						switch a.settingsTab {
 						case 0:
 							a.renderCaptureSection(c, pal)
+							a.renderRecorderPermissions(c, pal)
 							a.renderRecorderFields(c, pal)
 							a.renderRecorderPrivacy(c, pal)
 							a.renderRecentSessions(c, pal)

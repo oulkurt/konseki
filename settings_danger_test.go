@@ -30,7 +30,7 @@ func TestDangerCancelPreservesData(t *testing.T) {
 	}
 	a.tab = 1
 	a.refresh()
-	tt := ui.NewTester(a.view, 760, 1600)
+	tt := ui.NewTester(a.view, 760, 2600)
 	if err := tt.Click("清除全部活动数据"); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	a.refresh()
 	posted := make(chan func(), 2)
 	a.post = func(f func()) { posted <- f }
-	tt := ui.NewTester(a.view, 760, 1600)
+	tt := ui.NewTester(a.view, 760, 2600)
 	if err := tt.Click("清除全部活动数据"); err != nil {
 		t.Fatal(err)
 	}
