@@ -109,6 +109,8 @@ func (a *app) clearActivity() {
 			a.receiptStore = nil
 			a.receipt = ReceiptDay{}
 			a.hasSummaries = false
+			a.recentSessions = nil
+			a.lastSessions = time.Time{}
 			a.status = runner.Status()
 			a.lastLoad = time.Time{}
 		})

@@ -34,6 +34,50 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderRecent says "最近会话"
+// in the language the app shows.
+//
+// 记录设置页最近八次会话的卡片标题。
+func RecorderRecent() string { return In(i18n.Locale()).RecorderRecent() }
+
+// RecorderRecent says "最近会话"
+// in the language of msgs.
+//
+// 记录设置页最近八次会话的卡片标题。
+func (msgs Messages) RecorderRecent() string {
+	return Catalog.Format(msgs.locale, "recorderRecent", nil)
+}
+
+// RecorderSessionFallback says "会话"
+// in the language the app shows.
+//
+// 最近会话缺少摘要标题和应用名时显示的名称。
+func RecorderSessionFallback() string { return In(i18n.Locale()).RecorderSessionFallback() }
+
+// RecorderSessionFallback says "会话"
+// in the language of msgs.
+//
+// 最近会话缺少摘要标题和应用名时显示的名称。
+func (msgs Messages) RecorderSessionFallback() string {
+	return Catalog.Format(msgs.locale, "recorderSessionFallback", nil)
+}
+
+// RecorderSessionDetails says "{minutes} 分钟 · {count, plural, other {# 张快照}}"
+// in the language the app shows.
+//
+// 最近会话每行显示会话时长和快照数量。
+func RecorderSessionDetails(minutes int, count int) string {
+	return In(i18n.Locale()).RecorderSessionDetails(minutes, count)
+}
+
+// RecorderSessionDetails says "{minutes} 分钟 · {count, plural, other {# 张快照}}"
+// in the language of msgs.
+//
+// 最近会话每行显示会话时长和快照数量。
+func (msgs Messages) RecorderSessionDetails(minutes int, count int) string {
+	return Catalog.Format(msgs.locale, "recorderSessionDetails", map[string]any{"minutes": minutes, "count": count})
+}
+
 // RecorderTitle says "活动记录器"
 // in the language the app shows.
 //

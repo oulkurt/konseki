@@ -71,6 +71,31 @@ func TestRecorderFieldLabels(t *testing.T) {
 	}
 }
 
+func TestRecentSessionOpensReceipt(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	start := time.Date(2026, 11, 4, 9, 0, 0, 0, time.Local)
+	store, err := capture.NewStore(a.runner.Root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AppendSession(capture.Session{ID: "one", Start: start, End: start.Add(time.Minute), Apps: []string{"Editor"}, Snapshots: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.sums.Upsert(summary.Entry{ID: "summary", Day: "2026-11-04", Start: start, End: start.Add(time.Hour), Headline: "代码审查"}); err != nil {
+		t.Fatal(err)
+	}
+	a.tab = 1
+	a.refresh()
+	tt := ui.NewTester(a.view, 800, 2400)
+	if err := tt.Click("代码审查"); err != nil {
+		t.Fatal(err)
+	}
+	if a.tab != 0 || a.dayFilter != "2026-11-04" || len(a.receipt.Lines) != 1 || a.receipt.Lines[0].ID != "summary" {
+		t.Fatalf("跳转错误: tab=%d day=%s receipt=%+v", a.tab, a.dayFilter, a.receipt)
+	}
+}
+
 // 视图能在没有窗口的情况下构建，这是 mygo native 模板的核心好处：
 // 界面逻辑可以纯查测试，不用起 GUI。
 

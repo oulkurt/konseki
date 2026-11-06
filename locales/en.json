@@ -1,5 +1,8 @@
 {
   "@@locale": "en",
+  "recorderRecent": "Recent sessions",
+  "recorderSessionFallback": "Session",
+  "recorderSessionDetails": "{minutes} min · {count, plural, one {# snapshot} other {# snapshots}}",
   "recorderTitle": "Activity recorder",
   "recorderEnable": "Record activity",
   "recorderEnableDescription": "Record activity on this device.",

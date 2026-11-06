@@ -1,5 +1,11 @@
 {
   "@@locale": "zh-Hans",
+  "recorderRecent": "最近会话",
+  "@recorderRecent": {"description": "记录设置页最近八次会话的卡片标题。"},
+  "recorderSessionFallback": "会话",
+  "@recorderSessionFallback": {"description": "最近会话缺少摘要标题和应用名时显示的名称。"},
+  "recorderSessionDetails": "{minutes} 分钟 · {count, plural, other {# 张快照}}",
+  "@recorderSessionDetails": {"description": "最近会话每行显示会话时长和快照数量。", "placeholders": {"minutes": {"type": "int"}, "count": {"type": "int"}}},
   "recorderTitle": "活动记录器",
   "@recorderTitle": {"description": "记录设置页活动记录器卡片的标题。"},
   "recorderEnable": "记录活动",

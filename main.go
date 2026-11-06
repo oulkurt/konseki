@@ -81,21 +81,23 @@ type app struct {
 
 	// ---- 摘要 ----
 	// 视图切换：0 = 时间轴，1 = 设置
-	tab           int
-	settingsTab   int
-	recorderDraft [6]string
-	recorderFocus [6]bool
-	sumEntries    []summary.Entry
-	sumErr        string
-	sumRunning    bool
-	sumCancel     context.CancelFunc
-	sumDone       chan struct{}
-	sumEpoch      uint64
-	clearRunning  bool
-	clearErr      string
-	clearReceipt  ReceiptDay
-	clearConfirm  bool
-	hasSummaries  bool
+	tab            int
+	settingsTab    int
+	recorderDraft  [6]string
+	recorderFocus  [6]bool
+	sumEntries     []summary.Entry
+	sumErr         string
+	sumRunning     bool
+	sumCancel      context.CancelFunc
+	sumDone        chan struct{}
+	sumEpoch       uint64
+	clearRunning   bool
+	clearErr       string
+	clearReceipt   ReceiptDay
+	clearConfirm   bool
+	hasSummaries   bool
+	recentSessions []recentSession
+	lastSessions   time.Time
 	// 摘要生成时的进度文字，UI 上直接显示。
 	sumProgress string
 	// 本次生成的脱敏命中数，给用户一个「遮了多少」的反馈。
@@ -136,6 +138,7 @@ func (a *app) refresh() {
 	if a.sums != nil {
 		a.hasSummaries = len(a.sums.Days()) > 0
 	}
+	a.loadRecentSessions()
 	if a.receiptStore == nil {
 		store, err := capture.NewStore(a.runner.Root())
 		if err != nil {
