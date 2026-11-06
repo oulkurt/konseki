@@ -149,3 +149,15 @@ func TestSearchFlagsBeforeAndAfterText(t *testing.T) {
 		t.Fatalf("结果 = %+v", got)
 	}
 }
+
+func TestSummaryHeadlineIdentity(t *testing.T) {
+	f := newFixture(t, defaultConfig())
+	for _, title := range []string{"first", "second"} {
+		f.addEntry(summary.Entry{ID: title, Day: "2026-11-05", Headline: title, Summary: "needle", Start: fixtureNow, End: fixtureNow})
+	}
+	out, _, code := runQuery(t, f.env, "search", "needle")
+	got := decode[searchOutput](t, out)
+	if code != 0 || got.Total != 2 {
+		t.Fatal(out)
+	}
+}

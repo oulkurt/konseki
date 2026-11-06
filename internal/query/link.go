@@ -1,5 +1,5 @@
 /*
- * [INPUT]: 依赖文件系统软链接操作。
+ * [INPUT]: 依赖独占临时目录和文件系统软链接操作。
  * [OUTPUT]: 提供 Link，把数据目录里的 konseki 链接指向 App 可执行文件。
  * [POS]: 查询命令的入口链接。只在 App 启动时写入，命令本身不修改它。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -12,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 )
-
-const tempLink = ".konseki.tmp"
 
 // Link 在 dir 里维护指向 exe 的软链接。
 //
@@ -41,10 +39,12 @@ func Link(dir, exe string) error {
 	if filepath.Clean(resolve(dir, target)) == filepath.Clean(exe) {
 		return nil
 	}
-	tmp := filepath.Join(dir, tempLink)
-	if err := os.Remove(tmp); err != nil && !errors.Is(err, os.ErrNotExist) {
+	tmpDir, err := os.MkdirTemp(dir, ".konseki-link-")
+	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(tmpDir)
+	tmp := filepath.Join(tmpDir, LinkName)
 	if err := os.Symlink(exe, tmp); err != nil {
 		return err
 	}

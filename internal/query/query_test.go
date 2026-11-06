@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"konseki/internal/capture"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -410,5 +411,82 @@ func TestSnapshotsExcludeToBoundary(t *testing.T) {
 	}](t, out)
 	if got.Total != 0 {
 		t.Fatalf("上界记录未排除: %s", out)
+	}
+}
+
+func TestReviewRegressions(t *testing.T) {
+	f := standardFixture(t)
+	for _, args := range [][]string{{"search", "help"}, {"search", "--", "--help"}, {"search", "--", "-h"}} {
+		out, stderr, code := runQuery(t, f.env, args...)
+		if code != 0 {
+			t.Fatal(stderr)
+		}
+		decode[searchOutput](t, out)
+	}
+	for _, args := range [][]string{{"--help"}, {"help"}, {"search", "--help"}} {
+		out, _, code := runQuery(t, f.env, args...)
+		if code != 0 || !strings.Contains(out, "usage:") {
+			t.Fatal(out)
+		}
+	}
+	for _, cmd := range []string{"day", "days", "status", "snapshots"} {
+		_, _, code := runQuery(t, f.env, cmd, "2020-01-01")
+		if code != 2 {
+			t.Fatal(cmd, code)
+		}
+	}
+	for _, prefix := range []string{"Ⱥ", "İ", "中文"} {
+		got, ok := snippet(strings.Repeat(prefix, 100)+" needle", "needle")
+		if !ok || !strings.Contains(got, "needle") {
+			t.Fatal(got)
+		}
+	}
+	for _, enabled := range []bool{true, false} {
+		sf, _ := sensitiveFixture(t, enabled)
+		out, _, _ := runQuery(t, sf.env, "search", "alice@example.com")
+		got := decode[searchOutput](t, out)
+		if strings.Contains(got.Query, "alice@example.com") == enabled {
+			t.Fatal(got.Query)
+		}
+	}
+	dir := t.TempDir()
+	tmp := filepath.Join(dir, ".konseki.tmp")
+	os.WriteFile(tmp, []byte("keep"), 0600)
+	if err := Link(dir, "/old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Link(dir, "/new"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(tmp); string(b) != "keep" {
+		t.Fatal("用户文件变化")
+	}
+}
+func TestDSTBounds(t *testing.T) {
+	old := time.Local
+	defer func() { time.Local = old }()
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Local = loc
+	for _, day := range []string{"2026-03-08", "2026-11-01"} {
+		start, end, err := dayBounds(day, "09:00", "10:00", true, true)
+		if err != nil || start.Hour() != 9 || end.Hour() != 10 {
+			t.Fatal(start, end, err)
+		}
+		if _, _, err := dayBounds(day, "10:00", "09:00", true, true); err == nil {
+			t.Fatal("逆序被接受")
+		}
+	}
+}
+
+func TestSessionOnlyDay(t *testing.T) {
+	f := newFixture(t, defaultConfig())
+	f.addSession(capture.Session{ID: "midnight", Start: fixtureNow.Add(-time.Hour), End: fixtureNow})
+	out, stderr, code := runQuery(t, f.env, "days")
+	got := decode[struct{ Days []dayCount }](t, out)
+	if code != 0 || len(got.Days) != 1 || got.Days[0].Snapshots != 0 || got.Days[0].Sessions != 1 {
+		t.Fatal(out, stderr)
 	}
 }

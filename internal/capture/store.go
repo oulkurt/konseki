@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖采集根目录中的快照、OCR 和会话 JSONL。
- * [OUTPUT]: 追加并读取快照、OCR 和会话；只读打开、列出采集日期、解析时间、还原截图路径。
+ * [OUTPUT]: 追加并读取快照、OCR 和会话；只读打开、列出快照与会话日期并集、解析时间、还原截图路径。
  * [POS]: 采集事实的追加存储，兼容旧快照格式。只读接口不建目录、不写文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -92,11 +92,18 @@ func (s *Store) Days() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	sessionEntries, err := os.ReadDir(filepath.Join(s.root, "sessions"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	entries = append(entries, sessionEntries...)
+	seen := map[string]bool{}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() || !dayJSON(e.Name()) {
+		if e.IsDir() || !dayJSON(e.Name()) || seen[e.Name()] {
 			continue
 		}
+		seen[e.Name()] = true
 		out = append(out, strings.TrimSuffix(e.Name(), ".jsonl"))
 	}
 	sort.Sort(sort.Reverse(sort.StringSlice(out)))

@@ -133,6 +133,9 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 		t.Fatal("清除没有启动")
 	}
 	a.checkLegacy(locales.In("zh-Hans"))
+	if !a.legacyChecked {
+		t.Fatal("缓存未预热")
+	}
 	a.clearActivity()
 	select {
 	case f := <-posted:
@@ -235,6 +238,10 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	}
 	if files, err := skill.FindLegacy(legacyDir); err != nil || len(files) != 3 {
 		t.Fatalf("夹具: %v %v", files, err)
+	}
+	a.checkLegacy(locales.In("zh-Hans"))
+	if !a.legacyChecked || len(a.legacyFiles) != 3 {
+		t.Fatal("旧文件缓存未预热")
 	}
 	old := summary.Entry{ID: "old", Day: "2026-11-04", Headline: "private"}
 	if err := a.sums.Upsert(old); err != nil {

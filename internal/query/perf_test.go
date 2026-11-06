@@ -63,21 +63,40 @@ func TestQueryPerf(t *testing.T) {
 	}
 
 	env := Env{Dir: dir, Now: func() time.Time { return fixtureNow }}
-	var rounds []time.Duration
-	for i := 0; i < 5; i++ {
-		start := time.Now()
-		if _, stderr, code := runQuery(t, env, "search", "needle"); code != 0 {
-			t.Fatalf("第 %d 轮失败: %s", i+1, stderr)
+	for _, term := range []string{"needle", "activity"} {
+		var rounds []time.Duration
+		for i := 0; i < 5; i++ {
+			start := time.Now()
+			out, stderr, code := runQuery(t, env, "search", term)
+			if code != 0 {
+				t.Fatalf("第 %d 轮失败: %s", i+1, stderr)
+			}
+			got := decode[searchOutput](t, out)
+			want := 0
+			if term == "activity" {
+				want = 7
+			}
+			if got.Total != want {
+				t.Fatalf("%s total=%d want=%d", term, got.Total, want)
+			}
+			if term == "activity" {
+				for _, m := range got.Matches {
+					if m.Count != 2000 {
+						t.Fatalf("count=%d", m.Count)
+					}
+				}
+			}
+			d := time.Since(start)
+			rounds = append(rounds, d)
+			fmt.Printf("round %d: %s\n", i+1, d)
 		}
-		d := time.Since(start)
-		rounds = append(rounds, d)
-		fmt.Printf("round %d: %s\n", i+1, d)
+		sorted := append([]time.Duration(nil), rounds...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+		median := sorted[len(sorted)/2]
+		fmt.Printf("%s median: %s\n", term, median)
+		if median > 2*time.Second {
+			t.Fatalf("中位数 %s 超过 2 秒", median)
+		}
 	}
-	sorted := append([]time.Duration(nil), rounds...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-	median := sorted[len(sorted)/2]
-	fmt.Printf("median: %s\n", median)
-	if median > 2*time.Second {
-		t.Fatalf("中位数 %s 超过 2 秒", median)
-	}
+
 }

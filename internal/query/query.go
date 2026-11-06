@@ -55,11 +55,23 @@ func Main(args []string, env Env, stdout, stderr io.Writer) int {
 	if env.Now == nil {
 		env.Now = time.Now
 	}
-	for _, a := range args {
-		if a == "help" || a == "-h" || a == "--help" {
-			fmt.Fprintln(stdout, usage)
-			return 0
+	help := len(args) == 1 && args[0] == "help"
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			break
 		}
+		if a == "-h" || a == "--help" {
+			help = true
+			break
+		}
+		if valueFlags[strings.TrimPrefix(a, "--")] {
+			i++
+		}
+	}
+	if help {
+		fmt.Fprintln(stdout, usage)
+		return 0
 	}
 
 	cmd, opts, err := parseArgs(args)
@@ -226,6 +238,9 @@ func parseArgs(args []string) (string, options, error) {
 		return "", o, nil
 	}
 	cmd := o.pos[0]
+	if cmd != "search" && len(o.pos) > 1 {
+		return "", o, fmt.Errorf("unexpected positional argument %q", o.pos[1])
+	}
 	allowed, ok := commandFlags[cmd]
 	if !ok {
 		return "", o, fmt.Errorf("unknown command %q", cmd)

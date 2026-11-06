@@ -353,7 +353,7 @@ func dayBounds(day, from, to string, hasFrom, hasTo bool) (time.Time, time.Time,
 		if err != nil {
 			return time.Time{}, usagef("invalid --%s %q", name, value)
 		}
-		return d.Add(time.Duration(hm.Hour())*time.Hour + time.Duration(hm.Minute())*time.Minute), nil
+		return time.Date(d.Year(), d.Month(), d.Day(), hm.Hour(), hm.Minute(), 0, 0, time.Local), nil
 	}
 	if hasFrom {
 		if start, err = parse("from", from); err != nil {
@@ -364,6 +364,9 @@ func dayBounds(day, from, to string, hasFrom, hasTo bool) (time.Time, time.Time,
 		if end, err = parse("to", to); err != nil {
 			return time.Time{}, time.Time{}, err
 		}
+	}
+	if !start.Before(end) {
+		return time.Time{}, time.Time{}, usagef("--from must precede --to")
 	}
 	return start, end, nil
 }

@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖摘要和采集快照的只读接口、脱敏器。
  * [OUTPUT]: 实现 search 命令：在摘要字段、窗口标题和屏幕文字里查词。
- * [POS]: 查询命令的全文搜索。先找原文候选，再遮蔽整段字段并重新定位。
+ * [POS]: 查询命令的全文搜索。命令内固定容量复用字段。遮蔽整段后按 rune 定位。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package query
@@ -58,6 +58,25 @@ func (r *runner) search(w io.Writer, o options) error {
 	from := now.AddDate(0, 0, -(days - 1)).Format("2006-01-02")
 	to := now.Format("2006-01-02")
 
+	// 本次命令只复用最近的字段，固定容量避免随历史增长。
+	type cached struct {
+		text, snippet string
+		ok            bool
+	}
+	cache := make([]cached, 0, 64)
+	match := func(text string) (string, bool) {
+		for _, c := range cache {
+			if c.text == text {
+				return c.snippet, c.ok
+			}
+		}
+		s, ok := r.matchField(text, lower)
+		if len(cache) == 64 {
+			cache = cache[1:]
+		}
+		cache = append(cache, cached{text, s, ok})
+		return s, ok
+	}
 	hits := make([]*hit, 0)
 	for _, day := range r.sums.Days() {
 		if day < from || day > to {
@@ -78,7 +97,7 @@ func (r *runner) search(w io.Writer, o options) error {
 				{"people", strings.Join(e.People, "\n")},
 				{"apps", strings.Join(e.Apps, "\n")},
 			} {
-				snippet, ok := r.matchField(field.text, lower)
+				snippet, ok := match(field.text)
 				if !ok {
 					continue
 				}
@@ -111,9 +130,9 @@ func (r *runner) search(w io.Writer, o options) error {
 				continue
 			}
 			field, snippet := "", ""
-			if s, ok := r.matchField(sn.Title, lower); ok {
+			if s, ok := match(sn.Title); ok {
 				field, snippet = "title", s
-			} else if s, ok := r.matchField(sn.OCR, lower); ok {
+			} else if s, ok := match(sn.OCR); ok {
 				field, snippet = "ocr", s
 			} else {
 				continue
@@ -136,12 +155,12 @@ func (r *runner) search(w io.Writer, o options) error {
 	// 后来的只加计数，id、时间与截图保留最新的那份。
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].when().After(hits[j].when()) })
 	type mergeKey struct {
-		source, day, app, title, field, snippet string
+		source, day, app, title, field, snippet, headline string
 	}
 	merged := make([]*hit, 0, len(hits))
 	index := map[mergeKey]int{}
 	for _, h := range hits {
-		key := mergeKey{h.source, h.day, h.app, h.title, h.field, h.snippet}
+		key := mergeKey{h.source, h.day, h.app, h.title, h.field, h.snippet, h.headline}
 		if i, ok := index[key]; ok {
 			merged[i].count++
 			continue
@@ -193,7 +212,7 @@ func (r *runner) search(w io.Writer, o options) error {
 		Truncated bool   `json:"truncated"`
 		Matches   []any  `json:"matches"`
 	}{
-		Query: query, From: from, To: to,
+		Query: r.maskText(query), From: from, To: to,
 		Total: total, Returned: len(matches), Truncated: total > len(matches),
 		Matches: matches,
 	}
@@ -221,7 +240,7 @@ func snippet(text, lower string) (string, bool) {
 		return "", false
 	}
 	runes := []rune(text)
-	start := utf8.RuneCountInString(text[:at])
+	start := utf8.RuneCountInString(hay[:at])
 	end := start + utf8.RuneCountInString(lower)
 	lo, hi := start-60, end+60
 	if lo < 0 {
