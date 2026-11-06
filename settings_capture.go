@@ -23,7 +23,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Children(func() {
 			a.settingsRow(c, msg.RecorderTitle(), msg.RecorderEnableDescription(), pal, func() {
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Disabled(a.clearRunning).Children(func() {
 					if a.cfgNow.Recorder.Enabled {
 						renderSelectPill(c, "recorder-pause", msg.RecorderPause(), 100, pal.textPrimary, pal, func(m *ui.Menu) {
 							if m.Item(msg.RecorderResume()).Chosen() {
@@ -75,6 +75,9 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 }
 
 func (a *app) pauseRecorder(until time.Time) {
+	if a.clearRunning || a.runner == nil {
+		return
+	}
 	if err := a.cfg.Update(func(cfg *config.Config) { cfg.Recorder.PausedUntil = until }); err != nil {
 		a.err = err.Error()
 		return

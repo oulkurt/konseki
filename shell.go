@@ -90,7 +90,8 @@ func (a *app) view(c *ui.Context) {
 									btn := ui.ButtonBase(c.Key("btn-record-toggle")).
 										Padding(2, 7).
 										Radius(999).
-										Background(pal.rowHoverBg)
+										Background(pal.rowHoverBg).
+										Disabled(a.clearRunning)
 									btn.Children(func() {
 										ui.Text(c, toggleLabel).FontSize(11).Bold().TextColor(pal.textPrimary)
 									})

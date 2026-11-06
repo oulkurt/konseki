@@ -42,6 +42,9 @@ func (a *app) applyRecorder() {
 }
 
 func (a *app) setRecorderEnabled(enabled bool) {
+	if a.clearRunning || a.runner == nil {
+		return
+	}
 	if err := a.cfg.Update(func(c *config.Config) { c.Recorder.Enabled = enabled }); err != nil {
 		a.err = err.Error()
 		a.cfgNow = a.cfg.Get()

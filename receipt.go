@@ -102,7 +102,7 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 			case capture.PhaseBlocked:
 				color, label = ui.Hex("#EF4444"), msg.ReceiptBlocked()
 			}
-			btn := ui.ButtonBase(c.Key("receipt-recorder")).Gap(6).Padding(5, 6).AlignItems(ui.Center).Label(label)
+			btn := ui.ButtonBase(c.Key("receipt-recorder")).Gap(6).Padding(5, 6).AlignItems(ui.Center).Label(label).Disabled(a.clearRunning)
 			btn.Children(func() {
 				ui.Box(c).Size(7, 7).Radius(4).Background(color)
 				ui.Text(c, label).FontSize(11).TextColor(ui.Hex("#D4D4D8"))

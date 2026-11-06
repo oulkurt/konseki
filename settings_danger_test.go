@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖可注入的清除步骤和摘要完成信号。
- * [OUTPUT]: 验证清除顺序、等待和错误短路。
+ * [OUTPUT]: 验证清除顺序、等待、错误短路与清除期间录制入口禁用。
  * [POS]: 危险操作的并发和失败路径回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"konseki/internal/capture"
 	"konseki/internal/config"
 	"konseki/internal/skill"
 	"konseki/internal/summary"
@@ -21,6 +22,48 @@ import (
 
 	"github.com/egoist/mygo/ui"
 )
+
+func TestClearRunningDisablesRecorderControls(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.setRecorderEnabled(true)
+	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase == capture.PhaseOff {
+		t.Fatal("录制未启动")
+	}
+
+	a.clearRunning = true
+	tt := ui.NewTester(a.view, 760, 1400)
+	if err := tt.Click("等待中"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.cfg.Get().Recorder.Enabled || a.runner.Status().Phase == capture.PhaseOff {
+		t.Fatal("清除期间小票机按钮修改了录制状态")
+	}
+
+	a.tab = 1
+	tt = ui.NewTester(a.view, 760, 1400)
+	if err := tt.Click("暂停"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("暂停记录"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.HasText("暂停 15 分钟") {
+		t.Fatal("清除期间打开了暂停菜单")
+	}
+	rect, ok := tt.Find("活动记录器")
+	if !ok {
+		t.Fatal("设置开关缺失")
+	}
+	tt.ClickAt(700, rect.Y+12)
+	a.pauseRecorder(time.Now().Add(15 * time.Minute))
+	a.setRecorderEnabled(false)
+	cfg := a.cfg.Get().Recorder
+	phase := a.runner.Status().Phase
+	if !cfg.Enabled || !cfg.PausedUntil.IsZero() || phase == capture.PhaseOff || phase == capture.PhasePaused {
+		t.Fatalf("清除期间修改了录制状态: enabled=%v paused=%v phase=%v", cfg.Enabled, cfg.PausedUntil, phase)
+	}
+}
 
 func TestDangerCancelPreservesData(t *testing.T) {
 	a, cleanup := newTestApp(t)
