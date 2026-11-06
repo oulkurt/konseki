@@ -30,7 +30,7 @@ var settingsShotPages = []struct {
 }{
 	{"recorder", 0, 2700},
 	{"models", 1, 1100},
-	{"general", 2, 660},
+	{"general", 2, 760},
 }
 
 func prepareSettingsShotApp(t *testing.T, lang string) (*app, func()) {
