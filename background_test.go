@@ -28,6 +28,7 @@ func TestSummaryBackgroundPublication(t *testing.T) {
 	defer server.Close()
 	a, cleanup := newTestApp(t)
 	defer cleanup()
+	a.llmc.HTTP = server.Client()
 	if err := a.cfg.Update(func(c *config.Config) {
 		c.Providers = []config.ProviderConfig{{Preset: "test", ChatBase: server.URL + "/v1", DefaultModel: "fake"}}
 	}); err != nil {

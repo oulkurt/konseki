@@ -7,6 +7,8 @@
 package main
 
 import (
+	"errors"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +23,12 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+type blockedTestTransport struct{}
+
+func (blockedTestTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("测试禁止真实网络请求")
+}
+
 func TestTestAppClearExportIsIsolated(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
@@ -28,6 +36,14 @@ func TestTestAppClearExportIsIsolated(t *testing.T) {
 	rel, err := filepath.Rel(a.appDir, dir)
 	if dir == "" || err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		t.Fatalf("清除对账目录 %q 不在临时应用目录 %q 内", dir, a.appDir)
+	}
+}
+
+func TestTestAppNetworkIsIsolated(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	if a.llmc.HTTP.Transport == nil {
+		t.Fatal("测试应用使用默认网络传输")
 	}
 }
 
@@ -85,6 +101,7 @@ func newTestApp(t *testing.T) (*app, func()) {
 		llmc:     llm.New(time.Second),
 		expanded: map[string]bool{},
 	}
+	a.llmc.HTTP.Transport = blockedTestTransport{}
 	a.post = func(f func()) { f() }
 	a.setLocale = func(string) {}
 	scanTestCredentials(t, a, nil)
