@@ -191,10 +191,14 @@ func (s *Store) Clear() error {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if entry.IsDir() || !strings.HasSuffix(name, ".jsonl") {
+		if entry.IsDir() {
 			continue
 		}
-		day := strings.TrimSuffix(name, ".jsonl")
+		base := strings.TrimSuffix(name, ".tmp")
+		if !strings.HasSuffix(base, ".jsonl") {
+			continue
+		}
+		day := strings.TrimSuffix(base, ".jsonl")
 		if _, err := time.Parse("2006-01-02", day); err != nil {
 			continue
 		}
