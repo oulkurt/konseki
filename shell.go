@@ -126,8 +126,7 @@ func (a *app) view(c *ui.Context) {
 							a.renderDanger(c, pal)
 						case 1:
 							a.startCredentialScan()
-							a.renderSummariesSection(c, pal)
-							a.renderProvidersSection(c, pal)
+							a.renderModelsSettings(c, pal)
 						case 2:
 							a.renderLanguageSection(c, pal)
 							a.renderSkillSection(c, pal)

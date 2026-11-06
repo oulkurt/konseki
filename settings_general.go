@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"konseki/internal/config"
-	"konseki/internal/skill"
 	"konseki/locales"
 
 	"github.com/egoist/mygo/ui"
@@ -28,7 +27,7 @@ func (a *app) renderSkillSection(c *ui.Context, pal palette) {
 			}
 			placeholder := a.cfgNow.Skill.ExportDir
 			if placeholder == "" {
-				placeholder = skill.DefaultDir()
+				placeholder = a.skillDefaultDirectory()
 			}
 			in := ui.TextInput(c.Key("skill-dir"), &a.skillDirDraft).FillWidth().Label(msg.GeneralSkillDirectory()).Placeholder(placeholder)
 			focused := in.Focused()

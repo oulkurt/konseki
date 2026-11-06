@@ -17,6 +17,7 @@ import (
 	"konseki/internal/config"
 	"konseki/internal/llm"
 	"konseki/internal/providers"
+	"konseki/internal/skill"
 	"konseki/internal/summary"
 
 	"github.com/egoist/mygo"
@@ -33,6 +34,7 @@ type app struct {
 	requestAccessibility func() capture.PermState
 	openSettings         func(string) error
 	showFolder           func(string)
+	defaultSkillDir      func() string
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -71,6 +73,7 @@ type app struct {
 	openProvider    string
 	addProviderOpen bool
 	providerFilter  int // 0=全部 1=官方 2=中转 3=本地 4=订阅
+	providerSearch  string
 	apiKeyDraft     string
 	baseURLDraft    string
 	modelDraft      string
@@ -342,6 +345,7 @@ func main() {
 		requestAccessibility: capture.RequestAccessibility,
 		openSettings:         mygo.Shell.OpenExternal,
 		showFolder:           mygo.Shell.ShowItemInFolder,
+		defaultSkillDir:      skill.DefaultDir,
 	}
 	a.rebuildGenerator()
 

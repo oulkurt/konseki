@@ -14,6 +14,7 @@ import (
 
 	"konseki/internal/config"
 	"konseki/internal/llm"
+	"konseki/locales"
 
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
@@ -36,8 +37,10 @@ func (a *app) testConnection(idx int) {
 		return
 	}
 	pc, client := a.cfgNow.Providers[idx], a.llmc
+	lang := a.cfgNow.Language
 	a.testing, a.testResult = true, ""
 	go func() {
+		started := time.Now()
 		result, ok := "", false
 		r, err := llm.Resolve(pc, true)
 		if err == nil {
@@ -50,7 +53,11 @@ func (a *app) testConnection(idx int) {
 			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "只回复两个字：收到", MaxTokens: 32})
 			err = e
 			if err == nil {
-				result = fmt.Sprintf("连通 · %s · %d tokens", strings.TrimSpace(resp.Text), resp.Usage.Input+resp.Usage.Output)
+				model := resp.Model
+				if model == "" {
+					model = r.Model
+				}
+				result = locales.In(lang).ModelsTestSuccess(model, int(time.Since(started).Milliseconds()))
 				ok = true
 			}
 		}

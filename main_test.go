@@ -37,6 +37,9 @@ func TestTestAppClearExportIsIsolated(t *testing.T) {
 	if dir == "" || err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		t.Fatalf("清除对账目录 %q 不在临时应用目录 %q 内", dir, a.appDir)
 	}
+	if resolved := a.skillDefaultDirectory(); resolved != dir {
+		t.Fatalf("空目录回退到了 %q", resolved)
+	}
 }
 
 func TestTestAppNetworkIsIsolated(t *testing.T) {
@@ -145,6 +148,7 @@ func newTestApp(t *testing.T) (*app, func()) {
 	a.requestAccessibility = func() capture.PermState { return capture.PermGranted }
 	a.openSettings = func(string) error { return nil }
 	a.showFolder = func(string) {}
+	a.defaultSkillDir = func() string { return filepath.Join(appDir, "skill") }
 	scanTestCredentials(t, a, nil)
 	a.rebuildGenerator()
 	return a, func() { r.Stop() }

@@ -70,6 +70,9 @@ func (a *app) clearActivity() {
 	done := a.sumDone
 	runner, sums := a.runner, a.sums
 	opts := skill.Options{Dir: a.cfgNow.Skill.ExportDir, Days: a.cfgNow.Skill.Days, IncludeOCR: a.cfgNow.Skill.IncludeOCR, Owner: ownerName()}
+	if opts.Dir == "" {
+		opts.Dir = a.skillDefaultDirectory()
+	}
 	post := a.post
 	lang := a.cfgNow.Language
 	go func() {
@@ -84,9 +87,6 @@ func (a *app) clearActivity() {
 			return nil
 		}, sums.Clear, func() error {
 			dir := opts.Dir
-			if dir == "" {
-				dir = skill.DefaultDir()
-			}
 			if _, err := os.Stat(dir); os.IsNotExist(err) {
 				return nil
 			} else if err != nil {

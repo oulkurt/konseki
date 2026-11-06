@@ -34,6 +34,330 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// ModelsSummary says "摘要模型"
+// in the language the app shows.
+//
+// 模型设置页的摘要模型卡片标题。
+func ModelsSummary() string { return In(i18n.Locale()).ModelsSummary() }
+
+// ModelsSummary says "摘要模型"
+// in the language of msgs.
+//
+// 模型设置页的摘要模型卡片标题。
+func (msgs Messages) ModelsSummary() string {
+	return Catalog.Format(msgs.locale, "modelsSummary", nil)
+}
+
+// ModelsChoose says "选择模型"
+// in the language the app shows.
+//
+// 摘要模型尚未选择时的菜单标签。
+func ModelsChoose() string { return In(i18n.Locale()).ModelsChoose() }
+
+// ModelsChoose says "选择模型"
+// in the language of msgs.
+//
+// 摘要模型尚未选择时的菜单标签。
+func (msgs Messages) ModelsChoose() string {
+	return Catalog.Format(msgs.locale, "modelsChoose", nil)
+}
+
+// ModelsEffort says "推理档位"
+// in the language the app shows.
+//
+// 摘要模型的推理强度菜单标签。
+func ModelsEffort() string { return In(i18n.Locale()).ModelsEffort() }
+
+// ModelsEffort says "推理档位"
+// in the language of msgs.
+//
+// 摘要模型的推理强度菜单标签。
+func (msgs Messages) ModelsEffort() string {
+	return Catalog.Format(msgs.locale, "modelsEffort", nil)
+}
+
+// ModelsProviders says "供应商"
+// in the language the app shows.
+//
+// 模型设置页的已配置供应商列表标题。
+func ModelsProviders() string { return In(i18n.Locale()).ModelsProviders() }
+
+// ModelsProviders says "供应商"
+// in the language of msgs.
+//
+// 模型设置页的已配置供应商列表标题。
+func (msgs Messages) ModelsProviders() string {
+	return Catalog.Format(msgs.locale, "modelsProviders", nil)
+}
+
+// ModelsAdd says "添加供应商"
+// in the language the app shows.
+//
+// 模型设置页打开供应商选择器的按钮。
+func ModelsAdd() string { return In(i18n.Locale()).ModelsAdd() }
+
+// ModelsAdd says "添加供应商"
+// in the language of msgs.
+//
+// 模型设置页打开供应商选择器的按钮。
+func (msgs Messages) ModelsAdd() string {
+	return Catalog.Format(msgs.locale, "modelsAdd", nil)
+}
+
+// ModelsSearch says "搜索供应商"
+// in the language the app shows.
+//
+// 供应商选择器中搜索预设的输入框。
+func ModelsSearch() string { return In(i18n.Locale()).ModelsSearch() }
+
+// ModelsSearch says "搜索供应商"
+// in the language of msgs.
+//
+// 供应商选择器中搜索预设的输入框。
+func (msgs Messages) ModelsSearch() string {
+	return Catalog.Format(msgs.locale, "modelsSearch", nil)
+}
+
+// ModelsClose says "关闭"
+// in the language the app shows.
+//
+// 供应商选择器的关闭按钮。
+func ModelsClose() string { return In(i18n.Locale()).ModelsClose() }
+
+// ModelsClose says "关闭"
+// in the language of msgs.
+//
+// 供应商选择器的关闭按钮。
+func (msgs Messages) ModelsClose() string {
+	return Catalog.Format(msgs.locale, "modelsClose", nil)
+}
+
+// ModelsEmpty says "还没有配置供应商。"
+// in the language the app shows.
+//
+// 供应商列表为空时的提示。
+func ModelsEmpty() string { return In(i18n.Locale()).ModelsEmpty() }
+
+// ModelsEmpty says "还没有配置供应商。"
+// in the language of msgs.
+//
+// 供应商列表为空时的提示。
+func (msgs Messages) ModelsEmpty() string {
+	return Catalog.Format(msgs.locale, "modelsEmpty", nil)
+}
+
+// ModelsConfigure says "配置"
+// in the language the app shows.
+//
+// 供应商行展开编辑区的按钮。
+func ModelsConfigure() string { return In(i18n.Locale()).ModelsConfigure() }
+
+// ModelsConfigure says "配置"
+// in the language of msgs.
+//
+// 供应商行展开编辑区的按钮。
+func (msgs Messages) ModelsConfigure() string {
+	return Catalog.Format(msgs.locale, "modelsConfigure", nil)
+}
+
+// ModelsDefault says "设为默认"
+// in the language the app shows.
+//
+// 供应商行设为摘要模型的按钮。
+func ModelsDefault() string { return In(i18n.Locale()).ModelsDefault() }
+
+// ModelsDefault says "设为默认"
+// in the language of msgs.
+//
+// 供应商行设为摘要模型的按钮。
+func (msgs Messages) ModelsDefault() string {
+	return Catalog.Format(msgs.locale, "modelsDefault", nil)
+}
+
+// ModelsKey says "接口密钥"
+// in the language the app shows.
+//
+// 供应商编辑区的接口密钥输入框。
+func ModelsKey() string { return In(i18n.Locale()).ModelsKey() }
+
+// ModelsKey says "接口密钥"
+// in the language of msgs.
+//
+// 供应商编辑区的接口密钥输入框。
+func (msgs Messages) ModelsKey() string {
+	return Catalog.Format(msgs.locale, "modelsKey", nil)
+}
+
+// ModelsURL says "接口地址"
+// in the language the app shows.
+//
+// 供应商编辑区的接口地址输入框。
+func ModelsURL() string { return In(i18n.Locale()).ModelsURL() }
+
+// ModelsURL says "接口地址"
+// in the language of msgs.
+//
+// 供应商编辑区的接口地址输入框。
+func (msgs Messages) ModelsURL() string {
+	return Catalog.Format(msgs.locale, "modelsURL", nil)
+}
+
+// ModelsModel says "模型"
+// in the language the app shows.
+//
+// 供应商编辑区的默认模型输入框。
+func ModelsModel() string { return In(i18n.Locale()).ModelsModel() }
+
+// ModelsModel says "模型"
+// in the language of msgs.
+//
+// 供应商编辑区的默认模型输入框。
+func (msgs Messages) ModelsModel() string {
+	return Catalog.Format(msgs.locale, "modelsModel", nil)
+}
+
+// ModelsTest says "测试连接"
+// in the language the app shows.
+//
+// 供应商编辑区的连接测试按钮。
+func ModelsTest() string { return In(i18n.Locale()).ModelsTest() }
+
+// ModelsTest says "测试连接"
+// in the language of msgs.
+//
+// 供应商编辑区的连接测试按钮。
+func (msgs Messages) ModelsTest() string {
+	return Catalog.Format(msgs.locale, "modelsTest", nil)
+}
+
+// ModelsTesting says "测试中…"
+// in the language the app shows.
+//
+// 供应商连接测试运行时的按钮。
+func ModelsTesting() string { return In(i18n.Locale()).ModelsTesting() }
+
+// ModelsTesting says "测试中…"
+// in the language of msgs.
+//
+// 供应商连接测试运行时的按钮。
+func (msgs Messages) ModelsTesting() string {
+	return Catalog.Format(msgs.locale, "modelsTesting", nil)
+}
+
+// ModelsRemove says "移除"
+// in the language the app shows.
+//
+// 供应商编辑区的移除按钮。
+func ModelsRemove() string { return In(i18n.Locale()).ModelsRemove() }
+
+// ModelsRemove says "移除"
+// in the language of msgs.
+//
+// 供应商编辑区的移除按钮。
+func (msgs Messages) ModelsRemove() string {
+	return Catalog.Format(msgs.locale, "modelsRemove", nil)
+}
+
+// ModelsImport says "从本机导入"
+// in the language the app shows.
+//
+// 模型设置页的本机凭据导入卡片标题。
+func ModelsImport() string { return In(i18n.Locale()).ModelsImport() }
+
+// ModelsImport says "从本机导入"
+// in the language of msgs.
+//
+// 模型设置页的本机凭据导入卡片标题。
+func (msgs Messages) ModelsImport() string {
+	return Catalog.Format(msgs.locale, "modelsImport", nil)
+}
+
+// ModelsImportEmpty says "没有找到已登录的命令行工具。"
+// in the language the app shows.
+//
+// 本机凭据扫描没有结果时的提示。
+func ModelsImportEmpty() string { return In(i18n.Locale()).ModelsImportEmpty() }
+
+// ModelsImportEmpty says "没有找到已登录的命令行工具。"
+// in the language of msgs.
+//
+// 本机凭据扫描没有结果时的提示。
+func (msgs Messages) ModelsImportEmpty() string {
+	return Catalog.Format(msgs.locale, "modelsImportEmpty", nil)
+}
+
+// ModelsImportAction says "导入"
+// in the language the app shows.
+//
+// 本机凭据列表中导入凭据的按钮。
+func ModelsImportAction() string { return In(i18n.Locale()).ModelsImportAction() }
+
+// ModelsImportAction says "导入"
+// in the language of msgs.
+//
+// 本机凭据列表中导入凭据的按钮。
+func (msgs Messages) ModelsImportAction() string {
+	return Catalog.Format(msgs.locale, "modelsImportAction", nil)
+}
+
+// ModelsScanning says "正在扫描…"
+// in the language the app shows.
+//
+// 本机凭据扫描进行中的提示。
+func ModelsScanning() string { return In(i18n.Locale()).ModelsScanning() }
+
+// ModelsScanning says "正在扫描…"
+// in the language of msgs.
+//
+// 本机凭据扫描进行中的提示。
+func (msgs Messages) ModelsScanning() string {
+	return Catalog.Format(msgs.locale, "modelsScanning", nil)
+}
+
+// ModelsAuto says "自动摘要"
+// in the language the app shows.
+//
+// 模型设置页的自动摘要开关。
+func ModelsAuto() string { return In(i18n.Locale()).ModelsAuto() }
+
+// ModelsAuto says "自动摘要"
+// in the language of msgs.
+//
+// 模型设置页的自动摘要开关。
+func (msgs Messages) ModelsAuto() string {
+	return Catalog.Format(msgs.locale, "modelsAuto", nil)
+}
+
+// ModelsRedact says "发送前脱敏"
+// in the language the app shows.
+//
+// 模型设置页的模型请求脱敏开关。
+func ModelsRedact() string { return In(i18n.Locale()).ModelsRedact() }
+
+// ModelsRedact says "发送前脱敏"
+// in the language of msgs.
+//
+// 模型设置页的模型请求脱敏开关。
+func (msgs Messages) ModelsRedact() string {
+	return Catalog.Format(msgs.locale, "modelsRedact", nil)
+}
+
+// ModelsTestSuccess says "连接成功 · {model} · {elapsed} 毫秒"
+// in the language the app shows.
+//
+// 模型连接测试成功时显示实际模型和耗时。
+func ModelsTestSuccess(model string, elapsed int) string {
+	return In(i18n.Locale()).ModelsTestSuccess(model, elapsed)
+}
+
+// ModelsTestSuccess says "连接成功 · {model} · {elapsed} 毫秒"
+// in the language of msgs.
+//
+// 模型连接测试成功时显示实际模型和耗时。
+func (msgs Messages) ModelsTestSuccess(model string, elapsed int) string {
+	return Catalog.Format(msgs.locale, "modelsTestSuccess", map[string]any{"model": model, "elapsed": elapsed})
+}
+
 // GeneralSkill says "技能导出"
 // in the language the app shows.
 //

@@ -1,327 +1,20 @@
 /*
- * [INPUT]: 依赖摘要、模型设置、导出服务与语言目录。
- * [OUTPUT]: 提供摘要设置、导出界面与分页导航。
- * [POS]: 设置页摘要区块与共享导航。
+ * [INPUT]: 依赖摘要、采集数据、技能导出服务与语言目录。
+ * [OUTPUT]: 提供技能导出操作与主分页导航。
+ * [POS]: 导出数据组装和时间轴、设置页之间的导航。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
-
-// 摘要与 Skill 的设置页。
-//
-// 摘要页承担两件事：
-//   1. 选模型、选推理档、开关自动生成
-//   2. 显示"这一天生成了什么"——摘要本身要能被读到，否则整条链路
-//      对用户是黑盒
-//
-// 这一页的时间线视图在 main.go 里，和 History 复用同一套渲染。
 
 import (
 	"fmt"
 	"os"
 
-	"konseki/internal/config"
-	"konseki/internal/providers"
-	"konseki/internal/redact"
 	"konseki/internal/skill"
-	"konseki/internal/summary"
 	"konseki/locales"
 
 	"github.com/egoist/mygo/ui"
 )
-
-// renderSummariesSection 画摘要设置。
-func (a *app) renderSummariesSection(c *ui.Context, pal palette) {
-	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		ui.Text(c, "Summaries").
-			FontSize(13).
-			Bold().
-			TextColor(pal.textSecondary).
-			Margin(4, 0, 0, 10)
-
-		a.settingsCard(c, pal, func() {
-			// ---- 行 1：摘要模型 ----
-			modelSub := "把一天的屏幕痕迹压成「在做什么」。走哪个模型都由你决定。"
-			if a.cfgNow.Summary.Model != "" {
-				modelSub = fmt.Sprintf("当前：%s · %s", a.cfgNow.Summary.ProviderID, a.cfgNow.Summary.Model)
-			} else if len(a.cfgNow.Providers) == 0 {
-				modelSub = "还没有配置供应商 —— 先在下面 Providers 里选一家。"
-			}
-
-			a.settingsRow(c, "Summary model", modelSub, pal, func() {
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					// 模型菜单：按供应商分组
-					menu := func(m *ui.Menu) {
-						if len(a.cfgNow.Providers) == 0 {
-							m.Item("没有可用的供应商").Disabled(true)
-							return
-						}
-						for _, pc := range a.cfgNow.Providers {
-							preset, _ := providers.ByID(pc.Preset)
-							name := pc.Label
-							if name == "" {
-								name = preset.Name
-							}
-							if name == "" {
-								name = pc.Preset
-							}
-							models := preset.Models
-							if len(models) == 0 && pc.DefaultModel != "" {
-								models = []string{pc.DefaultModel}
-							}
-							if len(models) == 0 {
-								m.Item(name + "（未选模型）").Disabled(true)
-								continue
-							}
-							m.Submenu(name, func(sub *ui.Menu) {
-								for _, mdl := range models {
-									if sub.Item(mdl).
-										Checked(a.cfgNow.Summary.ProviderID == pc.Preset && a.cfgNow.Summary.Model == mdl).
-										Chosen() {
-										a.setSummaryModel(pc.Preset, mdl)
-									}
-								}
-							})
-						}
-					}
-
-					label := a.cfgNow.Summary.Model
-					if label == "" {
-						label = "选择模型"
-					}
-					renderSelectPill(c, "btn-summary-model", label, 150, pal.textPrimary, pal, menu)
-
-					// 推理档位
-					effortMenu := func(m *ui.Menu) {
-						m.Item("Thinking effort").Disabled(true)
-						for _, lvl := range []string{"off", "low", "medium", "high", "max"} {
-							if m.Item(lvl).Checked(a.cfgNow.Summary.ThinkingEffort == lvl).Chosen() {
-								a.setThinking(lvl)
-							}
-						}
-					}
-					renderSelectPill(c, "btn-thinking", a.cfgNow.Summary.ThinkingEffort, 86, pal.textPrimary, pal, effortMenu)
-				})
-			})
-
-			ui.Box(c).FillWidth().Height(1).Background(pal.rowDivider)
-
-			// ---- 行 2：自动生成 ----
-			autoSub := "开着的话，每 30 分钟自己补一段摘要。"
-			if a.cfgNow.Summary.Auto {
-				autoSub = fmt.Sprintf("每 %d 分钟自动生成一次。", a.cfgNow.Summary.IntervalMinutes)
-			}
-			a.settingsRow(c, "Auto summarize", autoSub, pal, func() {
-				auto := a.cfgNow.Summary.Auto
-				if renderPillSwitch(c, "sw-auto-summary", &auto, pal) {
-					a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = auto })
-					a.cfgNow = a.cfg.Get()
-				}
-			})
-
-			ui.Box(c).FillWidth().Height(1).Background(pal.rowDivider)
-
-			// ---- 行 3：手动生成 ----
-			a.settingsRow(c, "Generate now",
-				"把今天还没摘要的部分补上。已有的块会跳过。", pal, func() {
-					a.renderGenerateButton(c, pal)
-				})
-		})
-
-		// ---- 脱敏状态 ----
-		a.renderRedactCard(c, pal)
-
-		// ---- 已生成的摘要 ----
-		if len(a.sumEntries) > 0 {
-			a.renderSummaryList(c, pal)
-		}
-	})
-}
-
-func (a *app) renderGenerateButton(c *ui.Context, pal palette) {
-	if a.sumRunning {
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(0, 4).Children(func() {
-			ui.Spinner(c).Size(12, 12)
-			ui.Text(c, "生成中…").FontSize(12).TextColor(pal.textSecondary)
-		})
-		return
-	}
-	if !a.summarizable() && len(a.cfgNow.Providers) == 0 {
-		ui.Text(c, "先配置供应商").FontSize(12).TextColor(pal.textSecondary)
-		return
-	}
-
-	btn := ui.ButtonBase(c.Key("btn-generate")).Padding(5, 12).Radius(8).
-		Background(pal.rowHoverBg).Border(1, pal.controlBorder)
-	if btn.Hovered() {
-		btn.Background(pal.cardBorder)
-	}
-	btn.Children(func() {
-		ui.Text(c, "生成摘要").FontSize(12).Bold().TextColor(pal.textPrimary)
-	})
-	if btn.Clicked() {
-		a.runSummary(false)
-	}
-}
-
-// renderRedactCard 让用户看到隐私开关，并且能确认它真的在起作用。
-func (a *app) renderRedactCard(c *ui.Context, pal palette) {
-	a.settingsCard(c, pal, func() {
-		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
-			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Column(c).Grow(1).Gap(3).Children(func() {
-					ui.Text(c, "脱敏").FontSize(13).Bold().TextColor(pal.textPrimary)
-					ui.Text(c, "发给模型之前，把不该出门的东西换成占位符，回来再换回去。").
-						FontSize(11.8).TextColor(pal.textSecondary).LineHeight(1.38)
-				})
-				on := a.cfgNow.Redact.Enabled
-				if renderPillSwitch(c, "sw-redact", &on, pal) {
-					a.cfg.Update(func(cfg *config.Config) { cfg.Redact.Enabled = on })
-					a.cfgNow = a.cfg.Get()
-					a.rebuildGenerator()
-				}
-			})
-
-			if !a.cfgNow.Redact.Enabled {
-				ui.Text(c, "已关闭。你的屏幕内容会原样发到模型供应商。").
-					FontSize(11.5).
-					TextColor(ui.Hex("#DC2626"))
-				return
-			}
-
-			// 两类开关
-			ui.Row(c).FillWidth().Gap(14).Children(func() {
-				ui.Column(c).Grow(1).Gap(4).Children(func() {
-					ui.Text(c, "凭据与密码").FontSize(12).TextColor(pal.textPrimary)
-					secrets := a.cfgNow.Redact.Secrets
-					if renderPillSwitch(c, "sw-redact-secrets", &secrets, pal) {
-						a.cfg.Update(func(cfg *config.Config) { cfg.Redact.Secrets = secrets })
-						a.cfgNow = a.cfg.Get()
-						a.rebuildGenerator()
-					}
-				})
-				ui.Column(c).Grow(1).Gap(4).Children(func() {
-					ui.Text(c, "个人数据").FontSize(12).TextColor(pal.textPrimary)
-					personal := a.cfgNow.Redact.Personal
-					if renderPillSwitch(c, "sw-redact-personal", &personal, pal) {
-						a.cfg.Update(func(cfg *config.Config) { cfg.Redact.Personal = personal })
-						a.cfgNow = a.cfg.Get()
-						a.rebuildGenerator()
-					}
-				})
-			})
-
-			// 分类细分
-			ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
-				for _, cat := range redact.Categories {
-					cat := cat
-					on, ok := a.cfgNow.Redact.Kinds[cat.ID]
-					if !ok {
-						on = cat.On
-					}
-					label := cat.Name
-					if on {
-						label = "✓ " + label
-					}
-					chip := ui.ButtonBase(c.Key("redact-cat-"+cat.ID)).
-						Padding(3, 8).Radius(6).
-						Background(pal.codeBg)
-					if chip.Hovered() {
-						chip.Background(pal.rowHoverBg)
-					}
-					chip.Children(func() {
-						ui.Text(c, label).FontSize(11).TextColor(pal.codeFg)
-					})
-					if chip.Clicked() {
-						next := !on
-						a.cfg.Update(func(cfg *config.Config) {
-							if cfg.Redact.Kinds == nil {
-								cfg.Redact.Kinds = map[string]bool{}
-							}
-							cfg.Redact.Kinds[cat.ID] = next
-						})
-						a.cfgNow = a.cfg.Get()
-						a.rebuildGenerator()
-					}
-				}
-			})
-
-			// 本次生成遮了什么。这是最直接的信任建立手段。
-			if a.sumRedactions > 0 {
-				ui.Text(c, fmt.Sprintf("上一次生成：遮掉了 %d 处内容。", a.sumRedactions)).
-					FontSize(11.5).
-					TextColor(pal.switchOn)
-			}
-		})
-	})
-}
-
-// renderSummaryList 列出已生成的摘要卡片。
-func (a *app) renderSummaryList(c *ui.Context, pal palette) {
-	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("今天的摘要 · %d 段", len(a.sumEntries))).
-				FontSize(13).Bold().TextColor(pal.textSecondary).Margin(4, 0, 0, 10)
-			ui.Spacer(c)
-			if a.sumErr != "" {
-				ui.Text(c, a.sumErr).FontSize(11).TextColor(ui.Hex("#DC2626")).SingleLine()
-			}
-		})
-
-		a.settingsCard(c, pal, func() {
-			ui.Column(c).FillWidth().Padding(4, 0).Children(func() {
-				for i, e := range a.sumEntries {
-					if i > 0 {
-						ui.Box(c).FillWidth().Height(1).Background(pal.rowDivider).Margin(0, 16)
-					}
-					renderSummaryEntry(c, e, pal)
-				}
-			})
-		})
-	})
-}
-
-func renderSummaryEntry(c *ui.Context, e summary.Entry, pal palette) {
-	ui.Column(c).FillWidth().Padding(12, 18).Gap(5).Children(func() {
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, fmt.Sprintf("%s–%s", e.Start.Format("15:04"), e.End.Format("15:04"))).
-				FontSize(11.5).
-				TextColor(pal.textSecondary).
-				FontFeatures("tnum")
-			ui.Text(c, e.Headline).FontSize(12.8).Bold().TextColor(pal.textPrimary).SingleLine().Grow(1)
-			if e.Redactions > 0 {
-				ui.Text(c, fmt.Sprintf("遮 %d", e.Redactions)).
-					FontSize(10).
-					TextColor(pal.textSecondary).
-					Padding(1, 5).
-					Radius(999).
-					Background(pal.codeBg)
-			}
-		})
-		if e.Summary != "" {
-			ui.Text(c, e.Summary).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.45)
-		}
-		if len(e.Open) > 0 {
-			ui.Row(c).AlignItems(ui.Start).Gap(6).FillWidth().Children(func() {
-				ui.Text(c, "未完成").FontSize(11).Bold().TextColor(ui.Hex("#D97706"))
-				ui.Column(c).Grow(1).Gap(2).Children(func() {
-					for _, o := range e.Open {
-						ui.Text(c, "· "+o).FontSize(11.5).TextColor(pal.textSecondary)
-					}
-				})
-			})
-		}
-		if len(e.Topics) > 0 {
-			ui.Row(c).Gap(4).Wrap().Children(func() {
-				for _, t := range e.Topics {
-					ui.Text(c, t).FontSize(10.5).TextColor(pal.codeFg).
-						Padding(1, 6).Radius(999).Background(pal.codeBg)
-				}
-			})
-		}
-	})
-}
-
-// ---------- Skill ----------
 
 // exportSkill 收集最近 N 天的数据并写出。
 func (a *app) exportSkill() (int, error) {
@@ -366,7 +59,17 @@ func (a *app) exportSkill() (int, error) {
 		IncludeOCR: a.cfgNow.Skill.IncludeOCR,
 		Owner:      ownerName(),
 	}
+	if opts.Dir == "" {
+		opts.Dir = a.skillDefaultDirectory()
+	}
 	return skill.Export(opts, data)
+}
+
+func (a *app) skillDefaultDirectory() string {
+	if a.defaultSkillDir != nil {
+		return a.defaultSkillDir()
+	}
+	return skill.DefaultDir()
 }
 
 // ownerName 拿系统的用户名当默认称呼。
