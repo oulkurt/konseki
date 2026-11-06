@@ -437,6 +437,8 @@ func TestRunnerObservationRates(t *testing.T) {
 		want := i
 		eventually(t, func() bool { sys.mu.Lock(); defer sys.mu.Unlock(); return sys.frontReads >= want })
 	}
+	// 每一拍先读前台再读锁屏。最后一拍前台读完时锁屏可能还没读，两样都等到再数。
+	eventually(t, func() bool { sys.mu.Lock(); defer sys.mu.Unlock(); return sys.lockReads >= 2 })
 	sys.mu.Lock()
 	defer sys.mu.Unlock()
 	if sys.frontReads != 5 || sys.lockReads != 2 {
