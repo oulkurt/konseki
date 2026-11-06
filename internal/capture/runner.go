@@ -327,6 +327,7 @@ type captureResult struct {
 	fingerprint *fingerprint
 	duplicate   bool
 	blank       bool
+	sensitive   bool
 	title       string
 	tmp         string
 	err         error
@@ -341,11 +342,21 @@ func (r *Runner) grab(job captureJob) captureResult {
 	if !validFront() {
 		return result
 	}
+	if r.liveSensitive() {
+		result.sensitive = true
+		return result
+	}
 	f := r.deps.screen.Grab()
 	result.frame = f
 	if !validFront() {
 		releaseFrame(f)
 		result.frame = nil
+		return result
+	}
+	if r.liveSensitive() {
+		releaseFrame(f)
+		result.frame = nil
+		result.sensitive = true
 		return result
 	}
 	if f == nil {
@@ -355,17 +366,6 @@ func (r *Runner) grab(job captureJob) captureResult {
 	if f.Blank {
 		result.blank = true
 		return result
-	}
-	if source, ok := r.deps.front.(interface{ LiveFront() Front }); ok {
-		live := source.LiveFront()
-		r.mu.Lock()
-		sensitive := sensitiveFront(live, r.cfg.SensitiveApps)
-		r.mu.Unlock()
-		if sensitive {
-			releaseFrame(f)
-			result.frame = nil
-			return result
-		}
 	}
 	if !job.probe {
 		_, result.title, _ = r.deps.screen.FrontWindow()
@@ -409,6 +409,17 @@ func (r *Runner) grab(job captureJob) captureResult {
 	}
 	return result
 }
+func (r *Runner) liveSensitive() bool {
+	source, ok := r.deps.front.(interface{ LiveFront() Front })
+	if !ok {
+		return false
+	}
+	live := source.LiveFront()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return sensitiveFront(live, r.cfg.SensitiveApps)
+}
+
 func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	ticks, cancel := r.deps.clock.Ticks()
@@ -416,7 +427,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
 	results := make(chan captureResult, 1)
 	var inFlight bool
 	var front Front
-	var locked bool
+	var locked, liveSensitive bool
 	var lastSystem, previousTick, lastPermissions time.Time
 	var perms Perms
 	finish := func(res captureResult, now time.Time, stopping bool) {
@@ -424,7 +435,10 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
 		defer releaseFrame(res.frame)
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		o := Observation{Now: now, Front: front, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
+		if res.sensitive {
+			liveSensitive = true
+		}
+		o := Observation{Now: now, Front: front, LiveSensitive: liveSensitive, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, SinceKey: now.Sub(r.machine.lastKey), SinceClick: now.Sub(r.machine.lastClick), SinceScroll: now.Sub(r.machine.lastScroll), Stop: stopping}
 		if res.blank {
 			r.blankFrames++
 			if r.blankFrames >= 3 {
@@ -498,6 +512,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
 				lastPermissions = now
 			}
 			front = r.deps.front.Front()
+			liveSensitive = r.liveSensitive()
 			if lastSystem.IsZero() || now.Sub(lastSystem) >= time.Second {
 				locked = r.deps.lock.Locked()
 				lastSystem = now
@@ -508,7 +523,7 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
 			if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
 				r.pausedUntil = time.Time{}
 			}
-			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, PreviousTick: previousTick, Slept: !previousTick.IsZero() && now.Round(0).Sub(previousTick.Round(0)) > 5*time.Second}
+			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, LiveSensitive: liveSensitive, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, PreviousTick: previousTick, Slept: !previousTick.IsZero() && now.Round(0).Sub(previousTick.Round(0)) > 5*time.Second}
 			previousTick = now
 			r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
 			r.mu.Unlock()

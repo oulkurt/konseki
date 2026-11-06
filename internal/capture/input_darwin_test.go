@@ -59,3 +59,12 @@ func TestNativeBoolAndAccessibilitySymbols(t *testing.T) {
 		t.Fatal("辅助功能请求符号缺失")
 	}
 }
+
+func BenchmarkLiveFront(b *testing.B) {
+	source := nativeObservations{}
+	source.LiveFront()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		source.LiveFront()
+	}
+}

@@ -15,6 +15,7 @@ type Observation struct {
 	Now                               time.Time
 	SinceKey, SinceClick, SinceScroll time.Duration
 	Front                             Front
+	LiveSensitive                     bool
 	Locked                            bool
 	Slept                             bool
 	PreviousTick                      time.Time
@@ -190,7 +191,7 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		m.typing = false
 		return actions
 	}
-	if sensitiveFront(o.Front, s.SensitiveApps) {
+	if o.LiveSensitive || sensitiveFront(o.Front, s.SensitiveApps) {
 		m.Phase = PhaseBlocked
 		m.Block = BlockSensitiveApp
 		m.pending = ""

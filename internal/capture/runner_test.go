@@ -492,7 +492,7 @@ func TestRunnerRejectsLiveSensitiveWindow(t *testing.T) {
 	eventually(t, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.machine.initialized && !r.machine.inFlight && r.session != nil
+		return r.machine.initialized && !r.machine.inFlight && r.machine.Block == BlockSensitiveApp
 	})
 	rows, err := r.Snapshots(c.Now().Format("2006-01-02"))
 	if err != nil || len(rows) != 0 {
