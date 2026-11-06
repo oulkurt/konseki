@@ -1,7 +1,7 @@
 /**
- * [INPUT]: 依赖自动化客户端、隔离目录和 ps 的进程采样。
- * [OUTPUT]: 提供 launch、shot、click、wait、perf 五个命令。
- * [POS]: live 命令入口。启动隔离和进程采样在这里，协议编码在 client.go。
+ * [INPUT]: 依赖自动化客户端、隔离目录、摘要存储和 ps 的进程采样。
+ * [OUTPUT]: 提供 launch、seed、shot、click、wait、perf、tree、act、key 九个命令；launch -seed 在启动前写入今天的摘要，seed 给运行中的 App 补数据。
+ * [POS]: live 命令入口。启动隔离、种子数据和进程采样在这里，协议编码在 client.go。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -19,9 +19,33 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"konseki/internal/summary"
 )
 
-const usage = "用法: live launch|shot|click|wait|perf [参数]"
+const usage = "用法: live launch|seed|shot|click|wait|perf|tree|act|key [参数]"
+
+// seedHome 写入今天的三段摘要。时间轴有内容可粉碎，危险区的清除按钮也能点。
+// 只写摘要，不写采集数据，所以不需要屏幕录制权限。
+func seedHome(home string) error {
+	st, err := summary.NewStore(home)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	day := now.Format("2006-01-02")
+	at := func(h, m int) time.Time { return time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, time.Local) }
+	for _, e := range []summary.Entry{
+		{ID: day + "-0900", Day: day, Start: at(9, 0), End: at(10, 0), Headline: "审查设置页截图", Summary: "逐张对照 Alma 的活动记录器，补齐说明文字。", Apps: []string{"T3 Code"}, Topics: []string{"Konseki"}},
+		{ID: day + "-1030", Day: day, Start: at(10, 30), End: at(11, 30), Headline: "修复移除供应商时的越界", Summary: "渲染循环按旧长度取下标，改为每轮重新读长度。", Apps: []string{"Editor"}, Decisions: []string{"补回归测试"}},
+		{ID: day + "-1400", Day: day, Start: at(14, 0), End: at(15, 0), Headline: "调整粉碎动画的纸条暗边", Summary: "浅色模式下纸条和背景几乎同色，边缘压暗 14%。", Apps: []string{"Editor"}, Open: []string{"真机帧耗时未测"}},
+	} {
+		if err := st.Upsert(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func prepareHome(home, lang string, recorder bool) error {
 	if home == "" {
@@ -37,7 +61,14 @@ func prepareHome(home, lang string, recorder bool) error {
 	if len(entries) != 0 {
 		return errors.New("home 必须为空目录")
 	}
-	b, err := json.Marshal(map[string]any{"version": 2, "language": lang, "recorder": map[string]bool{"enabled": recorder}})
+	// 技能导出目录默认是真实的 ~/.claude/skills/konseki，不跟 KONSEKI_HOME 走。
+	// 清除全部数据会对账这个目录，所以测试窗口把它指到 home 里面。
+	b, err := json.Marshal(map[string]any{
+		"version":  2,
+		"language": lang,
+		"recorder": map[string]bool{"enabled": recorder},
+		"skill":    map[string]string{"exportDir": filepath.Join(home, "skill")},
+	})
 	if err != nil {
 		return err
 	}
@@ -55,7 +86,7 @@ func socketBusy(path string) bool {
 	return true
 }
 
-func launch(bin, home, sock, lang string, recorder bool) error {
+func launch(bin, home, sock, lang string, recorder, seed bool) error {
 	if bin == "" || sock == "" {
 		return errors.New("必须指定 bin 和 sock")
 	}
@@ -64,6 +95,11 @@ func launch(bin, home, sock, lang string, recorder bool) error {
 	}
 	if err := prepareHome(home, lang, recorder); err != nil {
 		return err
+	}
+	if seed {
+		if err := seedHome(home); err != nil {
+			return err
+		}
 	}
 	cmd := exec.Command(bin)
 	cmd.Env = append(os.Environ(), "KONSEKI_HOME="+home, "MYGO_AUTOMATION="+sock)
@@ -184,26 +220,39 @@ func run(args []string) error {
 	pid := f.Int("pid", 0, "进程号")
 	secs := f.Int("secs", 0, "采样秒数")
 	timeout := f.Duration("timeout", 10*time.Second, "wait 的上限")
+	seed := f.Bool("seed", false, "启动前写入今天的摘要")
+	action := f.String("action", "press", "act 的动作，如 press、focus、setValue")
+	text := f.String("text", "", "setValue 的文字")
+	id := f.String("id", "", "按节点编号操作，编号取自 tree")
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
 	switch args[0] {
 	case "launch":
-		return launch(*bin, *home, *sock, *lang, *rec)
+		return launch(*bin, *home, *sock, *lang, *rec, *seed)
+	case "seed":
+		// 给正在运行的 App 补数据，同一次会话里可以反复清除。
+		if *home == "" {
+			return errors.New("必须指定 home")
+		}
+		return seedHome(*home)
 	case "perf":
 		if *pid <= 0 || *secs <= 0 {
 			return errors.New("必须指定正数 pid 和 secs")
 		}
 		return perf(*pid, *secs)
-	case "shot", "click", "wait":
+	case "shot", "click", "wait", "tree", "act", "key":
 		if *sock == "" {
 			return errors.New("必须指定 sock")
 		}
 		if args[0] == "shot" && *out == "" {
 			return errors.New("必须指定 out")
 		}
-		if args[0] == "click" && f.NArg() != 1 {
+		if (args[0] == "click" || args[0] == "key") && f.NArg() != 1 {
 			return errors.New("必须指定一个 key")
+		}
+		if args[0] == "act" && (f.NArg() == 1) == (*id != "") {
+			return errors.New("act 要么给一个 key，要么给 -id")
 		}
 		if args[0] == "wait" && *timeout <= 0 {
 			return errors.New("timeout 必须为正数")
@@ -218,6 +267,33 @@ func run(args []string) error {
 			return c.idle(*timeout)
 		case "click":
 			return c.call("act", map[string]any{"key": f.Arg(0), "action": "press"}, nil)
+		case "act":
+			p := map[string]any{"action": *action, "text": *text}
+			if *id != "" {
+				p["id"] = *id
+			} else {
+				p["key"] = f.Arg(0)
+			}
+			return c.call("act", p, nil)
+		case "key":
+			return c.call("input", map[string]any{"events": []map[string]any{{"type": "key", "key": f.Arg(0)}}}, nil)
+		case "tree":
+			var result struct {
+				Windows []struct {
+					ID int `json:"id"`
+				} `json:"windows"`
+			}
+			if err := c.call("windows", nil, &result); err != nil {
+				return err
+			}
+			for _, w := range result.Windows {
+				var t json.RawMessage
+				if err := c.call("tree", map[string]any{"window": w.ID}, &t); err != nil {
+					return err
+				}
+				fmt.Println(string(t))
+			}
+			return nil
 		case "shot":
 			var result struct {
 				Windows []struct {

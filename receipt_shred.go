@@ -108,6 +108,8 @@ func (a *app) renderShred(c *ui.Context, width float32) {
 		return
 	}
 	s := &a.shred
+	// 测试构建记帧间隔；feedStarted 此时还是上一帧的阶段。
+	probeShredFrame(c.Now(), s.feedStarted)
 	if s.start.IsZero() {
 		s.start = c.Now()
 		s.feedStarted = false
@@ -138,6 +140,7 @@ func (a *app) renderShred(c *ui.Context, width float32) {
 	s.physics.advance(c.Now())
 	// 纸条全部落出画面就收尾。窗口矮时纸条一秒多就落完，不用空等到下落时长用完。
 	if s.physics.elapsed >= float32((shredFeedDuration+shredFallDuration).Seconds()) || s.physics.below(bounds.H) {
+		probeShredDone()
 		a.stopShred()
 		stage.Children(func() { ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, width) }) })
 		return

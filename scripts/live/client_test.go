@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖 Unix 假服务端和临时隔离目录。
- * [OUTPUT]: 验证协议编码、回复匹配、错误、等待上限、启动配置、套接字占用和 CPU 时间解析。
+ * [OUTPUT]: 验证协议编码、回复匹配、错误、等待上限、启动配置、套接字占用、种子摘要和 CPU 时间解析。
  * [POS]: live 传输与配置的回归测试，不启动图形程序。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -13,8 +13,11 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"konseki/internal/summary"
 )
 
 type fakeRequest struct {
@@ -107,9 +110,16 @@ func TestPrepareHome(t *testing.T) {
 		Recorder struct {
 			Enabled bool `json:"enabled"`
 		} `json:"recorder"`
+		Skill struct {
+			ExportDir string `json:"exportDir"`
+		} `json:"skill"`
 	}
 	if err = json.Unmarshal(b, &cfg); err != nil || cfg.Version != 2 || cfg.Language != "en" || !cfg.Recorder.Enabled {
 		t.Fatalf("配置 %s: %v", b, err)
+	}
+	// 清除会对账技能目录，它必须在隔离目录里，不能落到真实 home。
+	if rel, err := filepath.Rel(dir, cfg.Skill.ExportDir); err != nil || strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		t.Fatalf("技能目录 %q 不在 %q 里", cfg.Skill.ExportDir, dir)
 	}
 	if err := prepareHome(dir, "en", false); err == nil {
 		t.Fatal("非空目录被接受")
@@ -133,13 +143,35 @@ func TestSocketBusy(t *testing.T) {
 		t.Fatal("有程序监听时没有报告占用")
 	}
 	home := t.TempDir()
-	if err := launch("/bin/true", home, path, "zh-Hans", false); err == nil {
+	if err := launch("/bin/true", home, path, "zh-Hans", false, true); err == nil {
 		t.Fatal("套接字被占用时仍然启动")
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
 		t.Fatal("拒绝启动前已经写了 home")
 	}
 	l.Close()
+}
+
+// 种子数据是今天的三段摘要，用 App 自己的摘要存储读得回来。
+func TestSeedHomeWritesTodaySummaries(t *testing.T) {
+	home := t.TempDir()
+	if err := seedHome(home); err != nil {
+		t.Fatal(err)
+	}
+	st, err := summary.NewStore(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := time.Now().Format("2006-01-02")
+	got, err := st.Load(today)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("今天的摘要 %d 段，错误 %v", len(got), err)
+	}
+	for _, e := range got {
+		if e.Day != today || e.Start.Format("2006-01-02") != today {
+			t.Fatalf("摘要不在今天：%+v", e)
+		}
+	}
 }
 
 func TestParseCPUTime(t *testing.T) {
