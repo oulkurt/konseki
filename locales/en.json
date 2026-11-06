@@ -1,5 +1,13 @@
 {
   "@@locale": "en",
+  "generalSkill": "Skill export",
+  "generalSkillDescription": "Export summaries and the timeline for other assistants to read.",
+  "generalSkillDirectory": "Export folder",
+  "generalSkillOCR": "Include raw screen text",
+  "generalSkillRedact": "Redact before export",
+  "generalSkillExport": "Export skill",
+  "generalSkillExported": "{count, plural, one {Exported # file} other {Exported # files}}",
+  "generalSkillError": "Export failed: {error}",
   "recorderStorage": "Storage quota",
   "recorderStorageLimit": "Storage limit",
   "recorderStorageHelp": "In MB, from 100 to 200,000.",

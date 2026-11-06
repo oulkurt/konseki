@@ -34,6 +34,118 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// GeneralSkill says "技能导出"
+// in the language the app shows.
+//
+// 通用设置页的技能导出卡片标题。
+func GeneralSkill() string { return In(i18n.Locale()).GeneralSkill() }
+
+// GeneralSkill says "技能导出"
+// in the language of msgs.
+//
+// 通用设置页的技能导出卡片标题。
+func (msgs Messages) GeneralSkill() string {
+	return Catalog.Format(msgs.locale, "generalSkill", nil)
+}
+
+// GeneralSkillDescription says "将摘要和时间轴导出，供其他助手读取。"
+// in the language the app shows.
+//
+// 技能导出卡片中说明导出用途。
+func GeneralSkillDescription() string { return In(i18n.Locale()).GeneralSkillDescription() }
+
+// GeneralSkillDescription says "将摘要和时间轴导出，供其他助手读取。"
+// in the language of msgs.
+//
+// 技能导出卡片中说明导出用途。
+func (msgs Messages) GeneralSkillDescription() string {
+	return Catalog.Format(msgs.locale, "generalSkillDescription", nil)
+}
+
+// GeneralSkillDirectory says "导出目录"
+// in the language the app shows.
+//
+// 技能导出卡片中的输出目录字段。
+func GeneralSkillDirectory() string { return In(i18n.Locale()).GeneralSkillDirectory() }
+
+// GeneralSkillDirectory says "导出目录"
+// in the language of msgs.
+//
+// 技能导出卡片中的输出目录字段。
+func (msgs Messages) GeneralSkillDirectory() string {
+	return Catalog.Format(msgs.locale, "generalSkillDirectory", nil)
+}
+
+// GeneralSkillOCR says "包含原始屏幕文字"
+// in the language the app shows.
+//
+// 技能导出卡片中包含原始屏幕文字的开关。
+func GeneralSkillOCR() string { return In(i18n.Locale()).GeneralSkillOCR() }
+
+// GeneralSkillOCR says "包含原始屏幕文字"
+// in the language of msgs.
+//
+// 技能导出卡片中包含原始屏幕文字的开关。
+func (msgs Messages) GeneralSkillOCR() string {
+	return Catalog.Format(msgs.locale, "generalSkillOCR", nil)
+}
+
+// GeneralSkillRedact says "导出前脱敏"
+// in the language the app shows.
+//
+// 技能导出卡片中导出前再次脱敏的开关。
+func GeneralSkillRedact() string { return In(i18n.Locale()).GeneralSkillRedact() }
+
+// GeneralSkillRedact says "导出前脱敏"
+// in the language of msgs.
+//
+// 技能导出卡片中导出前再次脱敏的开关。
+func (msgs Messages) GeneralSkillRedact() string {
+	return Catalog.Format(msgs.locale, "generalSkillRedact", nil)
+}
+
+// GeneralSkillExport says "导出技能"
+// in the language the app shows.
+//
+// 技能导出卡片的导出按钮。
+func GeneralSkillExport() string { return In(i18n.Locale()).GeneralSkillExport() }
+
+// GeneralSkillExport says "导出技能"
+// in the language of msgs.
+//
+// 技能导出卡片的导出按钮。
+func (msgs Messages) GeneralSkillExport() string {
+	return Catalog.Format(msgs.locale, "generalSkillExport", nil)
+}
+
+// GeneralSkillExported says "{count, plural, other {已导出 # 个文件}}"
+// in the language the app shows.
+//
+// 技能导出成功后显示的文件数量。
+func GeneralSkillExported(count int) string { return In(i18n.Locale()).GeneralSkillExported(count) }
+
+// GeneralSkillExported says "{count, plural, other {已导出 # 个文件}}"
+// in the language of msgs.
+//
+// 技能导出成功后显示的文件数量。
+func (msgs Messages) GeneralSkillExported(count int) string {
+	return Catalog.Format(msgs.locale, "generalSkillExported", map[string]any{"count": count})
+}
+
+// GeneralSkillError says "导出失败：{error}"
+// in the language the app shows.
+//
+// 技能导出失败后显示的原始错误。
+func GeneralSkillError(error string) string { return In(i18n.Locale()).GeneralSkillError(error) }
+
+// GeneralSkillError says "导出失败：{error}"
+// in the language of msgs.
+//
+// 技能导出失败后显示的原始错误。
+func (msgs Messages) GeneralSkillError(error string) string {
+	return Catalog.Format(msgs.locale, "generalSkillError", map[string]any{"error": error})
+}
+
 // RecorderStorage says "存储配额"
 // in the language the app shows.
 //

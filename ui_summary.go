@@ -18,7 +18,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"konseki/internal/config"
 	"konseki/internal/providers"
@@ -323,107 +322,6 @@ func renderSummaryEntry(c *ui.Context, e summary.Entry, pal palette) {
 }
 
 // ---------- Skill ----------
-
-func (a *app) renderSkillSection(c *ui.Context, pal palette) {
-	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		ui.Text(c, "Skill").
-			FontSize(13).
-			Bold().
-			TextColor(pal.textSecondary).
-			Margin(4, 0, 0, 10)
-
-		a.settingsCard(c, pal, func() {
-			ui.Column(c).FillWidth().Padding(14, 18).Gap(12).Children(func() {
-				ui.Column(c).Gap(3).Children(func() {
-					ui.Text(c, "让别的 Agent 认识你").FontSize(13).Bold().TextColor(pal.textPrimary)
-					ui.Text(c, "把痕迹导出成一个 skill，Claude Code / Codex / Cursor 都能读。「我昨天在干什么」不用再解释一遍。").
-						FontSize(11.8).TextColor(pal.textSecondary).LineHeight(1.4)
-				})
-
-				// 输出位置
-				ui.Column(c).FillWidth().Gap(4).Children(func() {
-					ui.Text(c, "输出目录").FontSize(12).Bold().TextColor(pal.textPrimary)
-					dir := a.cfgNow.Skill.ExportDir
-					if dir == "" {
-						dir = skill.DefaultDir()
-					}
-					ui.TextInput(c.Key("skill-dir"), &dir).FillWidth()
-					ui.Text(c, dir).FontSize(10.5).TextColor(pal.textSecondary.Alpha(0.8)).SingleLine()
-				})
-
-				// 选项
-				ui.Row(c).FillWidth().Gap(18).Children(func() {
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "带上原始 OCR").FontSize(12).TextColor(pal.textPrimary)
-						ui.Text(c, "默认关。开了之后导出的数据体积和敏感度都会上升。").
-							FontSize(10.5).TextColor(pal.textSecondary).LineHeight(1.3)
-						on := a.cfgNow.Skill.IncludeOCR
-						if renderPillSwitch(c, "sw-skill-ocr", &on, pal) {
-							a.cfg.Update(func(cfg *config.Config) { cfg.Skill.IncludeOCR = on })
-							a.cfgNow = a.cfg.Get()
-						}
-					})
-					ui.Column(c).Grow(1).Gap(4).Children(func() {
-						ui.Text(c, "导出前再脱敏一次").FontSize(12).TextColor(pal.textPrimary)
-						ui.Text(c, "导出是第二个外发口，值得多遮一遍。默认开。").
-							FontSize(10.5).TextColor(pal.textSecondary).LineHeight(1.3)
-						on := a.cfgNow.Skill.RedactOnExport
-						if renderPillSwitch(c, "sw-skill-redact", &on, pal) {
-							a.cfg.Update(func(cfg *config.Config) { cfg.Skill.RedactOnExport = on })
-							a.cfgNow = a.cfg.Get()
-						}
-					})
-				})
-
-				// 导出按钮
-				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
-					btn := ui.ButtonBase(c.Key("btn-skill-export")).
-						Padding(5, 12).Radius(8).
-						Background(pal.rowHoverBg).
-						Border(1, pal.controlBorder)
-					if btn.Hovered() {
-						btn.Background(pal.cardBorder)
-					}
-					btn.Children(func() {
-						ui.Text(c, "导出 Skill").FontSize(12).Bold().TextColor(pal.textPrimary)
-					})
-					if btn.Clicked() {
-						if n, err := a.exportSkill(); err != nil {
-							a.skillExportMsg = "导出失败：" + err.Error()
-						} else {
-							a.skillExportMsg = fmt.Sprintf("已导出 %d 个文件", n)
-							a.skillExportedAt = time.Now()
-						}
-					}
-
-					if a.skillExportMsg != "" {
-						ui.Text(c, a.skillExportMsg).FontSize(11.5).TextColor(pal.switchOn).SingleLine()
-					}
-
-					ui.Spacer(c)
-					if a.skillExportedAt != (time.Time{}) {
-						ui.Text(c, "上次："+a.skillExportedAt.Format("15:04")).
-							FontSize(11).TextColor(pal.textSecondary)
-					}
-				})
-
-				// 目录里有什么
-				ui.Column(c).FillWidth().Gap(3).Padding(10, 12).Radius(8).
-					Background(pal.codeBg).Children(func() {
-					ui.Text(c, "导出的内容").FontSize(11).Bold().TextColor(pal.textSecondary)
-					for _, line := range []string{
-						"SKILL.md — 入口说明，Agent 读它决定要不要用",
-						"KONSEKI.md — 跨天画像：时间花在哪、反复出现的主题、悬着没做完的",
-						"days/<日期>.md — 一天的人话版，摘要 + 原始时间轴",
-						"days/<日期>.json — 同一份数据的机器可读版",
-					} {
-						ui.Text(c, line).FontSize(10.8).TextColor(pal.codeFg)
-					}
-				})
-			})
-		})
-	})
-}
 
 // exportSkill 收集最近 N 天的数据并写出。
 func (a *app) exportSkill() (int, error) {

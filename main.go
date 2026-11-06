@@ -120,6 +120,8 @@ type app struct {
 	// ---- Skill ----
 	skillExportMsg  string
 	skillExportedAt time.Time
+	skillDirDraft   string
+	skillDirFocus   bool
 }
 
 func (a *app) ensureInit() {
