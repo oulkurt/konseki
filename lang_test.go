@@ -151,6 +151,7 @@ func TestSettingsLanguages(t *testing.T) {
 	allow := []string{
 		"痕跡 Konseki", "Konseki", "MB", "ms", "API", "bundle", "ID", "English", "简体中文",
 		"zh-Hans, en-US", "com.1password.1password", "com.apple.keychainaccess", "com.bitwarden.desktop",
+		"Agent", "Claude Code", "Codex", "SKILL.md", "Mac",
 	}
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, sub := range []int{0, 1, 2} {
@@ -161,7 +162,7 @@ func TestSettingsLanguages(t *testing.T) {
 				a.settingsTab = sub
 				tt := ui.NewTester(a.view, 780, 2600)
 				tt.SetLocale(lang)
-				user := []string{a.cfgNow.Recorder.Dir(a.appDir), a.appDir}
+				user := []string{statusCmd(a.appDir), agentSkillInstall, agentSkillRepo, a.cfgNow.Recorder.Dir(a.appDir), a.appDir}
 				sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
 				if bad := langViolations(stripUserData(tt.Texts(), user...), lang, allow); len(bad) != 0 {
 					t.Fatalf("设置子页 %d (%s) 混入其他语言 %q，文本：%q", sub, lang, bad, tt.Texts())

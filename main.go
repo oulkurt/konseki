@@ -128,6 +128,9 @@ type app struct {
 	legacyFiles   []string
 	legacyChecked bool
 	legacyErr     string
+	// 最近一次点过的复制按钮和时刻，按钮文字在两秒内显示「已复制」。
+	agentCopiedKey string
+	agentCopiedAt  time.Time
 }
 
 // legacyDir 返回要检查旧导出文件的目录。

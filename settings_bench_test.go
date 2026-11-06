@@ -94,7 +94,7 @@ func TestSettingsBenchPages(t *testing.T) {
 	}{
 		{0, []string{"活动记录器", "会话数", "最近会话", "清除全部活动数据"}},
 		{1, []string{"摘要模型", "供应商"}},
-		{2, []string{"语言"}},
+		{2, []string{"Agent 技能"}},
 	}
 	for _, tc := range cases {
 		a, cleanup := benchmarkSettingsApp(t)

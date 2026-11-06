@@ -135,6 +135,7 @@ func (a *app) view(c *ui.Context) {
 							a.renderModelsSettings(c, pal)
 						case 2:
 							a.renderLanguageSection(c, pal)
+							a.renderAgentSection(c, pal)
 						}
 					}
 				})

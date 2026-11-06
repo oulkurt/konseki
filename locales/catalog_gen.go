@@ -624,116 +624,250 @@ func (msgs Messages) ModelsTestSuccess(model string, elapsed int) string {
 	return Catalog.Format(msgs.locale, "modelsTestSuccess", map[string]any{"model": model, "elapsed": elapsed})
 }
 
-// GeneralSkill says "技能导出"
+// GeneralAgent says "Agent 技能"
 // in the language the app shows.
 //
-// 通用设置页的技能导出卡片标题。
-func GeneralSkill() string { return In(i18n.Locale()).GeneralSkill() }
+// 通用设置页的 Agent 技能卡片标题。
+func GeneralAgent() string { return In(i18n.Locale()).GeneralAgent() }
 
-// GeneralSkill says "技能导出"
+// GeneralAgent says "Agent 技能"
 // in the language of msgs.
 //
-// 通用设置页的技能导出卡片标题。
-func (msgs Messages) GeneralSkill() string {
-	return Catalog.Format(msgs.locale, "generalSkill", nil)
+// 通用设置页的 Agent 技能卡片标题。
+func (msgs Messages) GeneralAgent() string {
+	return Catalog.Format(msgs.locale, "generalAgent", nil)
 }
 
-// GeneralSkillDescription says "将摘要和时间轴导出，供其他助手读取。"
+// GeneralAgentDescription says "装上这个技能后，Claude Code、Codex 等 Agent 可以查询这台 Mac …"
 // in the language the app shows.
 //
-// 技能导出卡片中说明导出用途。
-func GeneralSkillDescription() string { return In(i18n.Locale()).GeneralSkillDescription() }
+// Agent 技能卡片中说明技能能读到什么、不能做什么。
+func GeneralAgentDescription() string { return In(i18n.Locale()).GeneralAgentDescription() }
 
-// GeneralSkillDescription says "将摘要和时间轴导出，供其他助手读取。"
+// GeneralAgentDescription says "装上这个技能后，Claude Code、Codex 等 Agent 可以查询这台 Mac …"
 // in the language of msgs.
 //
-// 技能导出卡片中说明导出用途。
-func (msgs Messages) GeneralSkillDescription() string {
-	return Catalog.Format(msgs.locale, "generalSkillDescription", nil)
+// Agent 技能卡片中说明技能能读到什么、不能做什么。
+func (msgs Messages) GeneralAgentDescription() string {
+	return Catalog.Format(msgs.locale, "generalAgentDescription", nil)
 }
 
-// GeneralSkillDirectory says "导出目录"
+// GeneralAgentPrompt says "发给 Agent 的话"
 // in the language the app shows.
 //
-// 技能导出卡片中的输出目录字段。
-func GeneralSkillDirectory() string { return In(i18n.Locale()).GeneralSkillDirectory() }
+// Agent 技能卡片中话术框的标题。
+func GeneralAgentPrompt() string { return In(i18n.Locale()).GeneralAgentPrompt() }
 
-// GeneralSkillDirectory says "导出目录"
+// GeneralAgentPrompt says "发给 Agent 的话"
 // in the language of msgs.
 //
-// 技能导出卡片中的输出目录字段。
-func (msgs Messages) GeneralSkillDirectory() string {
-	return Catalog.Format(msgs.locale, "generalSkillDirectory", nil)
+// Agent 技能卡片中话术框的标题。
+func (msgs Messages) GeneralAgentPrompt() string {
+	return Catalog.Format(msgs.locale, "generalAgentPrompt", nil)
 }
 
-// GeneralSkillOCR says "包含原始屏幕文字"
+// GeneralAgentPromptHelp says "粘贴到 Agent 的对话框里。它会自己安装技能，再试查一次。"
 // in the language the app shows.
 //
-// 技能导出卡片中包含原始屏幕文字的开关。
-func GeneralSkillOCR() string { return In(i18n.Locale()).GeneralSkillOCR() }
+// 话术框标题下的说明，告诉用户粘贴到哪里。
+func GeneralAgentPromptHelp() string { return In(i18n.Locale()).GeneralAgentPromptHelp() }
 
-// GeneralSkillOCR says "包含原始屏幕文字"
+// GeneralAgentPromptHelp says "粘贴到 Agent 的对话框里。它会自己安装技能，再试查一次。"
 // in the language of msgs.
 //
-// 技能导出卡片中包含原始屏幕文字的开关。
-func (msgs Messages) GeneralSkillOCR() string {
-	return Catalog.Format(msgs.locale, "generalSkillOCR", nil)
+// 话术框标题下的说明，告诉用户粘贴到哪里。
+func (msgs Messages) GeneralAgentPromptHelp() string {
+	return Catalog.Format(msgs.locale, "generalAgentPromptHelp", nil)
 }
 
-// GeneralSkillRedact says "导出前脱敏"
+// GeneralAgentPromptText says "请安装 Konseki 技能。Konseki 在我的 Mac 上记录活动，这个技能让你查询我做过的事。\n1. …"
 // in the language the app shows.
 //
-// 技能导出卡片中导出前再次脱敏的开关。
-func GeneralSkillRedact() string { return In(i18n.Locale()).GeneralSkillRedact() }
-
-// GeneralSkillRedact says "导出前脱敏"
-// in the language of msgs.
-//
-// 技能导出卡片中导出前再次脱敏的开关。
-func (msgs Messages) GeneralSkillRedact() string {
-	return Catalog.Format(msgs.locale, "generalSkillRedact", nil)
+// 给 Agent 的完整话术，含安装命令和查询命令。
+func GeneralAgentPromptText(install string, status string) string {
+	return In(i18n.Locale()).GeneralAgentPromptText(install, status)
 }
 
-// GeneralSkillExport says "导出技能"
-// in the language the app shows.
-//
-// 技能导出卡片的导出按钮。
-func GeneralSkillExport() string { return In(i18n.Locale()).GeneralSkillExport() }
-
-// GeneralSkillExport says "导出技能"
+// GeneralAgentPromptText says "请安装 Konseki 技能。Konseki 在我的 Mac 上记录活动，这个技能让你查询我做过的事。\n1. …"
 // in the language of msgs.
 //
-// 技能导出卡片的导出按钮。
-func (msgs Messages) GeneralSkillExport() string {
-	return Catalog.Format(msgs.locale, "generalSkillExport", nil)
+// 给 Agent 的完整话术，含安装命令和查询命令。
+func (msgs Messages) GeneralAgentPromptText(install string, status string) string {
+	return Catalog.Format(msgs.locale, "generalAgentPromptText", map[string]any{"install": install, "status": status})
 }
 
-// GeneralSkillExported says "{count, plural, other {已导出 # 个文件}}"
+// GeneralAgentInstall says "安装命令"
 // in the language the app shows.
 //
-// 技能导出成功后显示的文件数量。
-func GeneralSkillExported(count int) string { return In(i18n.Locale()).GeneralSkillExported(count) }
+// Agent 技能卡片中安装命令框的标题。
+func GeneralAgentInstall() string { return In(i18n.Locale()).GeneralAgentInstall() }
 
-// GeneralSkillExported says "{count, plural, other {已导出 # 个文件}}"
+// GeneralAgentInstall says "安装命令"
 // in the language of msgs.
 //
-// 技能导出成功后显示的文件数量。
-func (msgs Messages) GeneralSkillExported(count int) string {
-	return Catalog.Format(msgs.locale, "generalSkillExported", map[string]any{"count": count})
+// Agent 技能卡片中安装命令框的标题。
+func (msgs Messages) GeneralAgentInstall() string {
+	return Catalog.Format(msgs.locale, "generalAgentInstall", nil)
 }
 
-// GeneralSkillError says "导出失败：{error}"
+// GeneralAgentInstallHelp says "在终端里运行，技能会装给本机已安装的 Agent。"
 // in the language the app shows.
 //
-// 技能导出失败后显示的原始错误。
-func GeneralSkillError(error string) string { return In(i18n.Locale()).GeneralSkillError(error) }
+// 安装命令框的说明，写清在终端里运行时装给谁。
+func GeneralAgentInstallHelp() string { return In(i18n.Locale()).GeneralAgentInstallHelp() }
 
-// GeneralSkillError says "导出失败：{error}"
+// GeneralAgentInstallHelp says "在终端里运行，技能会装给本机已安装的 Agent。"
 // in the language of msgs.
 //
-// 技能导出失败后显示的原始错误。
-func (msgs Messages) GeneralSkillError(error string) string {
-	return Catalog.Format(msgs.locale, "generalSkillError", map[string]any{"error": error})
+// 安装命令框的说明，写清在终端里运行时装给谁。
+func (msgs Messages) GeneralAgentInstallHelp() string {
+	return Catalog.Format(msgs.locale, "generalAgentInstallHelp", nil)
+}
+
+// GeneralAgentRepo says "技能仓库"
+// in the language the app shows.
+//
+// Agent 技能卡片中技能仓库行的标题。
+func GeneralAgentRepo() string { return In(i18n.Locale()).GeneralAgentRepo() }
+
+// GeneralAgentRepo says "技能仓库"
+// in the language of msgs.
+//
+// Agent 技能卡片中技能仓库行的标题。
+func (msgs Messages) GeneralAgentRepo() string {
+	return Catalog.Format(msgs.locale, "generalAgentRepo", nil)
+}
+
+// GeneralAgentCopy says "复制"
+// in the language the app shows.
+//
+// 复制按钮的文字。
+func GeneralAgentCopy() string { return In(i18n.Locale()).GeneralAgentCopy() }
+
+// GeneralAgentCopy says "复制"
+// in the language of msgs.
+//
+// 复制按钮的文字。
+func (msgs Messages) GeneralAgentCopy() string {
+	return Catalog.Format(msgs.locale, "generalAgentCopy", nil)
+}
+
+// GeneralAgentCopied says "已复制"
+// in the language the app shows.
+//
+// 复制成功后按钮的文字，两秒后恢复。
+func GeneralAgentCopied() string { return In(i18n.Locale()).GeneralAgentCopied() }
+
+// GeneralAgentCopied says "已复制"
+// in the language of msgs.
+//
+// 复制成功后按钮的文字，两秒后恢复。
+func (msgs Messages) GeneralAgentCopied() string {
+	return Catalog.Format(msgs.locale, "generalAgentCopied", nil)
+}
+
+// GeneralAgentOpen says "打开"
+// in the language the app shows.
+//
+// 打开技能仓库的按钮。
+func GeneralAgentOpen() string { return In(i18n.Locale()).GeneralAgentOpen() }
+
+// GeneralAgentOpen says "打开"
+// in the language of msgs.
+//
+// 打开技能仓库的按钮。
+func (msgs Messages) GeneralAgentOpen() string {
+	return Catalog.Format(msgs.locale, "generalAgentOpen", nil)
+}
+
+// GeneralAgentRedact says "Agent 读到的文字按模型页的脱敏设置遮蔽。截图不遮蔽。"
+// in the language the app shows.
+//
+// Agent 技能卡片底部的脱敏说明。
+func GeneralAgentRedact() string { return In(i18n.Locale()).GeneralAgentRedact() }
+
+// GeneralAgentRedact says "Agent 读到的文字按模型页的脱敏设置遮蔽。截图不遮蔽。"
+// in the language of msgs.
+//
+// Agent 技能卡片底部的脱敏说明。
+func (msgs Messages) GeneralAgentRedact() string {
+	return Catalog.Format(msgs.locale, "generalAgentRedact", nil)
+}
+
+// GeneralAgentLinkError says "无法创建命令链接：{error}"
+// in the language the app shows.
+//
+// 启动时创建命令软链接失败的说明。
+func GeneralAgentLinkError(error string) string {
+	return In(i18n.Locale()).GeneralAgentLinkError(error)
+}
+
+// GeneralAgentLinkError says "无法创建命令链接：{error}"
+// in the language of msgs.
+//
+// 启动时创建命令软链接失败的说明。
+func (msgs Messages) GeneralAgentLinkError(error string) string {
+	return Catalog.Format(msgs.locale, "generalAgentLinkError", map[string]any{"error": error})
+}
+
+// GeneralAgentLegacy says "旧版导出"
+// in the language the app shows.
+//
+// 发现旧版技能导出文件时的行标题。
+func GeneralAgentLegacy() string { return In(i18n.Locale()).GeneralAgentLegacy() }
+
+// GeneralAgentLegacy says "旧版导出"
+// in the language of msgs.
+//
+// 发现旧版技能导出文件时的行标题。
+func (msgs Messages) GeneralAgentLegacy() string {
+	return Catalog.Format(msgs.locale, "generalAgentLegacy", nil)
+}
+
+// GeneralAgentLegacyHelp says "{dir} 里有 {count} 个旧版导出的文件。它们不再更新，还占着新技能的安装位置。"
+// in the language the app shows.
+//
+// 旧版导出行的说明，写出目录和文件数。
+func GeneralAgentLegacyHelp(count int, dir string) string {
+	return In(i18n.Locale()).GeneralAgentLegacyHelp(count, dir)
+}
+
+// GeneralAgentLegacyHelp says "{dir} 里有 {count} 个旧版导出的文件。它们不再更新，还占着新技能的安装位置。"
+// in the language of msgs.
+//
+// 旧版导出行的说明，写出目录和文件数。
+func (msgs Messages) GeneralAgentLegacyHelp(count int, dir string) string {
+	return Catalog.Format(msgs.locale, "generalAgentLegacyHelp", map[string]any{"count": count, "dir": dir})
+}
+
+// GeneralAgentLegacyRemove says "删除旧文件"
+// in the language the app shows.
+//
+// 删除旧版导出文件的按钮。
+func GeneralAgentLegacyRemove() string { return In(i18n.Locale()).GeneralAgentLegacyRemove() }
+
+// GeneralAgentLegacyRemove says "删除旧文件"
+// in the language of msgs.
+//
+// 删除旧版导出文件的按钮。
+func (msgs Messages) GeneralAgentLegacyRemove() string {
+	return Catalog.Format(msgs.locale, "generalAgentLegacyRemove", nil)
+}
+
+// GeneralAgentLegacyError says "删除旧文件失败：{error}"
+// in the language the app shows.
+//
+// 删除旧版导出文件失败后显示的原始错误。
+func GeneralAgentLegacyError(error string) string {
+	return In(i18n.Locale()).GeneralAgentLegacyError(error)
+}
+
+// GeneralAgentLegacyError says "删除旧文件失败：{error}"
+// in the language of msgs.
+//
+// 删除旧版导出文件失败后显示的原始错误。
+func (msgs Messages) GeneralAgentLegacyError(error string) string {
+	return Catalog.Format(msgs.locale, "generalAgentLegacyError", map[string]any{"error": error})
 }
 
 // RecorderStorage says "存储配额"
