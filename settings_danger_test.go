@@ -224,7 +224,11 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	if err := os.CopyFS(legacyDir, os.DirFS(filepath.Join("internal", "skill", "testdata", "legacy"))); err != nil {
 		t.Fatal(err)
 	}
-	newSkill := "---\nname: konseki\ndescription: \"new skill\"\n---\n\n# Konseki\n"
+	newSkillBytes, err := os.ReadFile(filepath.Join("skills", "konseki", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newSkill := string(newSkillBytes)
 	if err := os.WriteFile(filepath.Join(legacyDir, "SKILL.md"), []byte(newSkill), 0o644); err != nil {
 		t.Fatal(err)
 	}

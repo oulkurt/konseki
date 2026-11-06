@@ -72,7 +72,11 @@ func TestFindAndRemoveLegacy(t *testing.T) {
 func TestRemoveKeepsNewSkill(t *testing.T) {
 	dir := t.TempDir()
 	copyFixture(t, dir)
-	newSkill := "---\nname: konseki\ndescription: \"Look up the activity record.\"\n---\n\n# Konseki\n\nRun `konseki query status`.\n"
+	b, err := os.ReadFile(filepath.Join("..", "..", "skills", "konseki", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newSkill := string(b)
 	write(t, filepath.Join(dir, "SKILL.md"), newSkill)
 
 	files, err := FindLegacy(dir)
@@ -86,7 +90,7 @@ func TestRemoveKeepsNewSkill(t *testing.T) {
 	if err != nil || n != 3 {
 		t.Fatalf("删除 %d 个: %v", n, err)
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	b, err = os.ReadFile(filepath.Join(dir, "SKILL.md"))
 	if err != nil || string(b) != newSkill {
 		t.Fatalf("新技能被改动: %v", err)
 	}
