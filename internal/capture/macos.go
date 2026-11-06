@@ -1,8 +1,8 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖 CoreGraphics、ImageIO、Vision 与 Objective-C 运行时。
- * [OUTPUT]: 提供窗口查询、位图缩放、JPEG 编码和文字识别原语。
+ * [INPUT]: 依赖 CoreGraphics、CoreVideo、ImageIO、Vision 与 Objective-C 运行时。
+ * [OUTPUT]: 提供窗口查询、位图缩放、JPEG 编码和文字识别原语。文字识别先把图画进像素缓冲，Vision 不直接收 CGImage。
  * [POS]: macOS 原生桥接层；screen_darwin.go 编排帧与资源生命周期。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -36,6 +36,13 @@ var (
 	cgContextDraw    func(uintptr, cgRect, uintptr)
 	cgContextQuality func(uintptr, int32)
 	cfRetain         func(uintptr) uintptr
+
+	cvCreate      func(alloc uintptr, w, h int, format uint32, attrs uintptr, out *uintptr) int32
+	cvLock        func(pb uintptr, flags uint64) int32
+	cvUnlock      func(pb uintptr, flags uint64) int32
+	cvBase        func(pb uintptr) unsafe.Pointer
+	cvBytesPerRow func(pb uintptr) int
+	cvSurfaceKey  uintptr
 
 	destNew func(data, uti, count uintptr, opts uintptr) uintptr
 	destAdd func(dest, img, props uintptr)
@@ -83,6 +90,17 @@ func initRuntime() {
 		panic(err)
 	}
 	mustReg(cf, "CFRetain", &cfRetain)
+
+	cv, err := purego.Dlopen("/System/Library/Frameworks/CoreVideo.framework/CoreVideo", purego.RTLD_GLOBAL|purego.RTLD_NOW)
+	if err != nil {
+		panic(err)
+	}
+	mustReg(cv, "CVPixelBufferCreate", &cvCreate)
+	mustReg(cv, "CVPixelBufferLockBaseAddress", &cvLock)
+	mustReg(cv, "CVPixelBufferUnlockBaseAddress", &cvUnlock)
+	mustReg(cv, "CVPixelBufferGetBaseAddress", &cvBase)
+	mustReg(cv, "CVPixelBufferGetBytesPerRow", &cvBytesPerRow)
+	cvSurfaceKey = nativeGlobal(cv, "kCVPixelBufferIOSurfacePropertiesKey")
 
 	io, err := purego.Dlopen("/System/Library/Frameworks/ImageIO.framework/ImageIO", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	if err != nil {
@@ -190,6 +208,15 @@ func grab() uintptr { return imgFn(dispFn()) }
 // cgRect 与 CoreGraphics 的 CGRect 使用相同的四个 CGFloat。
 type cgRect struct{ X, Y, W, H float64 }
 
+const (
+	// bitmapRGBA 是 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big，内存里按 R、G、B、A 排列。
+	bitmapRGBA = 1 | 4<<12
+	// bitmapBGRA 是 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little，内存布局与 pixelFormatBGRA 相同。
+	bitmapBGRA = 2 | 2<<12
+	// pixelFormatBGRA 是 kCVPixelFormatType_32BGRA，即四字符码 'BGRA'。
+	pixelFormatBGRA = 0x42475241
+)
+
 // 截屏 CGImage 的底层数据可为 BGRA，不能假定通道顺序。
 // 此处由 CoreGraphics 绘入明确的 RGBA 目标，指纹只读取目标字节。
 func bitmap(img uintptr, w, h int, createImage bool) ([]byte, uintptr) {
@@ -201,7 +228,7 @@ func bitmap(img uintptr, w, h int, createImage bool) ([]byte, uintptr) {
 		return nil, 0
 	}
 	defer cfRelease(space)
-	ctx := cgBitmapCreate(nil, w, h, 8, w*4, space, 1|4<<12)
+	ctx := cgBitmapCreate(nil, w, h, 8, w*4, space, bitmapRGBA)
 	if ctx == 0 {
 		return nil, 0
 	}
@@ -281,7 +308,13 @@ func writeJPEGData(img uintptr, quality float64) uintptr {
 	return data
 }
 
-// ocrImage 用 Vision 的 accurate 模式识别原始 CGImage。
+// ocrImage 用 Vision 的 accurate 模式识别 CGImage。
+//
+// 图像先画进带 IOSurface 的像素缓冲再交给 Vision，不直接交 CGImage。
+// Vision 直接收 CGImage 时，会给这张图留一块整图大小的 IOSurface 映射：
+// 同一张图每识别一次，RSS 就涨一张图；Objective-C 里画出来的新图每次也涨。
+// 生产帧来自 CGDisplayCreateImage，本机测不了它的内存类型，所以一律走像素缓冲。
+// 这条路在同一张图反复识别和每次新图两种情况下 RSS 都不涨。
 func ocrImage(data uintptr, langs []string) (string, int, error) {
 	if data == 0 {
 		return "", 0, errors.New("Vision 识别初始化失败")
@@ -299,7 +332,12 @@ func ocrImage(data uintptr, langs []string) (string, int, error) {
 		O(req, "setRecognitionLanguages:", marr)
 	}
 
-	handler := O(O(cls("VNImageRequestHandler"), "alloc"), "initWithCGImage:options:", data, 0)
+	pb := pixelBuffer(data)
+	if pb == 0 {
+		return "", 0, errors.New("OCR 像素缓冲创建失败")
+	}
+	defer cfRelease(pb)
+	handler := O(O(cls("VNImageRequestHandler"), "alloc"), "initWithCVPixelBuffer:options:", pb, O(cls("NSDictionary"), "dictionary"))
 	if handler == 0 {
 		return "", 0, errors.New("Vision 识别初始化失败")
 	}
@@ -334,7 +372,7 @@ func rgbaToImage(f *Frame) uintptr {
 		return 0
 	}
 	defer cfRelease(space)
-	ctx := cgBitmapCreate(nil, f.W, f.H, 8, f.W*4, space, 1|4<<12)
+	ctx := cgBitmapCreate(nil, f.W, f.H, 8, f.W*4, space, bitmapRGBA)
 	if ctx == 0 {
 		return 0
 	}
@@ -345,4 +383,44 @@ func rgbaToImage(f *Frame) uintptr {
 	}
 	copy(unsafe.Slice((*byte)(data), f.W*f.H*4), f.RGBA)
 	return cgBitmapImage(ctx)
+}
+
+// pixelBuffer 把 CGImage 画进一块新的、带 IOSurface 的 BGRA 像素缓冲。调用方负责释放。
+func pixelBuffer(img uintptr) uintptr {
+	w, h := cgGetW(img), cgGetH(img)
+	if w <= 0 || h <= 0 {
+		return 0
+	}
+	// 属性里放一个空的 IOSurface 字典，CoreVideo 才会用 IOSurface 做底层存储。
+	attrs := O(cls("NSDictionary"), "dictionaryWithObject:forKey:", O(cls("NSDictionary"), "dictionary"), cvSurfaceKey)
+	var pb uintptr
+	if cvCreate(0, w, h, pixelFormatBGRA, attrs, &pb) != 0 || pb == 0 {
+		return 0
+	}
+	if !drawPixelBuffer(pb, img, w, h) {
+		cfRelease(pb)
+		return 0
+	}
+	return pb
+}
+
+// drawPixelBuffer 在锁住基地址期间把 img 画进 pb。解锁在本函数里完成，
+// 调用方拿到 false 再释放 pb，不会出现先释放、后解锁。
+func drawPixelBuffer(pb, img uintptr, w, h int) bool {
+	if cvLock(pb, 0) != 0 {
+		return false
+	}
+	defer cvUnlock(pb, 0)
+	space := cgColorSpace()
+	if space == 0 {
+		return false
+	}
+	defer cfRelease(space)
+	ctx := cgBitmapCreate(cvBase(pb), w, h, 8, cvBytesPerRow(pb), space, bitmapBGRA)
+	if ctx == 0 {
+		return false
+	}
+	defer cfRelease(ctx)
+	cgContextDraw(ctx, cgRect{W: float64(w), H: float64(h)}, img)
+	return true
 }

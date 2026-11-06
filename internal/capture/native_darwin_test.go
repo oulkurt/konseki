@@ -1,8 +1,8 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖合成 CGImage、位图缩放、ImageIO 和 Vision。
- * [OUTPUT]: 验证原生空白判断、指纹、编码、OCR 与性能。
+ * [INPUT]: 依赖合成 CGImage、位图缩放、ImageIO 和 Vision；内存门槛用 ps 读当前 RSS。
+ * [OUTPUT]: 验证原生空白判断、指纹、编码、OCR、OCR 队列释放帧与性能；KONSEKI_OCR_SOAK=1 时验证同一帧反复识别 RSS 不涨。
  * [POS]: 不抓屏、不请求授权的 macOS 原生管线测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,7 +15,9 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -122,7 +124,10 @@ func TestNativeSaveJPEG(t *testing.T) {
 		t.Fatal(sizes)
 	}
 }
-func TestNativeOCR(t *testing.T) {
+
+// ocrSample 读入 Vision 中英文识别测试图。
+func ocrSample(t testing.TB) *image.RGBA {
+	t.Helper()
 	file, err := os.Open("testdata/timeline-empty-zh-Hans-light.png")
 	if err != nil {
 		t.Fatal(err)
@@ -134,10 +139,54 @@ func TestNativeOCR(t *testing.T) {
 	}
 	rgba := image.NewRGBA(img.Bounds())
 	draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
-	f := nativeFrame(t, rgba)
+	return rgba
+}
+
+func TestNativeOCR(t *testing.T) {
+	f := nativeFrame(t, ocrSample(t))
 	text, _, err := (darwinOCR{}).Recognize(f, []string{"zh-Hans", "en-US"})
 	if err != nil || !strings.Contains(text, "今天还没有记录") || !strings.Contains(text, "Konseki") {
 		t.Fatalf("OCR: %q %v", text, err)
+	}
+}
+
+// TestNativeOCRMemory 同一帧反复识别 300 次，RSS 不能随次数增长。
+// Vision 直接收 CGImage 时，同一张图每识别一次就多留一块整图大小的映射，这是已知最坏的情况。
+// 读当前 RSS 而不是峰值：每次新图时 RSS 会上下波动几十 MB，峰值分不出泄漏和尖峰。
+// 跑一次约 30 秒，设 KONSEKI_OCR_SOAK=1 才跑。
+func TestNativeOCRMemory(t *testing.T) {
+	if os.Getenv("KONSEKI_OCR_SOAK") == "" {
+		t.Skip("设 KONSEKI_OCR_SOAK=1 才跑")
+	}
+	f := nativeFrame(t, ocrSample(t))
+	calls := 0
+	recognize := func(n int) {
+		for ; n > 0; n-- {
+			calls++
+			if _, _, err := (darwinOCR{}).Recognize(f, []string{"zh-Hans", "en-US"}); err != nil {
+				t.Fatalf("第 %d 次识别失败：%v", calls, err)
+			}
+		}
+	}
+	rssMB := func() int {
+		out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(os.Getpid())).Output()
+		if err != nil {
+			t.Fatalf("读 RSS 失败：%v", err)
+		}
+		kb, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil {
+			t.Fatalf("RSS 输出 %q 不是数字：%v", out, err)
+		}
+		return kb >> 10
+	}
+	// 前 60 次让 Vision 加载完模型和缓存，之后的增长才算泄漏。
+	recognize(60)
+	warm := rssMB()
+	recognize(240)
+	final := rssMB()
+	t.Logf("预热 60 次后 RSS %d MB，再识别 240 次后 %d MB", warm, final)
+	if final-warm > 50 {
+		t.Fatalf("预热后再识别 240 次，RSS 涨了 %d MB", final-warm)
 	}
 }
 func BenchmarkNativePipeline(b *testing.B) {
@@ -159,6 +208,18 @@ func BenchmarkNativePipeline(b *testing.B) {
 			if !platformSaveJPEG(f, path, 85) {
 				b.Fatal("编码失败")
 			}
+		}
+	})
+	// 每次文字识别前多出的一步：把整帧画进像素缓冲。
+	b.Run("PixelBuffer", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			withPool(func() {
+				pb := pixelBuffer(f.native)
+				if pb == 0 {
+					b.Fatal("像素缓冲创建失败")
+				}
+				cfRelease(pb)
+			})
 		}
 	})
 }

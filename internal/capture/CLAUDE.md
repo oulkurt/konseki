@@ -13,8 +13,8 @@ maintenance.go: 用可注入时钟调度维护；停止不等待，清空等待�
 maintenance_test.go: 验证维护周期、退出与容量请求合并。
 machine.go: 根据观测决定会话、采集与探测动作。
 machine_test.go: 用人工时间验证采集决策。
-macos.go: 绑定窗口、位图、JPEG 与 Vision 原语，不编排采集任务。
-native_darwin_test.go: 用合成图和 Vision 样本验证原生管线与性能。
+macos.go: 绑定窗口、位图、JPEG 与 Vision 原语，不编排采集任务；文字识别先把图画进 IOSurface 像素缓冲再交给 Vision，Vision 直接收 CGImage 时同一张图每识别一次 RSS 涨一张图。
+native_darwin_test.go: 用合成图和 Vision 样本验证原生管线与性能；KONSEKI_OCR_SOAK=1 时跑同一帧识别 300 次的 RSS 门槛。
 testdata/timeline-empty-zh-Hans-light.png: Vision 中英文识别测试图。
 ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
 ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
