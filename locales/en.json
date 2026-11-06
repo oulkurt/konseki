@@ -49,7 +49,7 @@
   "recorderStorageLimit": "Storage limit",
   "recorderStorageHelp": "In MB, from 100 to 200,000.",
   "recorderOutput": "Output folder",
-  "recorderReveal": "Show in file manager",
+  "recorderReveal": "Show in Finder",
   "recorderPermissions": "System permissions",
   "recorderScreenPermission": "Screen recording",
   "recorderAccessibility": "Accessibility",

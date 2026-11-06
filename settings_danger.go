@@ -30,6 +30,10 @@ func (a *app) renderDanger(c *ui.Context, pal palette) {
 				label = msg.RecorderClearing()
 			}
 			btn := ui.Button(c.Key("clear-activity"), label).Disabled(!hasData || a.clearRunning)
+			if hasData && !a.clearRunning {
+				// 不可撤销的操作用危险色描边，和普通按钮区分开。
+				btn.TextColor(c.Theme().Danger).Border(1, c.Theme().Danger)
+			}
 			if btn.Clicked() {
 				a.clearConfirm = true
 			}

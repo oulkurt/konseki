@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖测试应用、固定的一天采集与会话夹具、本机凭据桩和离屏渲染器。
- * [OUTPUT]: 在指定目录输出设置三子页中英文深浅色 12 张全高截图、粉碎动画 GIF 与 6 张三阶段关键帧。
+ * [OUTPUT]: 在指定目录输出设置三子页中英文深浅色 12 张全高截图；另一个测试输出粉碎动画 GIF 与 6 张三阶段关键帧。
  * [POS]: 设置页与清除粉碎动画的视觉验收工具，仅在显式设置 KONSEKI_SHOTS 时输出文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -27,7 +27,7 @@ var settingsShotPages = []struct {
 	tab    int
 	height int
 }{
-	{"recorder", 0, 2000},
+	{"recorder", 0, 2700},
 	{"models", 1, 1100},
 	{"general", 2, 660},
 }
@@ -75,6 +75,8 @@ func prepareSettingsShotApp(t *testing.T, lang string) (*app, func()) {
 	}
 	a.addProvider(preset)
 	a.setDefaultProvider(a.cfgNow.Providers[0])
+	// 语言选择器读的是配置，界面读的是测试器的语言，两边要一致。
+	a.setLanguage(lang)
 	a.lastLoad = time.Now().Add(time.Hour)
 	return a, cleanup
 }
@@ -173,7 +175,9 @@ var shredShotKeys = []struct {
 	{"empty", 4600 * time.Millisecond},
 }
 
-func TestSettingsShots(t *testing.T) {
+// shotsDir 返回截图目录。没设 KONSEKI_SHOTS 时跳过测试。
+func shotsDir(t *testing.T) string {
+	t.Helper()
 	dir := os.Getenv("KONSEKI_SHOTS")
 	if dir == "" {
 		t.Skip("KONSEKI_SHOTS 未设置")
@@ -181,6 +185,11 @@ func TestSettingsShots(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	return dir
+}
+
+func TestSettingsShots(t *testing.T) {
+	dir := shotsDir(t)
 	for _, page := range settingsShotPages {
 		for _, lang := range []string{"zh-Hans", "en"} {
 			for _, dark := range []bool{false, true} {
@@ -195,6 +204,11 @@ func TestSettingsShots(t *testing.T) {
 			}
 		}
 	}
+}
+
+// 离屏测试器用 CPU 解释着色器，这个测试要跑十几分钟，和设置页截图分开跑。
+func TestShredShots(t *testing.T) {
+	dir := shotsDir(t)
 	renderShredArtifacts(t, dir, "zh-Hans", false, true)
 	renderShredArtifacts(t, dir, "en", true, false)
 }

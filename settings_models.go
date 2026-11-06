@@ -19,7 +19,14 @@ import (
 func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	a.settingsCard(c, pal, func() {
-		a.settingsRow(c, msg.ModelsSummary(), a.cfgNow.Summary.ProviderID, pal, func() {
+		provider := a.cfgNow.Summary.ProviderID
+		for _, pc := range a.cfgNow.Providers {
+			if pc.Preset == a.cfgNow.Summary.ProviderID {
+				provider = providerDisplayName(pc)
+				break
+			}
+		}
+		a.settingsRow(c, msg.ModelsSummary(), provider, pal, func() {
 			ui.Row(c).Gap(6).Children(func() {
 				label := a.cfgNow.Summary.Model
 				if label == "" {
@@ -32,7 +39,7 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 							models = []string{pc.DefaultModel}
 						}
 						for _, model := range models {
-							if m.Item(pc.Preset + " · " + model).Checked(a.cfgNow.Summary.ProviderID == pc.Preset && a.cfgNow.Summary.Model == model).Chosen() {
+							if m.Item(providerDisplayName(pc) + " · " + model).Checked(a.cfgNow.Summary.ProviderID == pc.Preset && a.cfgNow.Summary.Model == model).Chosen() {
 								a.setSummaryModel(pc.Preset, model)
 							}
 						}
@@ -140,22 +147,25 @@ func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 	})
 }
 
+// providerDisplayName 依次取用户起的名字、预设名、预设 ID。
+func providerDisplayName(pc config.ProviderConfig) string {
+	if pc.Label != "" {
+		return pc.Label
+	}
+	if preset, ok := providers.ByID(pc.Preset); ok && preset.Name != "" {
+		return preset.Name
+	}
+	return pc.Preset
+}
+
 func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 	msg := locales.In(c.Locale())
 	pc := a.cfgNow.Providers[idx]
-	name := pc.Label
-	if name == "" {
-		if preset, ok := providers.ByID(pc.Preset); ok {
-			name = preset.Name
-		}
-	}
-	if name == "" {
-		name = pc.Preset
-	}
+	name := providerDisplayName(pc)
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 			ui.Text(c, name).Grow(1).Bold().TextColor(pal.textPrimary)
-			if ui.Button(c.Key("provider-default-"+pc.Preset), msg.ModelsDefault()).Clicked() {
+			if ui.Button(c.Key("provider-default-"+pc.Preset), msg.ModelsDefault()).Disabled(a.cfgNow.Summary.ProviderID == pc.Preset).Clicked() {
 				a.setDefaultProvider(pc)
 			}
 			if ui.Button(c.Key("provider-configure-"+pc.Preset), msg.ModelsConfigure()).Clicked() {
