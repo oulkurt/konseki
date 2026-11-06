@@ -34,6 +34,118 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderCapture says "采集参数"
+// in the language the app shows.
+//
+// 记录设置页六项采集参数卡片标题。
+func RecorderCapture() string { return In(i18n.Locale()).RecorderCapture() }
+
+// RecorderCapture says "采集参数"
+// in the language of msgs.
+//
+// 记录设置页六项采集参数卡片标题。
+func (msgs Messages) RecorderCapture() string {
+	return Catalog.Format(msgs.locale, "recorderCapture", nil)
+}
+
+// RecorderDebounce says "防抖间隔"
+// in the language the app shows.
+//
+// 采集参数卡片的最小采集间隔字段。
+func RecorderDebounce() string { return In(i18n.Locale()).RecorderDebounce() }
+
+// RecorderDebounce says "防抖间隔"
+// in the language of msgs.
+//
+// 采集参数卡片的最小采集间隔字段。
+func (msgs Messages) RecorderDebounce() string {
+	return Catalog.Format(msgs.locale, "recorderDebounce", nil)
+}
+
+// RecorderHeartbeat says "心跳间隔"
+// in the language the app shows.
+//
+// 采集参数卡片的心跳采集间隔字段。
+func RecorderHeartbeat() string { return In(i18n.Locale()).RecorderHeartbeat() }
+
+// RecorderHeartbeat says "心跳间隔"
+// in the language of msgs.
+//
+// 采集参数卡片的心跳采集间隔字段。
+func (msgs Messages) RecorderHeartbeat() string {
+	return Catalog.Format(msgs.locale, "recorderHeartbeat", nil)
+}
+
+// RecorderIdle says "空闲阈值"
+// in the language the app shows.
+//
+// 采集参数卡片的会话空闲关闭阈值字段。
+func RecorderIdle() string { return In(i18n.Locale()).RecorderIdle() }
+
+// RecorderIdle says "空闲阈值"
+// in the language of msgs.
+//
+// 采集参数卡片的会话空闲关闭阈值字段。
+func (msgs Messages) RecorderIdle() string {
+	return Catalog.Format(msgs.locale, "recorderIdle", nil)
+}
+
+// RecorderTyping says "输入停顿"
+// in the language the app shows.
+//
+// 采集参数卡片的输入停顿延迟字段。
+func RecorderTyping() string { return In(i18n.Locale()).RecorderTyping() }
+
+// RecorderTyping says "输入停顿"
+// in the language of msgs.
+//
+// 采集参数卡片的输入停顿延迟字段。
+func (msgs Messages) RecorderTyping() string {
+	return Catalog.Format(msgs.locale, "recorderTyping", nil)
+}
+
+// RecorderPoll says "画面轮询"
+// in the language the app shows.
+//
+// 采集参数卡片的画面变化检查间隔字段。零表示关闭。
+func RecorderPoll() string { return In(i18n.Locale()).RecorderPoll() }
+
+// RecorderPoll says "画面轮询"
+// in the language of msgs.
+//
+// 采集参数卡片的画面变化检查间隔字段。零表示关闭。
+func (msgs Messages) RecorderPoll() string {
+	return Catalog.Format(msgs.locale, "recorderPoll", nil)
+}
+
+// RecorderQuality says "截图质量"
+// in the language the app shows.
+//
+// 采集参数卡片的 JPEG 质量字段。
+func RecorderQuality() string { return In(i18n.Locale()).RecorderQuality() }
+
+// RecorderQuality says "截图质量"
+// in the language of msgs.
+//
+// 采集参数卡片的 JPEG 质量字段。
+func (msgs Messages) RecorderQuality() string {
+	return Catalog.Format(msgs.locale, "recorderQuality", nil)
+}
+
+// RecorderMilliseconds says "毫秒"
+// in the language the app shows.
+//
+// 采集参数卡片中时间字段的单位。
+func RecorderMilliseconds() string { return In(i18n.Locale()).RecorderMilliseconds() }
+
+// RecorderMilliseconds says "毫秒"
+// in the language of msgs.
+//
+// 采集参数卡片中时间字段的单位。
+func (msgs Messages) RecorderMilliseconds() string {
+	return Catalog.Format(msgs.locale, "recorderMilliseconds", nil)
+}
+
 // RecorderDanger says "危险区"
 // in the language the app shows.
 //

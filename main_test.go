@@ -43,6 +43,18 @@ func TestSettingsSubpages(t *testing.T) {
 	}
 }
 
+func TestRecorderFieldLabels(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	tt := ui.NewTester(a.view, 800, 1800)
+	for _, label := range []string{"防抖间隔", "心跳间隔", "空闲阈值", "输入停顿", "画面轮询", "截图质量"} {
+		if !tt.HasText(label) {
+			t.Errorf("缺少采集字段 %s", label)
+		}
+	}
+}
+
 // 视图能在没有窗口的情况下构建，这是 mygo native 模板的核心好处：
 // 界面逻辑可以纯查测试，不用起 GUI。
 

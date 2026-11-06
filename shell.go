@@ -118,6 +118,7 @@ func (a *app) view(c *ui.Context) {
 						switch a.settingsTab {
 						case 0:
 							a.renderCaptureSection(c, pal)
+							a.renderRecorderFields(c, pal)
 							a.renderDanger(c, pal)
 						case 1:
 							a.startCredentialScan()

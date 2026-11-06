@@ -1,5 +1,13 @@
 {
   "@@locale": "en",
+  "recorderCapture": "Capture settings",
+  "recorderDebounce": "Debounce interval",
+  "recorderHeartbeat": "Heartbeat interval",
+  "recorderIdle": "Idle threshold",
+  "recorderTyping": "Typing pause",
+  "recorderPoll": "Screen polling",
+  "recorderQuality": "Image quality",
+  "recorderMilliseconds": "ms",
   "recorderDanger": "Danger zone",
   "recorderClear": "Clear all activity data",
   "recorderClearing": "Clearing…",
