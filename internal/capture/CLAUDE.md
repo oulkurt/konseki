@@ -28,12 +28,13 @@ runner.go: 协调采集生命周期、异步抓帧与时间轴聚合；抓帧前
 screen_darwin.go: 编排 macOS 帧、权限、图像编码与 OCR 生命周期。
 screen_linux.go: 提供 Linux 平台采集适配。
 screen_windows.go: 提供 Windows 平台采集适配。
-sessions.go: 从最新日期向前查找快照并恢复未关闭会话。
-sessions_test.go: 验证崩溃恢复与幂等性。
+sessions.go: 从最新快照向前扫描连续会话，只查之后的关闭记录。
+sessions_test.go: 验证崩溃恢复、幂等性与异步启动。
+recovery_performance_test.go: 验证恢复成本不随历史天数增长。
 session.go: 定义会话关闭记录与结束原因。
 settings.go: 定义采集运行参数，不依赖应用设置。
 status.go: 定义采集状态和权限快照。
 storage.go: 用量缓存、按天保留、超额淘汰、warm 1280×720 q40 与 cold 640×360 q30 重编码、清空；维护操作互斥，配额按磁盘实际总量删到上限的 90%，降级先读文件头只在需要时完整解码，只处理已落盘的 .jpg 和日期命名的 JSONL，不碰摘要与设置。
 storage_test.go: 用临时目录和合成 JPEG 验证存储维护的磁盘行为，覆盖并发写入、删到一半中断、删除失败计数、降级幂等与解码次数；KONSEKI_STORAGE_PERF=1 时跑 300 张重编码的性能门槛。
-store.go: 快照、OCR、会话各写一份按天分文件的 JSONL，只追加；截图路径由快照 id 推出，读快照时按 id 回填 OCR，旧格式照常可读。
+store.go: 按天追加快照、OCR 与会话；提供纯快照读取和 OCR 回填读取。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

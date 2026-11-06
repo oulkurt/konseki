@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖状态机、平台观测、后台工作器和事实存储。
  * [OUTPUT]: 提供 Runner、状态快照与时间轴聚合。
- * [POS]: 采集生命周期的协调边界；状态机不执行 IO。
+ * [POS]: 采集生命周期的协调边界；首次采集前在循环中恢复会话。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture
@@ -211,11 +211,8 @@ func (r *Runner) start() {
 	if err := cleanCaptureTemps(st.root, r.deps.clock.Now()); err != nil {
 		r.setError(err)
 	}
-	if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
-		r.setError(err)
-	}
 	r.startMaintenance(stop, enforce)
-	go r.loop(stop, done)
+	go r.loop(stop, done, st, storage)
 }
 func cleanCaptureTemps(root string, now time.Time) error {
 	dir := filepath.Join(root, "shots")
@@ -420,8 +417,11 @@ func (r *Runner) liveSensitive() bool {
 	return sensitiveFront(live, r.cfg.SensitiveApps)
 }
 
-func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}) {
+func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, st *Store, storage *Storage) {
 	defer close(done)
+	if err := recoverSession(st, storage, r.deps.clock.Now()); err != nil {
+		r.setError(err)
+	}
 	ticks, cancel := r.deps.clock.Ticks()
 	defer cancel()
 	results := make(chan captureResult, 1)

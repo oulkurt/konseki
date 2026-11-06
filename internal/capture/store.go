@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖采集根目录中的快照、OCR 和会话 JSONL。
- * [OUTPUT]: 提供快照、OCR 结果和会话的追加与读取，快照 id 及由它推出的截图路径，OCR 索引。
+ * [OUTPUT]: 追加并读取快照、OCR 和会话；可单独读取快照或回填 OCR。
  * [POS]: 采集事实的追加存储，兼容旧快照格式。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -182,8 +182,12 @@ func (s *Store) ReadSessions(day string) ([]Session, error) {
 	return readJSON[Session](filepath.Join(s.root, "sessions", day+".jsonl"))
 }
 
+func (s *Store) readSnapshots(day string) ([]Snapshot, error) {
+	return readJSON[Snapshot](filepath.Join(s.root, day+".jsonl"))
+}
+
 func (s *Store) ReadDay(day string) ([]Snapshot, error) {
-	out, err := readJSON[Snapshot](filepath.Join(s.root, day+".jsonl"))
+	out, err := s.readSnapshots(day)
 	if err != nil {
 		return nil, err
 	}
