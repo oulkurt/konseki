@@ -34,6 +34,104 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderDanger says "危险区"
+// in the language the app shows.
+//
+// 记录设置页的危险操作卡片标题。
+func RecorderDanger() string { return In(i18n.Locale()).RecorderDanger() }
+
+// RecorderDanger says "危险区"
+// in the language of msgs.
+//
+// 记录设置页的危险操作卡片标题。
+func (msgs Messages) RecorderDanger() string {
+	return Catalog.Format(msgs.locale, "recorderDanger", nil)
+}
+
+// RecorderClear says "清除全部活动数据"
+// in the language the app shows.
+//
+// 危险区打开清除确认对话框的按钮。
+func RecorderClear() string { return In(i18n.Locale()).RecorderClear() }
+
+// RecorderClear says "清除全部活动数据"
+// in the language of msgs.
+//
+// 危险区打开清除确认对话框的按钮。
+func (msgs Messages) RecorderClear() string {
+	return Catalog.Format(msgs.locale, "recorderClear", nil)
+}
+
+// RecorderClearing says "正在清除…"
+// in the language the app shows.
+//
+// 危险区清除进行中的禁用按钮。
+func RecorderClearing() string { return In(i18n.Locale()).RecorderClearing() }
+
+// RecorderClearing says "正在清除…"
+// in the language of msgs.
+//
+// 危险区清除进行中的禁用按钮。
+func (msgs Messages) RecorderClearing() string {
+	return Catalog.Format(msgs.locale, "recorderClearing", nil)
+}
+
+// RecorderClearTitle says "删除全部活动数据？"
+// in the language the app shows.
+//
+// 清除活动数据确认对话框的标题。
+func RecorderClearTitle() string { return In(i18n.Locale()).RecorderClearTitle() }
+
+// RecorderClearTitle says "删除全部活动数据？"
+// in the language of msgs.
+//
+// 清除活动数据确认对话框的标题。
+func (msgs Messages) RecorderClearTitle() string {
+	return Catalog.Format(msgs.locale, "recorderClearTitle", nil)
+}
+
+// RecorderClearDescription says "…"
+// in the language the app shows.
+//
+// 危险区和确认对话框说明清除范围与不可撤销性。
+func RecorderClearDescription() string { return In(i18n.Locale()).RecorderClearDescription() }
+
+// RecorderClearDescription says "…"
+// in the language of msgs.
+//
+// 危险区和确认对话框说明清除范围与不可撤销性。
+func (msgs Messages) RecorderClearDescription() string {
+	return Catalog.Format(msgs.locale, "recorderClearDescription", nil)
+}
+
+// RecorderCancel says "取消"
+// in the language the app shows.
+//
+// 清除活动数据对话框的取消按钮。
+func RecorderCancel() string { return In(i18n.Locale()).RecorderCancel() }
+
+// RecorderCancel says "取消"
+// in the language of msgs.
+//
+// 清除活动数据对话框的取消按钮。
+func (msgs Messages) RecorderCancel() string {
+	return Catalog.Format(msgs.locale, "recorderCancel", nil)
+}
+
+// RecorderConfirm says "全部删除"
+// in the language the app shows.
+//
+// 清除活动数据对话框的确认按钮。
+func RecorderConfirm() string { return In(i18n.Locale()).RecorderConfirm() }
+
+// RecorderConfirm says "全部删除"
+// in the language of msgs.
+//
+// 清除活动数据对话框的确认按钮。
+func (msgs Messages) RecorderConfirm() string {
+	return Catalog.Format(msgs.locale, "recorderConfirm", nil)
+}
+
 // RecorderTab says "记录"
 // in the language the app shows.
 //

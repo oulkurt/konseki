@@ -92,6 +92,8 @@ type app struct {
 	clearRunning bool
 	clearErr     string
 	clearReceipt ReceiptDay
+	clearConfirm bool
+	hasSummaries bool
 	// 摘要生成时的进度文字，UI 上直接显示。
 	sumProgress string
 	// 本次生成的脱敏命中数，给用户一个「遮了多少」的反馈。
@@ -129,6 +131,9 @@ func (a *app) refresh() {
 	a.status = a.runner.Status()
 	a.loadDay()
 	a.loadSummaries()
+	if a.sums != nil {
+		a.hasSummaries = len(a.sums.Days()) > 0
+	}
 	if a.receiptStore == nil {
 		store, err := capture.NewStore(a.runner.Root())
 		if err != nil {

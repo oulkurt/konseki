@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖摘要任务、采集清除操作与 Skill 导出目录。
- * [OUTPUT]: 提供按顺序执行的后台清除流程。
+ * [OUTPUT]: 提供确认界面与按顺序执行的后台清除流程。
  * [POS]: 设置页危险操作的边界；完成状态只在界面线程发布。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -13,7 +13,35 @@ import (
 
 	"konseki/internal/skill"
 	"konseki/locales"
+
+	"github.com/egoist/mygo/ui"
 )
+
+func (a *app) renderDanger(c *ui.Context, pal palette) {
+	msg := locales.In(c.Locale())
+	usage := a.status.Usage
+	hasData := usage.Bytes > 0 || usage.Shots > 0 || usage.Snapshots > 0 || usage.Sessions > 0 || a.hasSummaries
+	a.settingsCard(c, pal, func() {
+		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
+			ui.Text(c, msg.RecorderDanger()).Bold().TextColor(c.Theme().Danger)
+			ui.Text(c, msg.RecorderClearDescription()).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.4)
+			label := msg.RecorderClear()
+			if a.clearRunning {
+				label = msg.RecorderClearing()
+			}
+			btn := ui.Button(c.Key("clear-activity"), label).Disabled(!hasData || a.clearRunning)
+			if btn.Clicked() {
+				a.clearConfirm = true
+			}
+			if a.clearErr != "" {
+				ui.Text(c, a.clearErr).TextColor(c.Theme().Danger).FontSize(12)
+			}
+		})
+	})
+	if ui.AlertDialog(c, &a.clearConfirm, msg.RecorderClearTitle(), msg.RecorderClearDescription(), msg.RecorderCancel(), msg.RecorderConfirm()) == 1 {
+		a.clearActivity()
+	}
+}
 
 // clearSequence 等待摘要退出，再依次清除采集、摘要和导出。
 func clearSequence(done <-chan struct{}, captureClear, summaryClear, reconcile func() error) error {
@@ -80,6 +108,7 @@ func (a *app) clearActivity() {
 			a.blocks = nil
 			a.receiptStore = nil
 			a.receipt = ReceiptDay{}
+			a.hasSummaries = false
 			a.status = runner.Status()
 			a.lastLoad = time.Time{}
 		})

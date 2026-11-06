@@ -1,5 +1,12 @@
 {
   "@@locale": "en",
+  "recorderDanger": "Danger zone",
+  "recorderClear": "Clear all activity data",
+  "recorderClearing": "Clearing…",
+  "recorderClearTitle": "Delete all activity data?",
+  "recorderClearDescription": "Delete snapshots, screenshots, sessions and screen text in the current output folder, plus summaries and exported journals. Settings and keys are kept. Previous output folders are not cleared. This cannot be undone.",
+  "recorderCancel": "Cancel",
+  "recorderConfirm": "Delete all",
   "recorderTab": "Recording",
   "modelsTab": "Models",
   "generalTab": "General",

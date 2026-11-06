@@ -18,7 +18,72 @@ import (
 	"konseki/internal/skill"
 	"konseki/internal/summary"
 	"konseki/locales"
+
+	"github.com/egoist/mygo/ui"
 )
+
+func TestDangerCancelPreservesData(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	if err := a.sums.Upsert(summary.Entry{ID: "old", Day: "2026-11-04"}); err != nil {
+		t.Fatal(err)
+	}
+	a.tab = 1
+	a.refresh()
+	tt := ui.NewTester(a.view, 760, 1600)
+	if err := tt.Click("清除全部活动数据"); err != nil {
+		t.Fatal(err)
+	}
+	if !tt.HasText("删除全部活动数据？") {
+		t.Fatal("缺少确认对话框")
+	}
+	if err := tt.Click("取消"); err != nil {
+		t.Fatal(err)
+	}
+	if a.clearRunning || len(a.sums.Days()) != 1 {
+		t.Fatal("取消后删除了数据")
+	}
+}
+
+func TestDangerConfirmClearsOnce(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	if err := a.sums.Upsert(summary.Entry{ID: "old", Day: "2026-11-04"}); err != nil {
+		t.Fatal(err)
+	}
+	a.tab = 1
+	a.refresh()
+	posted := make(chan func(), 2)
+	a.post = func(f func()) { posted <- f }
+	tt := ui.NewTester(a.view, 760, 1600)
+	if err := tt.Click("清除全部活动数据"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("全部删除"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.clearRunning {
+		t.Fatal("清除没有启动")
+	}
+	a.clearActivity()
+	select {
+	case f := <-posted:
+		f()
+	case <-time.After(5 * time.Second):
+		t.Fatal("清除超时")
+	}
+	if a.clearErr != "" || a.clearRunning || len(a.sums.Days()) != 0 {
+		t.Fatalf("清除未完成: %q", a.clearErr)
+	}
+	select {
+	case <-posted:
+		t.Fatal("重复启动了清除")
+	default:
+	}
+	if a.hasSummaries || a.status.Usage.Sessions != 0 {
+		t.Fatal("清除后统计未归零")
+	}
+}
 
 func TestClearFailureMessagePlural(t *testing.T) {
 	for _, tc := range []struct {
