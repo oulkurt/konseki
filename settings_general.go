@@ -57,7 +57,7 @@ func (a *app) renderSkillSection(c *ui.Context, pal palette) {
 					}
 				})
 			}
-			if ui.Button(c.Key("btn-skill-export"), msg.GeneralSkillExport()).Clicked() {
+			if ui.Button(c.Key("btn-skill-export"), msg.GeneralSkillExport()).Disabled(a.clearRunning).Clicked() {
 				if n, err := a.exportSkill(); err != nil {
 					a.skillExportMsg = msg.GeneralSkillError(err.Error())
 				} else {

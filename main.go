@@ -402,7 +402,7 @@ func (a *app) autoSummaryLoop() {
 	for range tick.C {
 		a.post(func() {
 			a.ensureInit()
-			if !a.cfgNow.Summary.Auto || a.sumRunning || a.gen == nil {
+			if !a.cfgNow.Summary.Auto || a.sumRunning || a.clearRunning || a.gen == nil {
 				return
 			}
 			if !a.cfgNow.Recorder.Enabled {
