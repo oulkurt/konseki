@@ -1356,6 +1356,104 @@ func (msgs Messages) RecorderQuality() string {
 	return Catalog.Format(msgs.locale, "recorderQuality", nil)
 }
 
+// RecorderDebounceHelp says "两次采集的最短间隔，期间的触发合并成一次补采。"
+// in the language the app shows.
+//
+// 采集参数卡片防抖间隔字段的说明。
+func RecorderDebounceHelp() string { return In(i18n.Locale()).RecorderDebounceHelp() }
+
+// RecorderDebounceHelp says "两次采集的最短间隔，期间的触发合并成一次补采。"
+// in the language of msgs.
+//
+// 采集参数卡片防抖间隔字段的说明。
+func (msgs Messages) RecorderDebounceHelp() string {
+	return Catalog.Format(msgs.locale, "recorderDebounceHelp", nil)
+}
+
+// RecorderHeartbeatHelp says "没有其他触发时也按这个间隔采集，画面没变不另存图。"
+// in the language the app shows.
+//
+// 采集参数卡片心跳间隔字段的说明。
+func RecorderHeartbeatHelp() string { return In(i18n.Locale()).RecorderHeartbeatHelp() }
+
+// RecorderHeartbeatHelp says "没有其他触发时也按这个间隔采集，画面没变不另存图。"
+// in the language of msgs.
+//
+// 采集参数卡片心跳间隔字段的说明。
+func (msgs Messages) RecorderHeartbeatHelp() string {
+	return Catalog.Format(msgs.locale, "recorderHeartbeatHelp", nil)
+}
+
+// RecorderIdleHelp says "超过这个时长没有点击、按键或滚动，就结束当前会话。"
+// in the language the app shows.
+//
+// 采集参数卡片空闲阈值字段的说明。
+func RecorderIdleHelp() string { return In(i18n.Locale()).RecorderIdleHelp() }
+
+// RecorderIdleHelp says "超过这个时长没有点击、按键或滚动，就结束当前会话。"
+// in the language of msgs.
+//
+// 采集参数卡片空闲阈值字段的说明。
+func (msgs Messages) RecorderIdleHelp() string {
+	return Catalog.Format(msgs.locale, "recorderIdleHelp", nil)
+}
+
+// RecorderTypingHelp says "停止打字这么久以后采集一次。"
+// in the language the app shows.
+//
+// 采集参数卡片输入停顿字段的说明。
+func RecorderTypingHelp() string { return In(i18n.Locale()).RecorderTypingHelp() }
+
+// RecorderTypingHelp says "停止打字这么久以后采集一次。"
+// in the language of msgs.
+//
+// 采集参数卡片输入停顿字段的说明。
+func (msgs Messages) RecorderTypingHelp() string {
+	return Catalog.Format(msgs.locale, "recorderTypingHelp", nil)
+}
+
+// RecorderPollHelp says "没有输入时按这个间隔检查画面变化，0 表示关闭。"
+// in the language the app shows.
+//
+// 采集参数卡片画面轮询字段的说明。
+func RecorderPollHelp() string { return In(i18n.Locale()).RecorderPollHelp() }
+
+// RecorderPollHelp says "没有输入时按这个间隔检查画面变化，0 表示关闭。"
+// in the language of msgs.
+//
+// 采集参数卡片画面轮询字段的说明。
+func (msgs Messages) RecorderPollHelp() string {
+	return Catalog.Format(msgs.locale, "recorderPollHelp", nil)
+}
+
+// RecorderQualityHelp says "JPEG 质量，越低文件越小。"
+// in the language the app shows.
+//
+// 采集参数卡片截图质量字段的说明。
+func RecorderQualityHelp() string { return In(i18n.Locale()).RecorderQualityHelp() }
+
+// RecorderQualityHelp says "JPEG 质量，越低文件越小。"
+// in the language of msgs.
+//
+// 采集参数卡片截图质量字段的说明。
+func (msgs Messages) RecorderQualityHelp() string {
+	return Catalog.Format(msgs.locale, "recorderQualityHelp", nil)
+}
+
+// RecorderStorageEvict says "超出上限时，从最旧的截图和记录删起，删到上限的 90%。"
+// in the language the app shows.
+//
+// 活动记录器卡片存储条右侧的淘汰规则提示。
+func RecorderStorageEvict() string { return In(i18n.Locale()).RecorderStorageEvict() }
+
+// RecorderStorageEvict says "超出上限时，从最旧的截图和记录删起，删到上限的 90%。"
+// in the language of msgs.
+//
+// 活动记录器卡片存储条右侧的淘汰规则提示。
+func (msgs Messages) RecorderStorageEvict() string {
+	return Catalog.Format(msgs.locale, "recorderStorageEvict", nil)
+}
+
 // RecorderMilliseconds says "毫秒"
 // in the language the app shows.
 //

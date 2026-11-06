@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用配置、采集参数字段表、供应商预设和运行应用注入。
- * [OUTPUT]: 验证字段提交、敏感应用快速添加与供应商区域切换。
+ * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加与供应商区域切换。
  * [POS]: 记录与模型设置交互边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -8,11 +8,13 @@ package main
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"konseki/internal/capture"
 	"konseki/internal/providers"
+	"konseki/locales"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -31,6 +33,31 @@ func TestRecorderFieldCommit(t *testing.T) {
 	s := recorderSettings(a.cfg.Get().Recorder, a.appDir)
 	if s.Debounce != 3*time.Second || s.Heartbeat != 300*time.Second || s.Idle != 45*time.Second || s.TypingPause != 1500*time.Millisecond || s.ScreenPoll != 10*time.Second || s.JPEGQuality != 60 {
 		t.Fatalf("采集参数映射错误: %+v", s)
+	}
+}
+
+// 每个采集参数都要说明它管什么，只给范围的话用户看不出「防抖间隔」的用途。
+func TestRecorderFieldsExplainThemselves(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		msg := locales.In(lang)
+		seen := map[string]bool{}
+		for _, f := range recorderFields {
+			help := f.help(msg)
+			if help == "" || help == f.label(msg) || seen[help] {
+				t.Errorf("%s 的 %s 缺少独立的说明：%q", lang, f.key, help)
+			}
+			seen[help] = true
+		}
+	}
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	a.settingsTab = 0
+	tt := ui.NewTester(a.view, 780, 2600)
+	tt.SetLocale("zh-Hans")
+	want := locales.In("zh-Hans").RecorderDebounceHelp()
+	if !slices.ContainsFunc(tt.Texts(), func(s string) bool { return strings.Contains(s, want) }) {
+		t.Fatalf("记录页没有显示防抖间隔的说明 %q", want)
 	}
 }
 

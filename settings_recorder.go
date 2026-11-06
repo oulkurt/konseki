@@ -20,6 +20,7 @@ import (
 type recorderField struct {
 	key            string
 	label          func(locales.Messages) string
+	help           func(locales.Messages) string
 	min, max, step int
 	timed          bool
 	get            func(config.Recorder) int
@@ -27,12 +28,12 @@ type recorderField struct {
 }
 
 var recorderFields = []recorderField{
-	{"debounce", locales.Messages.RecorderDebounce, 3000, 30000, 100, true, func(r config.Recorder) int { return r.DebounceMs }, func(r *config.Recorder, n int) { r.DebounceMs = n }},
-	{"heartbeat", locales.Messages.RecorderHeartbeat, 60000, 300000, 1000, true, func(r config.Recorder) int { return r.HeartbeatMs }, func(r *config.Recorder, n int) { r.HeartbeatMs = n }},
-	{"idle", locales.Messages.RecorderIdle, 10000, 600000, 5000, true, func(r config.Recorder) int { return r.IdleMs }, func(r *config.Recorder, n int) { r.IdleMs = n }},
-	{"typing", locales.Messages.RecorderTyping, 800, 5000, 100, true, func(r config.Recorder) int { return r.TypingPauseMs }, func(r *config.Recorder, n int) { r.TypingPauseMs = n }},
-	{"poll", locales.Messages.RecorderPoll, 0, 30000, 500, true, func(r config.Recorder) int { return r.ScreenPollMs }, func(r *config.Recorder, n int) { r.ScreenPollMs = n }},
-	{"quality", locales.Messages.RecorderQuality, 30, 95, 5, false, func(r config.Recorder) int { return r.JPEGQuality }, func(r *config.Recorder, n int) { r.JPEGQuality = n }},
+	{"debounce", locales.Messages.RecorderDebounce, locales.Messages.RecorderDebounceHelp, 3000, 30000, 100, true, func(r config.Recorder) int { return r.DebounceMs }, func(r *config.Recorder, n int) { r.DebounceMs = n }},
+	{"heartbeat", locales.Messages.RecorderHeartbeat, locales.Messages.RecorderHeartbeatHelp, 60000, 300000, 1000, true, func(r config.Recorder) int { return r.HeartbeatMs }, func(r *config.Recorder, n int) { r.HeartbeatMs = n }},
+	{"idle", locales.Messages.RecorderIdle, locales.Messages.RecorderIdleHelp, 10000, 600000, 5000, true, func(r config.Recorder) int { return r.IdleMs }, func(r *config.Recorder, n int) { r.IdleMs = n }},
+	{"typing", locales.Messages.RecorderTyping, locales.Messages.RecorderTypingHelp, 800, 5000, 100, true, func(r config.Recorder) int { return r.TypingPauseMs }, func(r *config.Recorder, n int) { r.TypingPauseMs = n }},
+	{"poll", locales.Messages.RecorderPoll, locales.Messages.RecorderPollHelp, 0, 30000, 500, true, func(r config.Recorder) int { return r.ScreenPollMs }, func(r *config.Recorder, n int) { r.ScreenPollMs = n }},
+	{"quality", locales.Messages.RecorderQuality, locales.Messages.RecorderQualityHelp, 30, 95, 5, false, func(r config.Recorder) int { return r.JPEGQuality }, func(r *config.Recorder, n int) { r.JPEGQuality = n }},
 }
 
 func (a *app) commitRecorderField(i int, value int) {
@@ -59,7 +60,8 @@ func (a *app) renderRecorderFields(c *ui.Context, pal palette) {
 				if field.timed {
 					unit = msg.RecorderMilliseconds()
 				}
-				sub := fmt.Sprintf("%d–%d · %d %s", field.min, field.max, field.step, unit)
+				// 第一行说明字段管什么，第二行给范围和步长。
+				sub := field.help(msg) + "\n" + fmt.Sprintf("%d–%d · %d %s", field.min, field.max, field.step, unit)
 				a.settingsRow(c, field.label(msg), sub, pal, func() {
 					if !a.recorderFocus[i] {
 						a.recorderDraft[i] = strconv.Itoa(field.get(a.cfgNow.Recorder))

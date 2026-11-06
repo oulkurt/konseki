@@ -87,7 +87,10 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 				percent = min(100, int(usage.Bytes*100/(int64(limit)<<20)))
 			}
 			ui.Column(c).FillWidth().Padding(0, 18, 14, 18).Gap(6).Children(func() {
-				ui.Text(c, msg.RecorderStorageUsed(fmt.Sprintf("%.1f", float64(usage.Bytes)/(1<<20)), limit, percent)).FontSize(11).TextColor(pal.textSecondary)
+				ui.Row(c).FillWidth().Gap(8).Children(func() {
+					ui.Text(c, msg.RecorderStorageUsed(fmt.Sprintf("%.1f", float64(usage.Bytes)/(1<<20)), limit, percent)).Grow(1).FontSize(11).TextColor(pal.textSecondary)
+					ui.Text(c, msg.RecorderStorageEvict()).FontSize(11).TextColor(pal.textSecondary)
+				})
 				ui.Box(c).FillWidth().Height(5).Radius(3).Background(pal.rowHoverBg).Draw(func(p *ui.Painter, r ui.Rect) {
 					p.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W * float32(percent) / 100, H: r.H}, pal.switchOn, 3)
 				})
