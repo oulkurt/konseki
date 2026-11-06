@@ -1,7 +1,7 @@
 /*
- * [INPUT]: 依赖配置、模型与摘要服务。
- * [OUTPUT]: 提供摘要生成器配置。
- * [POS]: 连接模型设置与摘要服务。
+ * [INPUT]: 依赖配置、模型客户端、脱敏选项与摘要服务。
+ * [OUTPUT]: 提供 rebuildGenerator、setSummaryModel 和 setThinking。
+ * [POS]: 模型设置到摘要服务的唯一装配点。切换供应商、模型或推理档都经这里重建配置。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main

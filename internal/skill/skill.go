@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖采集时间块、摘要和导出目录。
- * [OUTPUT]: 提供 Skill 导出与生成文件对账。
+ * [OUTPUT]: 提供 DefaultDir 与 Export，写出入口、画像和日记。
  * [POS]: 将活动证据转换为外部 Agent 可读的文件，不修改采集数据。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
