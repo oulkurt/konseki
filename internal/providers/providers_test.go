@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖生成目录、临时凭据文件与假钥匙串。
+ * [OUTPUT]: 验证预设约束、端点继承与隔离凭据解析。
+ * [POS]: 供应商目录的离线回归测试。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package providers
 
 import (

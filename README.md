@@ -6,7 +6,7 @@ macOS 本机活动时间轴。Go + mygo 原生界面。
 
 时间轴聚合应用时间块。模型根据采集证据生成摘要，小票界面呈现摘要并支持碎纸交互。设置提供采集、权限、隐私、会话、模型、Agent 和简体中文／英文选项。
 
-摘要请求把脱敏文字发送给所选模型服务。本机记录包含敏感内容；截图可直接读取且不脱敏。Agent 读取后的传输取决于该 Agent 自身行为。
+脱敏总开关开启时，摘要请求按所选规则遮蔽文字，再发送给所选模型服务；关闭时发送原文。本机记录包含敏感内容；截图可直接读取且不脱敏。Agent 读取后的传输取决于该 Agent 自身行为。
 
 ## Agent 安装
 
@@ -19,8 +19,8 @@ npx skills add /path/to/konseki --skill konseki -g -y
 将占位路径替换为此仓库检出。发布到 main 后才可使用远程仓库地址替换本地路径。canonical 技能位于 `~/.agents/skills/konseki`；工具可通过链接或 universal 路径发现它，不要求每个 Agent 目录都有副本。
 
 ```sh
-export KONSEKI_HOME="/path/to/data" # 仅自定义目录时需要
-"$KONSEKI_HOME/konseki" query status
+# 已设置 KONSEKI_HOME 时使用自定义目录，否则使用默认 macOS 目录
+"${KONSEKI_HOME:-$HOME/Library/Application Support/Konseki}/konseki" query status
 ```
 
 默认目录为 `~/Library/Application Support/Konseki`。`query status/days/day/snapshots/search` 输出只读 JSON；文本按隐私设置脱敏，截图路径指向原始可读 JPEG。技能只安装说明，不静态导出历史记录。

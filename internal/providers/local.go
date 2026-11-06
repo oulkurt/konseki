@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖系统钥匙串命令与 CLI 凭据文件。
+ * [OUTPUT]: 只读发现 Claude Code 与 Codex 凭据；缺失时跳过。
+ * [POS]: 目录的本机凭据适配；不写凭据，不参与 query。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package providers
 
 import (
