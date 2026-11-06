@@ -292,18 +292,24 @@ func profileMD(opts Options, days []DayData) []byte {
 	return []byte(sb.String())
 }
 
+const (
+	daySummaryHeading  = "## 摘要\n\n"
+	dayTimelineHeading = "## 原始时间轴\n\n"
+	dayEmpty           = "这一天没有记录。\n"
+)
+
 // dayMD 是一天的人话版。
 func dayMD(d DayData) []byte {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# %s\n\n", d.Day)
 
 	if len(d.Entries) == 0 && len(d.Blocks) == 0 {
-		sb.WriteString("这一天没有记录。\n")
+		sb.WriteString(dayEmpty)
 		return []byte(sb.String())
 	}
 
 	if len(d.Entries) > 0 {
-		sb.WriteString("## 摘要\n\n")
+		sb.WriteString(daySummaryHeading)
 		for _, e := range d.Entries {
 			fmt.Fprintf(&sb, "### %s–%s · %s\n\n", e.Start.Format("15:04"), e.End.Format("15:04"), e.Headline)
 			if e.Summary != "" {
@@ -333,7 +339,7 @@ func dayMD(d DayData) []byte {
 	}
 
 	if len(d.Blocks) > 0 {
-		sb.WriteString("## 原始时间轴\n\n")
+		sb.WriteString(dayTimelineHeading)
 		sb.WriteString("| 时间 | App | 窗口标题 | 时长 |\n| --- | --- | --- | --- |\n")
 		for _, b := range d.Blocks {
 			title := ""

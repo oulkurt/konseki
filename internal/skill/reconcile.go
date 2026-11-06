@@ -61,7 +61,7 @@ func Reconcile(opts Options, days []DayData) (int, error) {
 func generatedDay(b []byte, day, ext string) bool {
 	if ext == ".md" {
 		text := string(b)
-		return strings.HasPrefix(text, "# "+day+"\n\n") && (strings.Contains(text, "## 摘要\n\n") || strings.Contains(text, "## 原始时间轴\n\n") || strings.HasSuffix(text, "这一天没有记录。\n"))
+		return strings.HasPrefix(text, "# "+day+"\n\n") && (strings.Contains(text, daySummaryHeading) || strings.Contains(text, dayTimelineHeading) || strings.HasSuffix(text, dayEmpty))
 	}
 	var value struct {
 		Day     string          `json:"day"`
