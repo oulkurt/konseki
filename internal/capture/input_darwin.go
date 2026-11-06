@@ -138,7 +138,7 @@ func platformRequestScreenPermission() PermState {
 	return PermDenied
 }
 
-// RequestAccessibility 请求辅助功能权限，应由用户操作触发。
+// platformRequestAccessibility 执行已通过许可检查的辅助功能授权请求。
 func platformRequestAccessibility() (state PermState) {
 	initPlatform()
 	withPool(func() {

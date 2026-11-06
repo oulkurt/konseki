@@ -1,9 +1,9 @@
 //go:build !e2e
 
 /*
- * [INPUT]: 依赖构建期采集保护。
- * [OUTPUT]: 验证无窗口的授权边界。
- * [POS]: 采集入口回归测试。
+ * [INPUT]: 依赖正式构建许可策略与假后端。
+ * [OUTPUT]: 验证环境值不改变正式构建的后端调用。
+ * [POS]: 正式构建的许可行为回归测试，不调用原生 API。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture
