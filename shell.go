@@ -121,6 +121,7 @@ func (a *app) view(c *ui.Context) {
 							a.renderRecorderPermissions(c, pal)
 							a.renderRecorderFields(c, pal)
 							a.renderRecorderPrivacy(c, pal)
+							a.renderRecorderStorage(c, pal)
 							a.renderRecentSessions(c, pal)
 							a.renderDanger(c, pal)
 						case 1:

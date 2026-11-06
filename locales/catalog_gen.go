@@ -34,6 +34,76 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderStorage says "存储配额"
+// in the language the app shows.
+//
+// 记录设置页的存储配额卡片标题。
+func RecorderStorage() string { return In(i18n.Locale()).RecorderStorage() }
+
+// RecorderStorage says "存储配额"
+// in the language of msgs.
+//
+// 记录设置页的存储配额卡片标题。
+func (msgs Messages) RecorderStorage() string {
+	return Catalog.Format(msgs.locale, "recorderStorage", nil)
+}
+
+// RecorderStorageLimit says "存储上限"
+// in the language the app shows.
+//
+// 存储配额卡片的最大存储量字段。
+func RecorderStorageLimit() string { return In(i18n.Locale()).RecorderStorageLimit() }
+
+// RecorderStorageLimit says "存储上限"
+// in the language of msgs.
+//
+// 存储配额卡片的最大存储量字段。
+func (msgs Messages) RecorderStorageLimit() string {
+	return Catalog.Format(msgs.locale, "recorderStorageLimit", nil)
+}
+
+// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。"
+// in the language the app shows.
+//
+// 存储上限字段的单位和范围。
+func RecorderStorageHelp() string { return In(i18n.Locale()).RecorderStorageHelp() }
+
+// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。"
+// in the language of msgs.
+//
+// 存储上限字段的单位和范围。
+func (msgs Messages) RecorderStorageHelp() string {
+	return Catalog.Format(msgs.locale, "recorderStorageHelp", nil)
+}
+
+// RecorderOutput says "输出目录"
+// in the language the app shows.
+//
+// 存储配额卡片的当前采集输出目录。
+func RecorderOutput() string { return In(i18n.Locale()).RecorderOutput() }
+
+// RecorderOutput says "输出目录"
+// in the language of msgs.
+//
+// 存储配额卡片的当前采集输出目录。
+func (msgs Messages) RecorderOutput() string {
+	return Catalog.Format(msgs.locale, "recorderOutput", nil)
+}
+
+// RecorderReveal says "在访达中显示"
+// in the language the app shows.
+//
+// 存储配额卡片中打开输出目录位置的按钮。
+func RecorderReveal() string { return In(i18n.Locale()).RecorderReveal() }
+
+// RecorderReveal says "在访达中显示"
+// in the language of msgs.
+//
+// 存储配额卡片中打开输出目录位置的按钮。
+func (msgs Messages) RecorderReveal() string {
+	return Catalog.Format(msgs.locale, "recorderReveal", nil)
+}
+
 // RecorderPermissions says "系统权限"
 // in the language the app shows.
 //

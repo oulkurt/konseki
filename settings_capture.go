@@ -8,6 +8,8 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"konseki/internal/config"
 	"konseki/locales"
@@ -52,6 +54,32 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 				ui.Box(c).FillWidth().Height(5).Radius(3).Background(pal.rowHoverBg).Draw(func(p *ui.Painter, r ui.Rect) {
 					p.Fill(ui.Rect{X: r.X, Y: r.Y, W: r.W * float32(percent) / 100, H: r.H}, pal.switchOn, 3)
 				})
+			})
+		})
+	})
+}
+
+func (a *app) renderRecorderStorage(c *ui.Context, pal palette) {
+	msg := locales.In(c.Locale())
+	a.settingsCard(c, pal, func() {
+		ui.Column(c).FillWidth().Children(func() {
+			a.settingsRow(c, msg.RecorderStorageLimit(), msg.RecorderStorageHelp(), pal, func() {
+				if !a.storageFocus {
+					a.storageDraft = strconv.Itoa(a.cfgNow.Recorder.MaxStorageMB)
+				}
+				in := ui.TextInput(c.Key("recorder-storage"), &a.storageDraft).Width(110).Label(msg.RecorderStorageLimit())
+				focused := in.Focused()
+				if in.Submitted() || (a.storageFocus && !focused) {
+					if n, err := strconv.Atoi(strings.TrimSpace(a.storageDraft)); err == nil {
+						a.updateRecorder(func(r *config.Recorder) { r.MaxStorageMB = n })
+					}
+				}
+				a.storageFocus = focused
+			})
+			a.settingsRow(c, msg.RecorderOutput(), a.cfgNow.Recorder.Dir(a.appDir), pal, func() {
+				if ui.Button(c.Key("recorder-reveal"), msg.RecorderReveal()).Clicked() && a.showFolder != nil {
+					a.showFolder(a.cfgNow.Recorder.Dir(a.appDir))
+				}
 			})
 		})
 	})

@@ -1,5 +1,10 @@
 {
   "@@locale": "en",
+  "recorderStorage": "Storage quota",
+  "recorderStorageLimit": "Storage limit",
+  "recorderStorageHelp": "In MB, from 100 to 200,000.",
+  "recorderOutput": "Output folder",
+  "recorderReveal": "Show in file manager",
   "recorderPermissions": "System permissions",
   "recorderScreenPermission": "Screen recording",
   "recorderAccessibility": "Accessibility",

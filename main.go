@@ -95,6 +95,8 @@ type app struct {
 	ocrLanguagesFocus bool
 	ocrEveryFocus     bool
 	sensitiveFocus    bool
+	storageDraft      string
+	storageFocus      bool
 	sumEntries        []summary.Entry
 	sumErr            string
 	sumRunning        bool
