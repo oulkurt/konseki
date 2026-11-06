@@ -198,7 +198,7 @@
   "@recorderTypingHelp": {"description": "采集参数卡片输入停顿字段的说明。"},
   "recorderPollHelp": "没有输入时按这个间隔检查画面变化，0 表示关闭。",
   "@recorderPollHelp": {"description": "采集参数卡片画面轮询字段的说明。"},
-  "recorderQualityHelp": "JPEG 质量，越低文件越小。",
+  "recorderQualityHelp": "压缩质量，数值越低文件越小。",
   "@recorderQualityHelp": {"description": "采集参数卡片截图质量字段的说明。"},
   "recorderStorageEvict": "超出上限时，从最旧的截图和记录删起，删到上限的 90%。",
   "@recorderStorageEvict": {"description": "活动记录器卡片存储条右侧的淘汰规则提示。"},

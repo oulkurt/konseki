@@ -1426,13 +1426,13 @@ func (msgs Messages) RecorderPollHelp() string {
 	return Catalog.Format(msgs.locale, "recorderPollHelp", nil)
 }
 
-// RecorderQualityHelp says "JPEG 质量，越低文件越小。"
+// RecorderQualityHelp says "压缩质量，数值越低文件越小。"
 // in the language the app shows.
 //
 // 采集参数卡片截图质量字段的说明。
 func RecorderQualityHelp() string { return In(i18n.Locale()).RecorderQualityHelp() }
 
-// RecorderQualityHelp says "JPEG 质量，越低文件越小。"
+// RecorderQualityHelp says "压缩质量，数值越低文件越小。"
 // in the language of msgs.
 //
 // 采集参数卡片截图质量字段的说明。
