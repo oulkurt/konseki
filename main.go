@@ -82,6 +82,7 @@ type app struct {
 	// ---- 摘要 ----
 	// 视图切换：0 = 时间轴，1 = 设置
 	tab          int
+	settingsTab  int
 	sumEntries   []summary.Entry
 	sumErr       string
 	sumRunning   bool

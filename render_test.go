@@ -68,12 +68,15 @@ func TestTabsRender(t *testing.T) {
 		}
 	}
 
-	// 切到设置页，四个区块都要在
+	// 切到设置页，各区块位于对应子页。
 	a.tab = 1
-	tt = ui.NewTester(a.view, 760, 1400)
-	for _, want := range []string{"Capture", "Summaries", "Providers", "Skill"} {
-		if !tt.HasText(want) {
-			t.Errorf("设置页缺少 %q，texts=%q", want, tt.Texts())
+	for page, labels := range [][]string{{"Capture"}, {"Summaries", "Providers"}, {"Skill"}} {
+		a.settingsTab = page
+		tt = ui.NewTester(a.view, 760, 1800)
+		for _, want := range labels {
+			if !tt.HasText(want) {
+				t.Errorf("设置页缺少 %q，texts=%q", want, tt.Texts())
+			}
 		}
 	}
 }
@@ -83,6 +86,7 @@ func TestRedactTogglePersists(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	a.tab = 1
+	a.settingsTab = 1
 	tt := ui.NewTester(a.view, 760, 1600)
 
 	if !a.cfg.Get().Redact.Secrets {
@@ -102,6 +106,7 @@ func TestAddProvider(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	a.tab = 1
+	a.settingsTab = 1
 
 	before := len(a.cfg.Get().Providers)
 	a.addProvider(mustPreset(t, "deepseek"))
@@ -127,6 +132,7 @@ func TestSummaryEmptyState(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	a.tab = 1
+	a.settingsTab = 1
 	tt := ui.NewTester(a.view, 760, 1600)
 	if tt.HasText("今天的摘要") {
 		t.Error("没有摘要时不该显示摘要列表")

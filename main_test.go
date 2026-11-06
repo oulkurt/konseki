@@ -31,6 +31,18 @@ func TestTestAppClearExportIsIsolated(t *testing.T) {
 	}
 }
 
+func TestSettingsSubpages(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.tab = 1
+	tt := ui.NewTester(a.view, 800, 1600)
+	for _, label := range []string{"记录", "模型", "通用"} {
+		if !tt.HasText(label) {
+			t.Errorf("缺少设置子页 %s", label)
+		}
+	}
+}
+
 // 视图能在没有窗口的情况下构建，这是 mygo native 模板的核心好处：
 // 界面逻辑可以纯查测试，不用起 GUI。
 

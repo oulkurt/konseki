@@ -85,6 +85,7 @@ func shot(t *testing.T, state, lang string, dark bool) []byte {
 		}
 		a.addProvider(p)
 		a.tab = 1
+		a.settingsTab = 1
 		height = 3600
 	}
 	a.lastLoad = time.Now().Add(time.Hour)

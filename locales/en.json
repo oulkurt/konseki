@@ -1,5 +1,8 @@
 {
   "@@locale": "en",
+  "recorderTab": "Recording",
+  "modelsTab": "Models",
+  "generalTab": "General",
   "recorderDeleteFailed": "{count, plural, one {# file could not be deleted} other {# files could not be deleted}}",
   "shellNow": "· Now: {app} — {title}",
   "shellUntitled": "(Untitled)",

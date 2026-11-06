@@ -114,12 +114,18 @@ func (a *app) view(c *ui.Context) {
 
 					switch a.tab {
 					case 1:
-						a.startCredentialScan()
-						a.renderCaptureSection(c, pal)
-						a.renderSummariesSection(c, pal)
-						a.renderProvidersSection(c, pal)
-						a.renderLanguageSection(c, pal)
-						a.renderSkillSection(c, pal)
+						a.renderSettingsTabs(c, pal)
+						switch a.settingsTab {
+						case 0:
+							a.renderCaptureSection(c, pal)
+						case 1:
+							a.startCredentialScan()
+							a.renderSummariesSection(c, pal)
+							a.renderProvidersSection(c, pal)
+						case 2:
+							a.renderLanguageSection(c, pal)
+							a.renderSkillSection(c, pal)
+						}
 					}
 				})
 			})
@@ -133,6 +139,21 @@ func (a *app) view(c *ui.Context) {
 			ui.Box(c).
 				Absolute().Top(0).Left(0).Right(0).Height(bar.Height).
 				DragWindow()
+		}
+	})
+}
+
+func (a *app) renderSettingsTabs(c *ui.Context, pal palette) {
+	msg := locales.In(c.Locale())
+	names := []string{msg.RecorderTab(), msg.ModelsTab(), msg.GeneralTab()}
+	seg := ui.SegmentedBase(c.Key("settings-tabs"), &a.settingsTab, len(names))
+	seg.Track.Padding(2).Radius(9).Background(pal.rowHoverBg).Children(func() {
+		for i, name := range names {
+			sg := seg.Segment(i).Padding(6, 16).Radius(7)
+			if i == a.settingsTab {
+				sg.Background(pal.cardBg)
+			}
+			sg.Children(func() { ui.Text(c, name).FontSize(12).Bold().TextColor(pal.textPrimary) })
 		}
 	})
 }

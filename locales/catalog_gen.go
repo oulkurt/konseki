@@ -34,6 +34,48 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderTab says "记录"
+// in the language the app shows.
+//
+// 设置页记录子页的导航标签。
+func RecorderTab() string { return In(i18n.Locale()).RecorderTab() }
+
+// RecorderTab says "记录"
+// in the language of msgs.
+//
+// 设置页记录子页的导航标签。
+func (msgs Messages) RecorderTab() string {
+	return Catalog.Format(msgs.locale, "recorderTab", nil)
+}
+
+// ModelsTab says "模型"
+// in the language the app shows.
+//
+// 设置页模型子页的导航标签。
+func ModelsTab() string { return In(i18n.Locale()).ModelsTab() }
+
+// ModelsTab says "模型"
+// in the language of msgs.
+//
+// 设置页模型子页的导航标签。
+func (msgs Messages) ModelsTab() string {
+	return Catalog.Format(msgs.locale, "modelsTab", nil)
+}
+
+// GeneralTab says "通用"
+// in the language the app shows.
+//
+// 设置页通用子页的导航标签。
+func GeneralTab() string { return In(i18n.Locale()).GeneralTab() }
+
+// GeneralTab says "通用"
+// in the language of msgs.
+//
+// 设置页通用子页的导航标签。
+func (msgs Messages) GeneralTab() string {
+	return Catalog.Format(msgs.locale, "generalTab", nil)
+}
+
 // RecorderDeleteFailed says "{count, plural, other {# 个文件无法删除}}"
 // in the language the app shows.
 //
