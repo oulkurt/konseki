@@ -131,7 +131,8 @@ func (a *app) renderShred(c *ui.Context, width float32) {
 		}))
 		layer.Draw(func(p *ui.Painter, r ui.Rect) {
 			s.mask.Draw(p, func(cp *ui.Painter) {
-				sx, sy := float32(1024)/max(r.W, 1), float32(512)/max(r.H, 1)
+				w, h := s.mask.Size()
+				sx, sy := float32(w)/max(r.W, 1), float32(h)/max(r.H, 1)
 				for i := range s.physics.strips {
 					drawShredMask(cp, (r.W-width)/2, sx, sy, i, &s.physics)
 				}
