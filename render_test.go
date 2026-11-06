@@ -32,7 +32,9 @@ func TestTimelineRenders(t *testing.T) {
 	}
 	a.dayFilter = base.Format("2006-01-02")
 	a.receipt = buildReceiptWindow(base, nil, a.blocks, nil, 10*time.Minute)
-	a.lastLoad = time.Now() // 阻止 refresh 覆盖注入的数据
+	// 刷新按真实时间节流 2 秒，这个测试单跑就要 1.3 秒，全量并行时会超过 2 秒。
+	// 推到一小时后，refresh 才不会从空目录重读、覆盖注入的数据。
+	a.lastLoad = time.Now().Add(time.Hour)
 
 	tt := ui.NewTester(a.view, 680, 900)
 	tt.Advance(time.Second)
