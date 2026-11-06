@@ -81,10 +81,15 @@ type app struct {
 
 	// ---- 摘要 ----
 	// 视图切换：0 = 时间轴，1 = 设置
-	tab        int
-	sumEntries []summary.Entry
-	sumErr     string
-	sumRunning bool
+	tab          int
+	sumEntries   []summary.Entry
+	sumErr       string
+	sumRunning   bool
+	sumCancel    context.CancelFunc
+	sumDone      chan struct{}
+	sumEpoch     uint64
+	clearRunning bool
+	clearErr     string
 	// 摘要生成时的进度文字，UI 上直接显示。
 	sumProgress string
 	// 本次生成的脱敏命中数，给用户一个「遮了多少」的反馈。
@@ -204,10 +209,16 @@ func (a *app) summarizable() bool {
 
 // runSummary 在后台生成摘要，并在界面线程发布结果。
 func (a *app) runSummary(force bool) {
-	if a.gen == nil || a.sumRunning {
+	if a.gen == nil || a.sumRunning || a.clearRunning {
 		return
 	}
 	a.sumRunning = true
+	a.sumEpoch++
+	epoch := a.sumEpoch
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	a.sumCancel = cancel
+	done := make(chan struct{})
+	a.sumDone = done
 	a.sumErr = ""
 	a.showRedactLog = false
 
@@ -221,13 +232,12 @@ func (a *app) runSummary(force bool) {
 	}
 
 	go func() {
+		defer close(done)
+		defer cancel()
 		ocr, err := a.runner.OCRIndex(key)
 		if err != nil {
 			ocr = nil // OCR 拿不到也能生成，靠窗口标题
 		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-		defer cancel()
 
 		entries, err := gen.GenerateDay(ctx, blocks, ocr, key, window, force)
 		redactions := 0
@@ -235,6 +245,11 @@ func (a *app) runSummary(force bool) {
 			redactions = len(m.Hits())
 		}
 		a.post(func() {
+			if a.sumEpoch != epoch {
+				return
+			}
+			a.sumCancel = nil
+			a.sumDone = nil
 			a.sumRunning = false
 			a.sumRedactions = redactions
 			if err != nil {
