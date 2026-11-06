@@ -21,6 +21,7 @@ const shredFallDuration = 1700 * time.Millisecond
 var shredCoordinates = shader.MustCompile(`package main
 var Points [49]vec2
 var Count int
+var StartSegment float
 var Offset vec2
 var Scale vec2
 var HalfWidth float
@@ -28,29 +29,40 @@ var Index float
 var StripCount float
 func Fragment(dst vec4) vec4 {
     q := dst.xy / Scale - Offset
-    best := 1000000.0
+    limit := HalfWidth + 0.6
+    best2 := limit * limit
     bestAlong := 0.0
-    bestAcross := 0.5
-    bestSegment := 0.0
+    bestSegment := -1.0
+    bestA := vec2(0)
+    bestT := vec2(0)
+    bestL2 := 1.0
     for i := 0; i < 48; i++ {
         if i+1 >= Count { break }
         a := Points[i]
-        tangent := Points[i+1] - a
+        b := Points[i+1]
+        if q.y < min(a.y, b.y)-limit || q.y > max(a.y, b.y)+limit { continue }
+        if q.x < min(a.x, b.x)-limit || q.x > max(a.x, b.x)+limit { continue }
+        tangent := b - a
         l2 := max(dot(tangent,tangent), 0.0001)
         along := clamp(dot(q-a,tangent)/l2,0,1)
         delta := q-(a+tangent*along)
-        distance := length(delta)
-        if distance < best {
-            best = distance
-            normal := vec2(-tangent.y,tangent.x)/sqrt(l2)
-            bestAcross = clamp(dot(q-a,normal)/(2*HalfWidth)+0.5,0,1)
+        d2 := dot(delta, delta)
+        if d2 < best2 {
+            best2 = d2
+            bestA = a
+            bestT = tangent
+            bestL2 = l2
             bestAlong = along
             bestSegment = float(i)
         }
     }
-    coverage := 1.0-smoothstep(HalfWidth-0.6,HalfWidth+0.6,best)
+    if bestSegment < 0.0 { return vec4(0) }
+    best := sqrt(best2)
+    normal := vec2(-bestT.y,bestT.x)/sqrt(bestL2)
+    bestAcross := clamp(dot(q-bestA,normal)/(2*HalfWidth)+0.5,0,1)
+    coverage := 1.0-smoothstep(HalfWidth-0.6,limit,best)
     u := (Index + bestAcross) / StripCount
-    v := 1.0 - (bestSegment + bestAlong) / 48.0
+    v := 1.0 - (StartSegment + bestSegment + bestAlong) / 48.0
     return vec4(u*coverage,v*coverage,0,coverage)
 }
 `)
@@ -134,7 +146,7 @@ func (a *app) renderShred(c *ui.Context, width float32) {
 				w, h := s.mask.Size()
 				sx, sy := float32(w)/max(r.W, 1), float32(h)/max(r.H, 1)
 				for i := range s.physics.strips {
-					drawShredMask(cp, (r.W-width)/2, sx, sy, i, &s.physics)
+					drawShredMask(cp, (r.W-width)/2, r.H, sx, sy, i, &s.physics)
 				}
 			})
 		})
@@ -156,23 +168,44 @@ func (a *app) renderShredPaper(c *ui.Context, width float32) {
 	})
 }
 
-func drawShredMask(p *ui.Painter, x, sx, sy float32, index int, sim *shredSimulation) {
+func drawShredMask(p *ui.Painter, x, viewH, sx, sy float32, index int, sim *shredSimulation) {
 	line := &sim.strips[index]
 	if len(line.nodes) < 2 {
 		return
 	}
-	points := make([]float32, 0, (shredSegments+1)*2)
-	minX, minY, maxX, maxY := line.nodes[0].x, line.nodes[0].y, line.nodes[0].x, line.nodes[0].y
-	for _, n := range line.nodes {
-		points = append(points, n.x, n.y)
-		minX, minY = min(minX, n.x), min(minY, n.y)
-		maxX, maxY = max(maxX, n.x), max(maxY, n.y)
-	}
 	half := sim.width / float32(len(sim.strips)) * 0.46
 	pad := half + 2
-	area := ui.Rect{X: (x + minX - pad) * sx, Y: (minY - pad) * sy, W: (maxX - minX + 2*pad) * sx, H: (maxY - minY + 2*pad) * sy}
+	first, last := -1, -1
+	minX, minY := float32(1e9), float32(1e9)
+	maxX, maxY := float32(-1e9), float32(-1e9)
+	for i := 0; i+1 < len(line.nodes); i++ {
+		a, b := line.nodes[i], line.nodes[i+1]
+		if max(a.y, b.y) < -pad || min(a.y, b.y) > viewH+pad {
+			continue
+		}
+		if first < 0 {
+			first = i
+		}
+		last = i + 1
+		minX, minY = min(minX, min(a.x, b.x)), min(minY, min(a.y, b.y))
+		maxX, maxY = max(maxX, max(a.x, b.x)), max(maxY, max(a.y, b.y))
+	}
+	if first < 0 {
+		return
+	}
+	y0 := max(0, (minY-pad)*sy)
+	y1 := min(viewH*sy, (maxY+pad)*sy)
+	if y1 <= y0 {
+		return
+	}
+	vis := line.nodes[first : last+1]
+	points := make([]float32, 0, len(vis)*2)
+	for _, n := range vis {
+		points = append(points, n.x, n.y)
+	}
+	area := ui.Rect{X: (x + minX - pad) * sx, Y: y0, W: (maxX - minX + 2*pad) * sx, H: y1 - y0}
 	shredCoordinates.Draw(p, area, shader.Options{Uniforms: map[string]any{
-		"Points": points, "Count": len(line.nodes), "Offset": []float32{x, 0}, "Scale": []float32{sx, sy},
+		"Points": points, "Count": len(vis), "StartSegment": float32(first), "Offset": []float32{x, 0}, "Scale": []float32{sx, sy},
 		"HalfWidth": half, "Index": float32(index), "StripCount": float32(len(sim.strips)),
 	}})
 }

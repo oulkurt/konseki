@@ -40,8 +40,9 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 	a.receipt = ReceiptDay{}
 	a.dayFilter = ""
 	a.lastLoad = time.Now().Add(time.Hour)
-	a.shred.pending = true
 	tt := ui.NewTester(a.view, 780, 900)
+	a.shred.pending = true
+	tt.Advance(17 * time.Millisecond)
 	if !a.shred.pending || a.shred.feedStarted {
 		t.Fatal("未从收回阶段开始")
 	}
@@ -56,7 +57,6 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 	if len(a.shred.physics.strips) != 74 || len(a.shred.physics.strips[0].nodes) < 2 {
 		t.Fatalf("碎纸没有送出: %d", len(a.shred.physics.strips))
 	}
-	// 推进物理时间至碎纸落尽，验证自动切换到新小票送纸阶段。
 	a.shred.physics.elapsed = float32((shredFeedDuration + shredFallDuration).Seconds())
 	tt.Advance(20 * time.Millisecond)
 	if a.shred.pending || len(a.clearReceipt.Lines) != 0 {
@@ -73,7 +73,7 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 	a.dayFilter = ""
 	a.lastLoad = time.Now().Add(time.Hour)
 	a.shred.pending = true
-	tt.Frame()
+	tt.Advance(17 * time.Millisecond)
 	if err := tt.Click("今天 ⌄"); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,6 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 
 	a.shred.pending = true
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	tt.Frame()
 	if a.shred.pending {
 		t.Fatal("减少动态效果时未立即结束")
 	}
