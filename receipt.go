@@ -158,9 +158,13 @@ func (a *app) renderPaper(c *ui.Context, width float32) {
 		a.feedStart = c.Now()
 		a.feedDistance = -1
 	}
-	h := a.paperHandle.Bounds(c).H
-	if a.feedDistance < 0 && h > 0 {
-		a.feedDistance = h
+	// 句柄记的是上一次布局的纸：换天时是旧的一天，清除后是被清掉的那张。
+	// 换纸这一帧先把纸藏起来，下一帧量出新纸的高度，再从那一帧开始送纸。
+	if a.feedDistance < 0 && c.Now().After(a.feedStart) {
+		if h := a.paperHandle.Bounds(c).H; h > 0 {
+			a.feedDistance = h
+			a.feedStart = c.Now()
+		}
 	}
 	distance := a.feedDistance
 	if distance < 0 {

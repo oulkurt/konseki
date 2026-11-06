@@ -92,6 +92,21 @@ func TestReceiptFeed(t *testing.T) {
 	}
 }
 
+// 换上一张短纸时，送纸距离要量新纸。沿用旧纸的高度，短纸会藏在打印机里大半程，最后猛地掉出来。
+// 清除成功后印空白小票走这条路，从长的一天切到短的一天也走这条路。
+func TestReceiptFeedMeasuresNewPaper(t *testing.T) {
+	a, tt := receiptTestApp(t)
+	tt.Advance(time.Second)
+	long := a.feedDistance
+	a.receipt = ReceiptDay{}
+	a.stopShred()
+	tt.Frame()
+	tt.Advance(time.Second / 60)
+	if a.feedDistance <= 0 || a.feedDistance >= long/2 {
+		t.Fatalf("送纸距离 = %.1f，应该是空白小票的高度，不是旧纸的 %.1f", a.feedDistance, long)
+	}
+}
+
 func TestReceiptNewLineFeed(t *testing.T) {
 	a, tt := receiptTestApp(t)
 	tt.Advance(time.Second)

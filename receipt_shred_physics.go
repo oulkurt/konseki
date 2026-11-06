@@ -46,6 +46,23 @@ func (s *shredSimulation) advance(now time.Time) {
 	}
 }
 
+// below 报告纸条是否全部落到 y 以下，并且离 y 至少一条纸宽。
+// 送纸结束前纸条还挂在出纸口，一律返回 false。
+func (s *shredSimulation) below(y float32) bool {
+	if s.elapsed < float32(shredFeedDuration.Seconds()) {
+		return false
+	}
+	margin := s.width / float32(len(s.strips))
+	for _, line := range s.strips {
+		for _, n := range line.nodes {
+			if n.y < y+margin {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func shredWind(x, y, t float32) (float32, float32) {
 	xWind := 280*math.Sin(float64(t)*1.8) + 180*math.Sin(float64(y)*0.018-float64(t)*2.4) + 70*math.Sin(float64(x)*0.025+float64(t)*3.1)
 	yWind := 85 * math.Sin(float64(x)*0.018+float64(y)*0.009+float64(t)*2.2)

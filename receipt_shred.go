@@ -61,22 +61,29 @@ func Fragment(dst vec4) vec4 {
     normal := vec2(-bestT.y,bestT.x)/sqrt(bestL2)
     bestAcross := clamp(dot(q-bestA,normal)/(2*HalfWidth)+0.5,0,1)
     coverage := 1.0-smoothstep(HalfWidth-0.6,limit,best)
+    edge := smoothstep(HalfWidth*0.35,HalfWidth,best)
     u := (Index + bestAcross) / StripCount
     v := 1.0 - (StartSegment + bestSegment + bestAlong) / 48.0
-    return vec4(u*coverage,v*coverage,0,coverage)
+    return vec4(u*coverage,v*coverage,edge*coverage,coverage)
 }
 `)
 
 var shredEffect = shader.MustCompile(`package main
 var SourceSize vec2
+var EdgeShade float
 func LayerEffect(pos vec2) vec4 {
     m := image0Sample(pos * image0Size() / rectSize())
     if m.a < 0.01 { return vec4(0) }
     uv := clamp(m.rg / m.a, vec2(0), vec2(1))
     src := vec2((rectSize().x - SourceSize.x) / 2.0, 0) + uv * SourceSize
-    return layerSample(src) * m.a
+    col := layerSample(src)
+    shade := 1.0 - EdgeShade * clamp(m.b / m.a, 0, 1)
+    return vec4(col.rgb * shade, col.a) * m.a
 }
 `)
+
+// shredEdgeShade 是纸条边缘压暗的比例。浅色背景和纸色几乎一样，不压暗就只看得见字。
+const shredEdgeShade = 0.14
 
 type shredAnimation struct {
 	pending     bool
@@ -129,7 +136,8 @@ func (a *app) renderShred(c *ui.Context, width float32) {
 		s.physics.reset(c.Now(), width, s.height)
 	}
 	s.physics.advance(c.Now())
-	if s.physics.elapsed >= float32((shredFeedDuration + shredFallDuration).Seconds()) {
+	// 纸条全部落出画面就收尾。窗口矮时纸条一秒多就落完，不用空等到下落时长用完。
+	if s.physics.elapsed >= float32((shredFeedDuration+shredFallDuration).Seconds()) || s.physics.below(bounds.H) {
 		a.stopShred()
 		stage.Children(func() { ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, width) }) })
 		return
@@ -139,7 +147,7 @@ func (a *app) renderShred(c *ui.Context, width float32) {
 	}
 	stage.Children(func() {
 		layer := ui.Box(c).Fill().PassThrough().Effect(shredEffect.Effect(shader.Options{
-			Uniforms: map[string]any{"SourceSize": []float32{width, s.height}}, Images: [4]*ui.Bitmap{s.mask.Bitmap()},
+			Uniforms: map[string]any{"SourceSize": []float32{width, s.height}, "EdgeShade": float32(shredEdgeShade)}, Images: [4]*ui.Bitmap{s.mask.Bitmap()},
 		}))
 		layer.Draw(func(p *ui.Painter, r ui.Rect) {
 			s.mask.Draw(p, func(cp *ui.Painter) {

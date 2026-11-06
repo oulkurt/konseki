@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖碎纸物理模拟和固定时间步长。
- * [OUTPUT]: 验证模拟可确定重放、三阶段过渡、切日中止及减少动态效果。
+ * [OUTPUT]: 验证模拟可确定重放、纸条落出画面才收尾、三阶段过渡、切日中止及减少动态效果。
  * [POS]: 粉碎动画的物理与状态机回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -29,6 +29,30 @@ func TestShredPhysicsDeterministic(t *testing.T) {
 	}
 	if len(a.strips) != 74 || len(a.strips[0].nodes) == 0 {
 		t.Fatalf("纸条未送出: %d", len(a.strips))
+	}
+}
+
+// 纸条落出画面就收尾。送纸结束前纸条还挂在出纸口，不能算落完。
+func TestShredBelowWaitsForRelease(t *testing.T) {
+	start := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
+	var s shredSimulation
+	s.reset(start, 520, 400)
+	var gone time.Duration
+	for i := 1; i <= 3*60 && gone == 0; i++ {
+		at := start.Add(time.Duration(i) * time.Second / 60)
+		s.advance(at)
+		if s.elapsed < float32(shredFeedDuration.Seconds()) {
+			if s.below(-1e6) {
+				t.Fatalf("送纸还没结束就判定纸条落完：%.3f 秒", s.elapsed)
+			}
+			continue
+		}
+		if s.below(400) {
+			gone = at.Sub(start)
+		}
+	}
+	if gone == 0 || gone >= shredFeedDuration+shredFallDuration {
+		t.Fatalf("400 高的画面里纸条落完的时刻 = %v，应该早于 %v", gone, shredFeedDuration+shredFallDuration)
 	}
 }
 
