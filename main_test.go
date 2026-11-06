@@ -204,7 +204,7 @@ func TestRecorderControlsPersist(t *testing.T) {
 	}
 	a.tab = 1
 	tt = ui.NewTester(a.view, 760, 1400)
-	rect, ok := tt.Find("Enable Context Awareness")
+	rect, ok := tt.Find("活动记录器")
 	if !ok {
 		t.Fatal("设置开关缺失")
 	}

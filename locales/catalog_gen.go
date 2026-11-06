@@ -34,6 +34,204 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// RecorderTitle says "活动记录器"
+// in the language the app shows.
+//
+// 记录设置页活动记录器卡片的标题。
+func RecorderTitle() string { return In(i18n.Locale()).RecorderTitle() }
+
+// RecorderTitle says "活动记录器"
+// in the language of msgs.
+//
+// 记录设置页活动记录器卡片的标题。
+func (msgs Messages) RecorderTitle() string {
+	return Catalog.Format(msgs.locale, "recorderTitle", nil)
+}
+
+// RecorderEnable says "记录活动"
+// in the language the app shows.
+//
+// 活动记录器卡片的总开关标签。
+func RecorderEnable() string { return In(i18n.Locale()).RecorderEnable() }
+
+// RecorderEnable says "记录活动"
+// in the language of msgs.
+//
+// 活动记录器卡片的总开关标签。
+func (msgs Messages) RecorderEnable() string {
+	return Catalog.Format(msgs.locale, "recorderEnable", nil)
+}
+
+// RecorderEnableDescription says "在此设备上记录活动。"
+// in the language the app shows.
+//
+// 活动记录器总开关下的说明。
+func RecorderEnableDescription() string { return In(i18n.Locale()).RecorderEnableDescription() }
+
+// RecorderEnableDescription says "在此设备上记录活动。"
+// in the language of msgs.
+//
+// 活动记录器总开关下的说明。
+func (msgs Messages) RecorderEnableDescription() string {
+	return Catalog.Format(msgs.locale, "recorderEnableDescription", nil)
+}
+
+// RecorderSessions says "会话数"
+// in the language the app shows.
+//
+// 活动记录器卡片中已保存的会话数量。
+func RecorderSessions() string { return In(i18n.Locale()).RecorderSessions() }
+
+// RecorderSessions says "会话数"
+// in the language of msgs.
+//
+// 活动记录器卡片中已保存的会话数量。
+func (msgs Messages) RecorderSessions() string {
+	return Catalog.Format(msgs.locale, "recorderSessions", nil)
+}
+
+// RecorderSnapshots says "快照数"
+// in the language the app shows.
+//
+// 活动记录器卡片中已保存的快照数量。
+func RecorderSnapshots() string { return In(i18n.Locale()).RecorderSnapshots() }
+
+// RecorderSnapshots says "快照数"
+// in the language of msgs.
+//
+// 活动记录器卡片中已保存的快照数量。
+func (msgs Messages) RecorderSnapshots() string {
+	return Catalog.Format(msgs.locale, "recorderSnapshots", nil)
+}
+
+// RecorderCurrentSession says "当前会话"
+// in the language the app shows.
+//
+// 活动记录器卡片中当前会话的状态标签。
+func RecorderCurrentSession() string { return In(i18n.Locale()).RecorderCurrentSession() }
+
+// RecorderCurrentSession says "当前会话"
+// in the language of msgs.
+//
+// 活动记录器卡片中当前会话的状态标签。
+func (msgs Messages) RecorderCurrentSession() string {
+	return Catalog.Format(msgs.locale, "recorderCurrentSession", nil)
+}
+
+// RecorderFrontApp says "前台应用"
+// in the language the app shows.
+//
+// 活动记录器卡片中前台应用的标签。
+func RecorderFrontApp() string { return In(i18n.Locale()).RecorderFrontApp() }
+
+// RecorderFrontApp says "前台应用"
+// in the language of msgs.
+//
+// 活动记录器卡片中前台应用的标签。
+func (msgs Messages) RecorderFrontApp() string {
+	return Catalog.Format(msgs.locale, "recorderFrontApp", nil)
+}
+
+// RecorderActive says "活跃"
+// in the language the app shows.
+//
+// 活动记录器卡片中存在当前会话时的状态。
+func RecorderActive() string { return In(i18n.Locale()).RecorderActive() }
+
+// RecorderActive says "活跃"
+// in the language of msgs.
+//
+// 活动记录器卡片中存在当前会话时的状态。
+func (msgs Messages) RecorderActive() string {
+	return Catalog.Format(msgs.locale, "recorderActive", nil)
+}
+
+// RecorderIdleState says "空闲"
+// in the language the app shows.
+//
+// 活动记录器卡片中没有当前会话时的状态。
+func RecorderIdleState() string { return In(i18n.Locale()).RecorderIdleState() }
+
+// RecorderIdleState says "空闲"
+// in the language of msgs.
+//
+// 活动记录器卡片中没有当前会话时的状态。
+func (msgs Messages) RecorderIdleState() string {
+	return Catalog.Format(msgs.locale, "recorderIdleState", nil)
+}
+
+// RecorderStorageUsed says "已用 {used} / {limit} MB（{percent}%）"
+// in the language the app shows.
+//
+// 活动记录器卡片中的存储用量和上限。
+func RecorderStorageUsed(used string, limit int, percent int) string {
+	return In(i18n.Locale()).RecorderStorageUsed(used, limit, percent)
+}
+
+// RecorderStorageUsed says "已用 {used} / {limit} MB（{percent}%）"
+// in the language of msgs.
+//
+// 活动记录器卡片中的存储用量和上限。
+func (msgs Messages) RecorderStorageUsed(used string, limit int, percent int) string {
+	return Catalog.Format(msgs.locale, "recorderStorageUsed", map[string]any{"used": used, "limit": limit, "percent": percent})
+}
+
+// RecorderRetention says "保留天数"
+// in the language the app shows.
+//
+// 记录设置页的采集数据保留期限标签。
+func RecorderRetention() string { return In(i18n.Locale()).RecorderRetention() }
+
+// RecorderRetention says "保留天数"
+// in the language of msgs.
+//
+// 记录设置页的采集数据保留期限标签。
+func (msgs Messages) RecorderRetention() string {
+	return Catalog.Format(msgs.locale, "recorderRetention", nil)
+}
+
+// RecorderRetentionDescription says "原始截图和屏幕文字的保留期限。摘要不会过期。"
+// in the language the app shows.
+//
+// 保留期限字段下说明其作用范围。
+func RecorderRetentionDescription() string { return In(i18n.Locale()).RecorderRetentionDescription() }
+
+// RecorderRetentionDescription says "原始截图和屏幕文字的保留期限。摘要不会过期。"
+// in the language of msgs.
+//
+// 保留期限字段下说明其作用范围。
+func (msgs Messages) RecorderRetentionDescription() string {
+	return Catalog.Format(msgs.locale, "recorderRetentionDescription", nil)
+}
+
+// RecorderDays says "{count, plural, other {# 天}}"
+// in the language the app shows.
+//
+// 记录设置页保留期限菜单中的天数。
+func RecorderDays(count int) string { return In(i18n.Locale()).RecorderDays(count) }
+
+// RecorderDays says "{count, plural, other {# 天}}"
+// in the language of msgs.
+//
+// 记录设置页保留期限菜单中的天数。
+func (msgs Messages) RecorderDays(count int) string {
+	return Catalog.Format(msgs.locale, "recorderDays", map[string]any{"count": count})
+}
+
+// RecorderForever says "永久"
+// in the language the app shows.
+//
+// 记录设置页保留期限菜单中的永久选项。
+func RecorderForever() string { return In(i18n.Locale()).RecorderForever() }
+
+// RecorderForever says "永久"
+// in the language of msgs.
+//
+// 记录设置页保留期限菜单中的永久选项。
+func (msgs Messages) RecorderForever() string {
+	return Catalog.Format(msgs.locale, "recorderForever", nil)
+}
+
 // RecorderCapture says "采集参数"
 // in the language the app shows.
 //
