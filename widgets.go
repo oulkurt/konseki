@@ -104,10 +104,13 @@ func (a *app) settingsRow(c *ui.Context, title, subtitle string, pal palette, ri
 					FontSize(13.5).
 					Bold().
 					TextColor(pal.textPrimary)
-				ui.Text(c, subtitle).
-					FontSize(12.2).
-					TextColor(pal.textSecondary).
-					LineHeight(1.38)
+				// 空文字也占一行高，标题会被顶到右侧控件的上方。
+				if subtitle != "" {
+					ui.Text(c, subtitle).
+						FontSize(12.2).
+						TextColor(pal.textSecondary).
+						LineHeight(1.38)
+				}
 			})
 			rightControl()
 		})

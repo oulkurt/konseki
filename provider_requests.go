@@ -154,12 +154,6 @@ func (a *app) fetchModels(idx int) {
 				}
 			})
 			a.cfgNow = a.cfg.Get()
-			for _, p := range a.cfgNow.Providers {
-				if p.Preset == pc.Preset && p.Label == pc.Label && a.openProvider != "" {
-					a.modelDraft = p.DefaultModel
-					break
-				}
-			}
 			a.fetchMsg = fmt.Sprintf("拉到 %d 个模型", len(chat))
 		})
 	}()

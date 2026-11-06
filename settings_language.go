@@ -27,7 +27,7 @@ func (a *app) setLanguage(lang string) {
 func (a *app) renderLanguageSection(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	a.settingsCard(c, pal, func() {
-		a.settingsRow(c, msg.TabsLanguage(), "", pal, func() {
+		a.settingsRow(c, msg.TabsLanguage(), msg.TabsLanguageHelp(), pal, func() {
 			menu := func(m *ui.Menu) {
 				for _, lang := range []string{"zh-Hans", "en"} {
 					if m.Item(i18n.Autonym(lang)).Checked(a.cfgNow.Language == lang).Chosen() {

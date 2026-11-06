@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"konseki/internal/capture"
+	"konseki/internal/config"
 	"konseki/internal/providers"
 
 	"github.com/egoist/mygo/ui"
@@ -44,9 +45,13 @@ func prepareSettingsShotApp(t *testing.T, lang string) (*app, func()) {
 			{App: "Telegram", Bundle: "ru.keepcoder.Telegram"},
 		}
 	}
+	// 「记录中」要和其他状态对得上：屏幕录制已授权，有进行中的会话和前台应用。
 	a.status = capture.Status{
-		Phase: capture.PhaseActive,
-		Usage: capture.Usage{Bytes: 344000000, Shots: 5721, Snapshots: 5832, Sessions: 33},
+		Phase:   capture.PhaseActive,
+		Session: &capture.Session{ID: "s4", Start: time.Date(2026, 11, 5, 15, 20, 0, 0, time.Local)},
+		Front:   capture.Front{App: "Terminal", Bundle: "com.apple.Terminal", Title: "konseki — go test"},
+		Perms:   capture.Perms{Screen: capture.PermGranted, Accessibility: capture.PermGranted},
+		Usage:   capture.Usage{Bytes: 344000000, Shots: 5721, Snapshots: 5832, Sessions: 33},
 	}
 	a.hasSummaries = true
 	a.lastSessions = time.Now().Add(time.Hour)
@@ -74,6 +79,12 @@ func prepareSettingsShotApp(t *testing.T, lang string) (*app, func()) {
 		t.Fatal("缺少 zhipu 预设")
 	}
 	a.addProvider(preset)
+	// 供应商配好模型再设为默认，摘要模型才有值。
+	if err := a.cfg.Update(func(c *config.Config) { c.Providers[0].DefaultModel = "glm-4.6" }); err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	a.cfgNow = a.cfg.Get()
 	a.setDefaultProvider(a.cfgNow.Providers[0])
 	// 语言选择器读的是配置，界面读的是测试器的语言，两边要一致。
 	a.setLanguage(lang)

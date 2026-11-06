@@ -1,5 +1,5 @@
 /*
- * [INPUT]: 依赖采集配置、运行中应用列表、语言目录与输入控件。
+ * [INPUT]: 依赖采集配置、运行中应用列表、语言目录、输入控件与模型页的自动摘要开关行。
  * [OUTPUT]: 提供文字识别、输入监听和敏感应用设置，敏感应用可从运行中的应用里添加。
  * [POS]: 记录设置的隐私边界，将输入归一化后交给采集器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -165,13 +165,7 @@ func (a *app) renderRecorderSummary(c *ui.Context, pal palette) {
 					a.scrollState.Y = 0
 				}
 			})
-			a.settingsRow(c, msg.ModelsAuto(), "", pal, func() {
-				on := a.cfgNow.Summary.Auto
-				if renderPillSwitch(c, "recorder-summary-auto", &on, pal) {
-					a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = on })
-					a.cfgNow = a.cfg.Get()
-				}
-			})
+			a.renderAutoSummaryRow(c, pal, "recorder-summary-auto")
 		})
 	})
 }

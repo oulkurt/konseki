@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用配置、采集参数字段表、供应商预设和运行应用注入。
- * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加和去重、供应商区域切换、屏幕录制生效前才提示重启。
+ * [OUTPUT]: 验证字段提交、每个字段都有说明、敏感应用快速添加和去重、供应商区域切换、屏幕录制生效前才提示重启、无说明的设置行居中对齐、模型页说明与自动摘要的实际间隔、供应商输入框跟随外部改动、移除第一个供应商不越界。
  * [POS]: 记录与模型设置交互边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"konseki/internal/capture"
+	"konseki/internal/config"
 	"konseki/internal/providers"
 	"konseki/locales"
 
@@ -138,6 +139,68 @@ func TestProviderRegionSwitch(t *testing.T) {
 	}
 }
 
+// 编辑框开着时，别处改了配置（重新导入凭据、拉取模型），旧草稿不能写回去；用户输入仍然写进配置。
+func TestProviderEditorFollowsOutsideChanges(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	preset, ok := providers.ByID("zhipu")
+	if !ok {
+		t.Fatal("缺少 zhipu 预设")
+	}
+	a.addProvider(preset)
+	a.tab = 1
+	a.settingsTab = 1
+	tt := ui.NewTester(a.view, 780, 1800)
+	a.saveProviderField(0, func(p *config.ProviderConfig) { p.APIKey = "sk-new"; p.DefaultModel = "glm-4.6" })
+	tt.Frame()
+	if got := a.cfg.Get().Providers[0]; got.APIKey != "sk-new" || got.DefaultModel != "glm-4.6" {
+		t.Fatalf("编辑框把旧草稿写回了配置：key=%q model=%q", got.APIKey, got.DefaultModel)
+	}
+	// 「模型」两个字先匹配到子页签，所以从模型输入框正下方的「测试连接」往上点。
+	test, ok := tt.Find(locales.In("zh-Hans").ModelsTest())
+	if !ok {
+		t.Fatal("缺少测试连接按钮")
+	}
+	tt.ClickAt(test.X+60, test.Y-28)
+	if !tt.Focused(locales.In("zh-Hans").ModelsModel()) {
+		t.Fatal("模型输入框没有拿到焦点")
+	}
+	tt.Type("-air")
+	tt.Frame()
+	if got := a.cfg.Get().Providers[0].DefaultModel; !strings.Contains(got, "-air") {
+		t.Fatalf("输入没有写进配置：%q", got)
+	}
+}
+
+// 有两个供应商时移除第一个。移除发生在渲染循环里，同一帧剩下的循环不能越界。
+func TestRemoveFirstProviderKeepsRendering(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	for _, id := range []string{"zhipu", "zai"} {
+		preset, ok := providers.ByID(id)
+		if !ok {
+			t.Fatalf("缺少 %s 预设", id)
+		}
+		a.addProvider(preset)
+	}
+	a.tab = 1
+	a.settingsTab = 1
+	tt := ui.NewTester(a.view, 780, 1800)
+	if err := tt.Click("配置"); err != nil {
+		t.Fatal(err)
+	}
+	if a.openProvider != providerKey(a.cfgNow.Providers[0]) {
+		t.Fatal("没有打开第一个供应商")
+	}
+	if err := tt.Click("移除"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if got := a.cfg.Get().Providers; len(got) != 1 || got[0].Preset != "zai" {
+		t.Fatalf("移除后剩下 %+v", got)
+	}
+}
+
 // 屏幕录制生效以后不再提示重启。
 func TestPermissionRestartHintOnlyBeforeGrant(t *testing.T) {
 	a, cleanup := newTestApp(t)
@@ -154,5 +217,50 @@ func TestPermissionRestartHintOnlyBeforeGrant(t *testing.T) {
 	tt.Frame()
 	if tt.HasText(hint) {
 		t.Fatal("屏幕录制已生效仍提示重启")
+	}
+}
+
+// 没有说明的设置行，标题和右侧控件的中线对齐。空说明占一行时标题会偏上约 10 像素。
+func TestSettingsRowCentersTitleWithoutSubtitle(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.settingsRow(c, "行标题", "", themePalette(c), func() {
+			ui.Button(c.Key("row-control"), "右侧按钮")
+		})
+	}, 600, 200)
+	title, ok := tt.Find("行标题")
+	control, ok2 := tt.Find("右侧按钮")
+	if !ok || !ok2 {
+		t.Fatal("缺少标题或按钮")
+	}
+	if d := (title.Y + title.H/2) - (control.Y + control.H/2); d > 2 || d < -2 {
+		t.Fatalf("标题中线和按钮中线差 %.1f 像素", d)
+	}
+}
+
+// 模型页的每一行都说明自己管什么。自动摘要的说明写实际间隔，低于 5 分钟按 5 分钟算，和自动摘要循环一致。
+func TestModelsSettingsExplainThemselves(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	msg := locales.In("zh-Hans")
+	a.tab = 1
+	a.settingsTab = 1
+	for _, tc := range []struct{ set, want int }{{45, 45}, {2, 5}} {
+		if err := a.cfg.Update(func(c *config.Config) { c.Summary.IntervalMinutes = tc.set }); err != nil {
+			t.Fatal(err)
+		}
+		a.cfgNow = a.cfg.Get()
+		if got := summaryInterval(a.cfgNow.Summary); got != time.Duration(tc.want)*time.Minute {
+			t.Fatalf("设置 %d 分钟，自动摘要间隔算成 %v", tc.set, got)
+		}
+		tt := ui.NewTester(a.view, 780, 1800)
+		tt.SetLocale("zh-Hans")
+		texts := tt.Texts()
+		for _, want := range []string{msg.ModelsEffort(), msg.ModelsEffortHelp(), msg.ModelsAutoHelp(tc.want), msg.ModelsRedactHelp(), msg.ModelsRedactSecretsHelp(), msg.ModelsRedactPersonalHelp()} {
+			if !slices.Contains(texts, want) {
+				t.Errorf("设置 %d 分钟：模型页缺少 %q", tc.set, want)
+			}
+		}
 	}
 }

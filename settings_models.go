@@ -1,13 +1,14 @@
 /*
  * [INPUT]: 依赖供应商配置、摘要生成器、凭据扫描和语言目录。
- * [OUTPUT]: 提供模型选择、供应商编辑和隐私设置。
- * [POS]: 模型设置页的组合边界，网络操作由 provider_requests.go 执行。
+ * [OUTPUT]: 提供模型和推理档位选择、供应商编辑、自动摘要开关行和隐私设置。
+ * [POS]: 模型设置页的组合边界，网络操作由 provider_requests.go 执行。供应商输入框只在用户输入时写配置，其他时候跟随配置。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
 
 import (
 	"strings"
+	"time"
 
 	"konseki/internal/config"
 	"konseki/internal/providers"
@@ -26,8 +27,8 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 				break
 			}
 		}
-		a.settingsRow(c, msg.ModelsSummary(), provider, pal, func() {
-			ui.Row(c).Gap(6).Children(func() {
+		ui.Column(c).FillWidth().Children(func() {
+			a.settingsRow(c, msg.ModelsSummary(), provider, pal, func() {
 				label := a.cfgNow.Summary.Model
 				if label == "" {
 					label = msg.ModelsChoose()
@@ -45,6 +46,9 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 						}
 					}
 				})
+			})
+			// 档位单独成行。菜单只显示「中」时，中文界面里看不出它是推理档位。
+			a.settingsRow(c, msg.ModelsEffort(), msg.ModelsEffortHelp(), pal, func() {
 				efforts := []struct{ key, label string }{{"off", msg.ModelsEffortOff()}, {"low", msg.ModelsEffortLow()}, {"medium", msg.ModelsEffortMedium()}, {"high", msg.ModelsEffortHigh()}, {"max", msg.ModelsEffortMax()}}
 				effortLabel := msg.ModelsEffort()
 				for _, effort := range efforts {
@@ -66,14 +70,8 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 	a.renderModelsImport(c, pal)
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Children(func() {
-			a.settingsRow(c, msg.ModelsAuto(), "", pal, func() {
-				on := a.cfgNow.Summary.Auto
-				if renderPillSwitch(c, "summary-auto", &on, pal) {
-					a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = on })
-					a.cfgNow = a.cfg.Get()
-				}
-			})
-			a.settingsRow(c, msg.ModelsRedact(), "", pal, func() {
+			a.renderAutoSummaryRow(c, pal, "summary-auto")
+			a.settingsRow(c, msg.ModelsRedact(), msg.ModelsRedactHelp(), pal, func() {
 				on := a.cfgNow.Redact.Enabled
 				if renderPillSwitch(c, "summary-redact", &on, pal) {
 					a.cfg.Update(func(cfg *config.Config) { cfg.Redact.Enabled = on })
@@ -83,14 +81,14 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 			})
 			if a.cfgNow.Redact.Enabled {
 				for _, item := range []struct {
-					key, label string
-					value      bool
-					set        func(*config.Config, bool)
+					key, label, help string
+					value            bool
+					set              func(*config.Config, bool)
 				}{
-					{"sw-redact-secrets", msg.ModelsRedactSecrets(), a.cfgNow.Redact.Secrets, func(cfg *config.Config, v bool) { cfg.Redact.Secrets = v }},
-					{"sw-redact-personal", msg.ModelsRedactPersonal(), a.cfgNow.Redact.Personal, func(cfg *config.Config, v bool) { cfg.Redact.Personal = v }},
+					{"sw-redact-secrets", msg.ModelsRedactSecrets(), msg.ModelsRedactSecretsHelp(), a.cfgNow.Redact.Secrets, func(cfg *config.Config, v bool) { cfg.Redact.Secrets = v }},
+					{"sw-redact-personal", msg.ModelsRedactPersonal(), msg.ModelsRedactPersonalHelp(), a.cfgNow.Redact.Personal, func(cfg *config.Config, v bool) { cfg.Redact.Personal = v }},
 				} {
-					a.settingsRow(c, item.label, "", pal, func() {
+					a.settingsRow(c, item.label, item.help, pal, func() {
 						v := item.value
 						if renderPillSwitch(c, item.key, &v, pal) {
 							a.cfg.Update(func(cfg *config.Config) { item.set(cfg, v) })
@@ -101,6 +99,22 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 				}
 			}
 		})
+	})
+}
+
+// renderAutoSummaryRow 绘制自动摘要开关。记录页和模型页各放一个，key 区分两处。
+// 说明写出实际间隔，用户能看出活动多久发给模型一次。
+func (a *app) renderAutoSummaryRow(c *ui.Context, pal palette, key string) {
+	msg := locales.In(c.Locale())
+	minutes := int(summaryInterval(a.cfgNow.Summary) / time.Minute)
+	a.settingsRow(c, msg.ModelsAuto(), msg.ModelsAutoHelp(minutes), pal, func() {
+		on := a.cfgNow.Summary.Auto
+		if renderPillSwitch(c, key, &on, pal) {
+			if err := a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = on }); err != nil {
+				a.err = err.Error()
+			}
+			a.cfgNow = a.cfg.Get()
+		}
 	})
 }
 
@@ -117,7 +131,9 @@ func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 			if len(a.cfgNow.Providers) == 0 {
 				ui.Text(c, msg.ModelsEmpty()).FontSize(12).TextColor(pal.textSecondary)
 			}
-			for idx := range a.cfgNow.Providers {
+			// 「移除」在循环中途把列表改短，所以每轮重新读长度。
+			// range 只在开头取一次长度，移除第一个以后会越界。
+			for idx := 0; idx < len(a.cfgNow.Providers); idx++ {
 				a.renderModelsProvider(c, pal, idx)
 			}
 		})
@@ -200,10 +216,6 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 									p.DefaultModel = ep.Models[0]
 								}
 							})
-							a.baseURLDraft = ep.Chat
-							if len(ep.Models) > 0 {
-								a.modelDraft = ep.Models[0]
-							}
 							a.rebuildGenerator()
 						}
 					}
@@ -211,19 +223,14 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 			}
 		}
 		ui.Text(c, msg.ModelsKey()).FontSize(12).TextColor(pal.textPrimary)
-		ui.TextInput(c.Key("key-"+pc.Preset), &a.apiKeyDraft).FillWidth().Password().Label(msg.ModelsKey())
-		if a.apiKeyDraft != pc.APIKey {
-			a.saveProviderField(idx, func(p *config.ProviderConfig) { p.APIKey = a.apiKeyDraft })
-		}
+		keyIn := ui.TextInput(c.Key("key-"+pc.Preset), &a.apiKeyDraft).FillWidth().Password().Label(msg.ModelsKey())
+		a.syncProviderDraft(idx, keyIn.Focused(), &a.apiKeyDraft, pc.APIKey, func(p *config.ProviderConfig, v string) { p.APIKey = v })
 		ui.Text(c, msg.ModelsURL()).FontSize(12).TextColor(pal.textPrimary)
-		ui.TextInput(c.Key("base-"+pc.Preset), &a.baseURLDraft).FillWidth().Label(msg.ModelsURL())
-		if a.baseURLDraft != pc.ChatBase {
-			a.saveProviderField(idx, func(p *config.ProviderConfig) { p.ChatBase = a.baseURLDraft })
-		}
+		baseIn := ui.TextInput(c.Key("base-"+pc.Preset), &a.baseURLDraft).FillWidth().Label(msg.ModelsURL())
+		a.syncProviderDraft(idx, baseIn.Focused(), &a.baseURLDraft, pc.ChatBase, func(p *config.ProviderConfig, v string) { p.ChatBase = v })
 		ui.Text(c, msg.ModelsModel()).FontSize(12).TextColor(pal.textPrimary)
-		ui.TextInput(c.Key("model-"+pc.Preset), &a.modelDraft).FillWidth().Label(msg.ModelsModel())
-		if a.modelDraft != pc.DefaultModel {
-			a.saveProviderField(idx, func(p *config.ProviderConfig) { p.DefaultModel = a.modelDraft })
+		modelIn := ui.TextInput(c.Key("model-"+pc.Preset), &a.modelDraft).FillWidth().Label(msg.ModelsModel())
+		if a.syncProviderDraft(idx, modelIn.Focused(), &a.modelDraft, pc.DefaultModel, func(p *config.ProviderConfig, v string) { p.DefaultModel = v }) {
 			a.rebuildGenerator()
 		}
 		ui.Row(c).Gap(8).Children(func() {
@@ -242,6 +249,23 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 			ui.Text(c, a.testResult).FontSize(12).TextColor(pal.textSecondary)
 		}
 	})
+}
+
+// syncProviderDraft 在供应商输入框和配置之间同步一个字段。
+// 用户正在输入时，草稿写进配置；其他时候，草稿跟随配置。
+// 导入凭据、切换档位、拉取模型都会改配置，旧草稿不能把新值写回去。
+// 返回值表示这一帧写了配置。
+func (a *app) syncProviderDraft(idx int, typing bool, draft *string, saved string, set func(*config.ProviderConfig, string)) bool {
+	if !typing {
+		*draft = saved
+		return false
+	}
+	if *draft == saved {
+		return false
+	}
+	v := *draft
+	a.saveProviderField(idx, func(p *config.ProviderConfig) { set(p, v) })
+	return true
 }
 
 func (a *app) renderModelsImport(c *ui.Context, pal palette) {

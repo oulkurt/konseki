@@ -230,6 +230,34 @@ func (msgs Messages) ModelsRedactPersonal() string {
 	return Catalog.Format(msgs.locale, "modelsRedactPersonal", nil)
 }
 
+// ModelsRedactSecretsHelp says "接口密钥、访问令牌、密码和私钥。"
+// in the language the app shows.
+//
+// 凭据与密码脱敏开关下的说明，列出被遮掉的内容。
+func ModelsRedactSecretsHelp() string { return In(i18n.Locale()).ModelsRedactSecretsHelp() }
+
+// ModelsRedactSecretsHelp says "接口密钥、访问令牌、密码和私钥。"
+// in the language of msgs.
+//
+// 凭据与密码脱敏开关下的说明，列出被遮掉的内容。
+func (msgs Messages) ModelsRedactSecretsHelp() string {
+	return Catalog.Format(msgs.locale, "modelsRedactSecretsHelp", nil)
+}
+
+// ModelsRedactPersonalHelp says "邮箱、电话、身份证号和银行卡号。"
+// in the language the app shows.
+//
+// 个人数据脱敏开关下的说明，列出被遮掉的内容。
+func ModelsRedactPersonalHelp() string { return In(i18n.Locale()).ModelsRedactPersonalHelp() }
+
+// ModelsRedactPersonalHelp says "邮箱、电话、身份证号和银行卡号。"
+// in the language of msgs.
+//
+// 个人数据脱敏开关下的说明，列出被遮掉的内容。
+func (msgs Messages) ModelsRedactPersonalHelp() string {
+	return Catalog.Format(msgs.locale, "modelsRedactPersonalHelp", nil)
+}
+
 // ModelsSummary says "摘要模型"
 // in the language the app shows.
 //
@@ -261,15 +289,29 @@ func (msgs Messages) ModelsChoose() string {
 // ModelsEffort says "推理档位"
 // in the language the app shows.
 //
-// 摘要模型的推理强度菜单标签。
+// 摘要模型的推理档位行标题，也是档位未知时的菜单标签。
 func ModelsEffort() string { return In(i18n.Locale()).ModelsEffort() }
 
 // ModelsEffort says "推理档位"
 // in the language of msgs.
 //
-// 摘要模型的推理强度菜单标签。
+// 摘要模型的推理档位行标题，也是档位未知时的菜单标签。
 func (msgs Messages) ModelsEffort() string {
 	return Catalog.Format(msgs.locale, "modelsEffort", nil)
+}
+
+// ModelsEffortHelp says "档位越高，生成摘要时想得越久，花费也越多。"
+// in the language the app shows.
+//
+// 推理档位行的说明。
+func ModelsEffortHelp() string { return In(i18n.Locale()).ModelsEffortHelp() }
+
+// ModelsEffortHelp says "档位越高，生成摘要时想得越久，花费也越多。"
+// in the language of msgs.
+//
+// 推理档位行的说明。
+func (msgs Messages) ModelsEffortHelp() string {
+	return Catalog.Format(msgs.locale, "modelsEffortHelp", nil)
 }
 
 // ModelsProviders says "供应商"
@@ -524,6 +566,20 @@ func (msgs Messages) ModelsAuto() string {
 	return Catalog.Format(msgs.locale, "modelsAuto", nil)
 }
 
+// ModelsAutoHelp says "记录期间，最多每 {minutes} 分钟把新活动发给所选模型一次，生成摘要。"
+// in the language the app shows.
+//
+// 自动摘要开关下的说明，写出实际间隔。
+func ModelsAutoHelp(minutes int) string { return In(i18n.Locale()).ModelsAutoHelp(minutes) }
+
+// ModelsAutoHelp says "记录期间，最多每 {minutes} 分钟把新活动发给所选模型一次，生成摘要。"
+// in the language of msgs.
+//
+// 自动摘要开关下的说明，写出实际间隔。
+func (msgs Messages) ModelsAutoHelp(minutes int) string {
+	return Catalog.Format(msgs.locale, "modelsAutoHelp", map[string]any{"minutes": minutes})
+}
+
 // ModelsRedact says "发送前脱敏"
 // in the language the app shows.
 //
@@ -536,6 +592,20 @@ func ModelsRedact() string { return In(i18n.Locale()).ModelsRedact() }
 // 模型设置页的模型请求脱敏开关。
 func (msgs Messages) ModelsRedact() string {
 	return Catalog.Format(msgs.locale, "modelsRedact", nil)
+}
+
+// ModelsRedactHelp says "发给模型之前，把选中的内容换成占位符；摘要回来后再换回原文。"
+// in the language the app shows.
+//
+// 发送前脱敏开关下的说明。
+func ModelsRedactHelp() string { return In(i18n.Locale()).ModelsRedactHelp() }
+
+// ModelsRedactHelp says "发给模型之前，把选中的内容换成占位符；摘要回来后再换回原文。"
+// in the language of msgs.
+//
+// 发送前脱敏开关下的说明。
+func (msgs Messages) ModelsRedactHelp() string {
+	return Catalog.Format(msgs.locale, "modelsRedactHelp", nil)
 }
 
 // ModelsTestSuccess says "连接成功 · {model} · {elapsed} 毫秒"
@@ -694,16 +764,16 @@ func (msgs Messages) RecorderStorageLimit() string {
 	return Catalog.Format(msgs.locale, "recorderStorageLimit", nil)
 }
 
-// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。"
+// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。旧截图会自动缩小尺寸、降低质量，同样的空间能存更久。"
 // in the language the app shows.
 //
-// 存储上限字段的单位和范围。
+// 存储上限字段的单位和范围，并说明旧截图分层重编码。
 func RecorderStorageHelp() string { return In(i18n.Locale()).RecorderStorageHelp() }
 
-// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。"
+// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。旧截图会自动缩小尺寸、降低质量，同样的空间能存更久。"
 // in the language of msgs.
 //
-// 存储上限字段的单位和范围。
+// 存储上限字段的单位和范围，并说明旧截图分层重编码。
 func (msgs Messages) RecorderStorageHelp() string {
 	return Catalog.Format(msgs.locale, "recorderStorageHelp", nil)
 }
@@ -974,16 +1044,16 @@ func (msgs Messages) RecorderSensitive() string {
 	return Catalog.Format(msgs.locale, "recorderSensitive", nil)
 }
 
-// RecorderSensitiveHelp says "每行输入一个应用的 bundle ID。"
+// RecorderSensitiveHelp says "这些应用在前台时不采集。每行一个 bundle ID。"
 // in the language the app shows.
 //
-// 敏感应用列表的输入格式。
+// 敏感应用列表的作用和输入格式。
 func RecorderSensitiveHelp() string { return In(i18n.Locale()).RecorderSensitiveHelp() }
 
-// RecorderSensitiveHelp says "每行输入一个应用的 bundle ID。"
+// RecorderSensitiveHelp says "这些应用在前台时不采集。每行一个 bundle ID。"
 // in the language of msgs.
 //
-// 敏感应用列表的输入格式。
+// 敏感应用列表的作用和输入格式。
 func (msgs Messages) RecorderSensitiveHelp() string {
 	return Catalog.Format(msgs.locale, "recorderSensitiveHelp", nil)
 }
@@ -1088,16 +1158,16 @@ func (msgs Messages) RecorderEnable() string {
 	return Catalog.Format(msgs.locale, "recorderEnable", nil)
 }
 
-// RecorderEnableDescription says "在此设备上记录活动。"
+// RecorderEnableDescription says "定时截屏、识别屏幕文字、统计键鼠次数，生成每天的小票。截图只存在本机。"
 // in the language the app shows.
 //
-// 活动记录器总开关下的说明。
+// 活动记录器总开关下的说明：做什么，截图存在哪里。摘要不发送图片。
 func RecorderEnableDescription() string { return In(i18n.Locale()).RecorderEnableDescription() }
 
-// RecorderEnableDescription says "在此设备上记录活动。"
+// RecorderEnableDescription says "定时截屏、识别屏幕文字、统计键鼠次数，生成每天的小票。截图只存在本机。"
 // in the language of msgs.
 //
-// 活动记录器总开关下的说明。
+// 活动记录器总开关下的说明：做什么，截图存在哪里。摘要不发送图片。
 func (msgs Messages) RecorderEnableDescription() string {
 	return Catalog.Format(msgs.locale, "recorderEnableDescription", nil)
 }
@@ -1816,6 +1886,20 @@ func TabsLanguage() string { return In(i18n.Locale()).TabsLanguage() }
 // 语言切换设置标题
 func (msgs Messages) TabsLanguage() string {
 	return Catalog.Format(msgs.locale, "tabsLanguage", nil)
+}
+
+// TabsLanguageHelp says "界面、小票和摘要都使用这种语言。"
+// in the language the app shows.
+//
+// 通用设置页语言行的说明。
+func TabsLanguageHelp() string { return In(i18n.Locale()).TabsLanguageHelp() }
+
+// TabsLanguageHelp says "界面、小票和摘要都使用这种语言。"
+// in the language of msgs.
+//
+// 通用设置页语言行的说明。
+func (msgs Messages) TabsLanguageHelp() string {
+	return Catalog.Format(msgs.locale, "tabsLanguageHelp", nil)
 }
 
 // ReceiptToday says "今天"
