@@ -47,8 +47,8 @@ func (a *app) renderRecorderPermissions(c *ui.Context, pal palette) {
 								a.status.Perms.Accessibility = state
 							}
 						}
-						if ui.Button(c.Key("settings-"+item.key), msg.RecorderPermissionSettings()).Clicked() && a.openSettings != nil {
-							if err := a.openSettings(item.url); err != nil {
+						if ui.Button(c.Key("settings-"+item.key), msg.RecorderPermissionSettings()).Clicked() && a.openExternal != nil {
+							if err := a.openExternal(item.url); err != nil {
 								a.err = err.Error()
 							}
 						}

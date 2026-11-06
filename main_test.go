@@ -146,7 +146,7 @@ func newTestApp(t testing.TB) (*app, func()) {
 	a.setLocale = func(string) {}
 	a.requestScreen = func() capture.PermState { return capture.PermGranted }
 	a.requestAccessibility = func() capture.PermState { return capture.PermGranted }
-	a.openSettings = func(string) error { return nil }
+	a.openExternal = func(string) error { return nil }
 	a.showFolder = func(string) {}
 	a.defaultSkillDir = func() string { return filepath.Join(appDir, "skill") }
 	scanTestCredentials(t, a, nil)

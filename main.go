@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖采集、会话存储、配置和摘要服务。
  * [OUTPUT]: 提供应用入口、刷新缓存与后台摘要。
- * [POS]: 应用组合根。刷新后缓存小票供视图读取。
+ * [POS]: 应用组合根。入口先分流只读查询命令，再启动窗口；刷新后缓存小票供视图读取。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -32,11 +32,13 @@ type app struct {
 	scanCredentials      func() []providers.Credential
 	requestScreen        func() capture.PermState
 	requestAccessibility func() capture.PermState
-	openSettings         func(string) error
+	openExternal         func(string) error
 	showFolder           func(string)
 	defaultSkillDir      func() string
 	runningApps          func() []capture.Front
 	running              runningAppsCache
+	// linkErr 是启动时维护数据目录软链接失败的说明，显示在 Agent 技能卡片上。
+	linkErr string
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -316,12 +318,18 @@ func (a *app) stampSkill(root string) {
 }
 
 func main() {
+	// 查询命令必须在任何 mygo 调用之前分流：带上 query 时只读输出 JSON，
+	// 不开窗口，也不出现 Dock 图标。
+	if code, ok := runCLI(os.Args[1:], os.Stdout, os.Stderr); ok {
+		os.Exit(code)
+	}
 	appDir := config.AppDir()
 	cfg, err := config.Open(appDir)
 	if err != nil {
 		log.Fatal(err)
 	}
 	current := cfg.Get()
+	linkErr := linkExecutable(appDir)
 	mygo.App.SetLocale(current.Language)
 	runner, err := capture.New(recorderSettings(current.Recorder, appDir))
 	if err != nil {
@@ -345,10 +353,11 @@ func main() {
 		setLocale:            mygo.App.SetLocale,
 		requestScreen:        capture.RequestScreenPermission,
 		requestAccessibility: capture.RequestAccessibility,
-		openSettings:         mygo.Shell.OpenExternal,
+		openExternal:         mygo.Shell.OpenExternal,
 		showFolder:           mygo.Shell.ShowItemInFolder,
 		defaultSkillDir:      skill.DefaultDir,
 		runningApps:          capture.RunningApps,
+		linkErr:              linkErr,
 	}
 	a.rebuildGenerator()
 
@@ -387,8 +396,7 @@ func main() {
 	runner.Stop()
 }
 
-// summaryInterval 是两次自动摘要之间的最短间隔，不低于 5 分钟。
-// 设置页的说明也读它，所以说明里的分钟数和实际间隔一致。
+// summaryInterval 是两次自动摘要之间的最短间隔，不低于 5 分钟。// 设置页的说明也读它，所以说明里的分钟数和实际间隔一致。
 func summaryInterval(s config.SummaryConfig) time.Duration {
 	if interval := time.Duration(s.IntervalMinutes) * time.Minute; interval >= 5*time.Minute {
 		return interval
