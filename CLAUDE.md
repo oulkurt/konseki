@@ -5,9 +5,9 @@ Go 1.27.3 + mygo v0.7.4
 internal/ - 采集、配置、模型、摘要、脱敏、只读查询及旧导出清理
 skills/ - 安装到 Agent 的 Konseki 技能说明
 locales/ - 简体中文与英文消息目录和生成的类型化访问器
-scripts/ - 开发脚本；scripts/live/ 驱动测试构建的原生窗口
-docs/ - 架构与决策文档
-resources/ - 应用资源
+scripts/ - 开发脚本；scripts/live/ 驱动测试构建的原生窗口，render-icon.sh 渲染应用图标和开发版图标
+docs/ - 架构与决策文档，以及应用图标母版 icon.svg
+resources/ - 应用资源。mygo build 把本目录原样复制进应用包，所以这里不放 CLAUDE.md；icon.png 是应用图标，icon-dev.png 只给 mygo dev 用，不进应用包
 </directory>
 <config>
 go.mod - Go 模块与依赖版本

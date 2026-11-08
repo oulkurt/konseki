@@ -1,0 +1,114 @@
+<svg id="dev" xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<!--
+  [INPUT]: 依赖 macOS 自带 Menlo 字体印时刻；依赖 scripts/render-icon.sh 渲染为 PNG
+  [OUTPUT]: 对外提供应用图标和开发版图标的母版；渲染结果是 resources/icon.png 与 resources/icon-dev.png，1024x1024，透明底
+  [POS]: docs 的图标源稿。mygo build 只读 resources/icon.png，mygo dev 只读 resources/icon-dev.png，本文件不进应用包
+  [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+
+  构图：炭黑打印头吐出一张小票，色值取自 receipt.go 与 receipt_parts.go。
+  外形：824 主体，连续曲率圆角参数 214，与 macOS 27 系统蒙版逐像素吻合。
+  条码：Code 128 编码 KONSEKI，可扫。改条码时整组重新生成，再用扫码器核对。
+  禁忌：机身不加指示灯。绿点像摄像头灯，暗色灯珠像镜头开孔。
+  开发版：以 icon.svg#dev 打开时，根元素命中 :target，机身换成琥珀色，出纸口下唇换成浅琥珀高光。
+  琥珀取自暂停指示灯 #F59E0B。系统六种图标风格下，琥珀机身都比炭黑机身亮，所以两者始终分得开。
+-->
+<defs>
+  <clipPath id="body"><path d="M427.13,100.00 L596.87,100.00 C691.06,100.00 738.16,100.00 780.63,114.02 L788.86,116.03 C844.22,136.18 887.82,179.78 907.97,235.14 C924.00,285.84 924.00,332.94 924.00,427.13 L924.00,596.87 C924.00,691.06 924.00,738.16 909.98,780.63 L907.97,788.86 C887.82,844.22 844.22,887.82 788.86,907.97 C738.16,924.00 691.06,924.00 596.87,924.00 L427.13,924.00 C332.94,924.00 285.84,924.00 243.37,909.98 L235.14,907.97 C179.78,887.82 136.18,844.22 116.03,788.86 C100.00,738.16 100.00,691.06 100.00,596.87 L100.00,427.13 C100.00,332.94 100.00,285.84 114.02,243.37 L116.03,235.14 C136.18,179.78 179.78,136.18 235.14,116.03 C285.84,100.00 332.94,100.00 427.13,100.00 Z"/></clipPath>
+  <!-- ============ 机身：上亮下暗的炭黑 ============ -->
+  <linearGradient id="char" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#3A3A40"/><stop offset="0.42" stop-color="#2A2A2F"/><stop offset="1" stop-color="#18181C"/>
+  </linearGradient>
+  <!-- ============ 开发版机身：琥珀，同样上亮下暗 ============ -->
+  <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#F59E0B"/><stop offset="0.42" stop-color="#E08A09"/><stop offset="1" stop-color="#C2650A"/>
+  </linearGradient>
+  <!-- ============ 出纸口：上黑下略亮，表现开口深度 ============ -->
+  <linearGradient id="slot" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#000"/><stop offset="1" stop-color="#121215"/>
+  </linearGradient>
+  <!-- ============ 纸：出口处压暗，底部微卷 ============ -->
+  <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#E9E5DC"/><stop offset="0.07" stop-color="#FFFDF7"/><stop offset="0.8" stop-color="#FFFDF7"/><stop offset="1" stop-color="#F3EFE6"/>
+  </linearGradient>
+  <linearGradient id="paper-edge" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#000" stop-opacity="0.07"/><stop offset="0.06" stop-color="#000" stop-opacity="0"/>
+    <stop offset="0.94" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.07"/>
+  </linearGradient>
+  <filter id="icon-shadow" x="-20%" y="-20%" width="140%" height="140%">
+    <feDropShadow dx="0" dy="9" stdDeviation="11" flood-color="#000" flood-opacity="0.32"/>
+  </filter>
+  <filter id="paper-shadow" x="-25%" y="-10%" width="150%" height="135%">
+    <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000" flood-opacity="0.5"/>
+  </filter>
+  <style>
+    text { font-family: Menlo, monospace; font-weight: 700; font-size: 34px; fill: #76716A; letter-spacing: 0.5px; }
+    .rule { stroke: #BDB7AC; stroke-width: 6; stroke-dasharray: 14 11; stroke-linecap: round; }
+    #dev:target .body { fill: url(#amber); }
+    #dev:target .lip { fill: #FCD34D; }
+  </style>
+</defs>
+
+<!-- ============ 投影：供 macOS 13 到 15 原样显示 ============ -->
+<path d="M427.13,100.00 L596.87,100.00 C691.06,100.00 738.16,100.00 780.63,114.02 L788.86,116.03 C844.22,136.18 887.82,179.78 907.97,235.14 C924.00,285.84 924.00,332.94 924.00,427.13 L924.00,596.87 C924.00,691.06 924.00,738.16 909.98,780.63 L907.97,788.86 C887.82,844.22 844.22,887.82 788.86,907.97 C738.16,924.00 691.06,924.00 596.87,924.00 L427.13,924.00 C332.94,924.00 285.84,924.00 243.37,909.98 L235.14,907.97 C179.78,887.82 136.18,844.22 116.03,788.86 C100.00,738.16 100.00,691.06 100.00,596.87 L100.00,427.13 C100.00,332.94 100.00,285.84 114.02,243.37 L116.03,235.14 C136.18,179.78 179.78,136.18 235.14,116.03 C285.84,100.00 332.94,100.00 427.13,100.00 Z" fill="#000" filter="url(#icon-shadow)"/>
+
+<g clip-path="url(#body)">
+  <rect class="body" width="1024" height="1024" fill="url(#char)"/>
+
+  <!-- ============ 小票：从出纸口垂下，底边锯齿 ============ -->
+  <g filter="url(#paper-shadow)"><path d="M282,254 L742,254 L742,792 L703.67,832.00 L665.33,792 L627.00,832.00 L588.67,792 L550.33,832.00 L512.00,792 L473.67,832.00 L435.33,792 L397.00,832.00 L358.67,792 L320.33,832.00 L282.00,792 Z" fill="url(#paper)"/></g>
+  <path d="M282,254 L742,254 L742,792 L703.67,832.00 L665.33,792 L627.00,832.00 L588.67,792 L550.33,832.00 L512.00,792 L473.67,832.00 L435.33,792 L397.00,832.00 L358.67,792 L320.33,832.00 L282.00,792 Z" fill="url(#paper-edge)"/>
+
+  <!-- ============ 出纸口：盖住纸的上沿，下唇一道高光 ============ -->
+  <rect x="222" y="234" width="580" height="40" rx="20" fill="url(#slot)"/>
+  <rect class="lip" x="240" y="277" width="544" height="5" rx="2.5" fill="#4A4A52" opacity="0.8"/>
+
+  <!-- ============ 印字：三段时间块，写时刻不写金额 ============ -->
+  <g>
+    <text x="326" y="356">09:00</text>
+    <rect x="448" y="330" width="236" height="28" rx="14" fill="#1D1C1A"/>
+    <rect x="448" y="378" width="150" height="18" rx="9" fill="#BDB7AC"/>
+    <line x1="326" y1="418" x2="698" y2="418" class="rule"/>
+    <text x="326" y="474">10:30</text>
+    <rect x="448" y="448" width="168" height="28" rx="14" fill="#1D1C1A"/>
+    <line x1="326" y1="536" x2="698" y2="536" class="rule"/>
+    <text x="326" y="592">13:15</text>
+    <rect x="448" y="566" width="262" height="28" rx="14" fill="#1D1C1A"/>
+    <rect x="448" y="614" width="120" height="18" rx="9" fill="#BDB7AC"/>
+  </g>
+
+  <!-- ============ 条码：Code 128「KONSEKI」 ============ -->
+  <g fill="#1D1C1A">
+    <rect x="344" y="676" width="6" height="58"/>
+    <rect x="353" y="676" width="3" height="58"/>
+    <rect x="362" y="676" width="3" height="58"/>
+    <rect x="377" y="676" width="3" height="58"/>
+    <rect x="383" y="676" width="6" height="58"/>
+    <rect x="398" y="676" width="9" height="58"/>
+    <rect x="410" y="676" width="3" height="58"/>
+    <rect x="422" y="676" width="9" height="58"/>
+    <rect x="434" y="676" width="6" height="58"/>
+    <rect x="443" y="676" width="3" height="58"/>
+    <rect x="449" y="676" width="9" height="58"/>
+    <rect x="467" y="676" width="6" height="58"/>
+    <rect x="476" y="676" width="6" height="58"/>
+    <rect x="485" y="676" width="9" height="58"/>
+    <rect x="497" y="676" width="3" height="58"/>
+    <rect x="509" y="676" width="3" height="58"/>
+    <rect x="521" y="676" width="6" height="58"/>
+    <rect x="530" y="676" width="3" height="58"/>
+    <rect x="542" y="676" width="3" height="58"/>
+    <rect x="548" y="676" width="6" height="58"/>
+    <rect x="563" y="676" width="9" height="58"/>
+    <rect x="575" y="676" width="6" height="58"/>
+    <rect x="590" y="676" width="3" height="58"/>
+    <rect x="602" y="676" width="3" height="58"/>
+    <rect x="608" y="676" width="12" height="58"/>
+    <rect x="623" y="676" width="9" height="58"/>
+    <rect x="635" y="676" width="3" height="58"/>
+    <rect x="641" y="676" width="6" height="58"/>
+    <rect x="656" y="676" width="9" height="58"/>
+    <rect x="668" y="676" width="3" height="58"/>
+    <rect x="674" y="676" width="6" height="58"/>
+  </g>
+</g>
+</svg>
