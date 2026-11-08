@@ -141,6 +141,7 @@ type blockOutput struct {
 	Samples int      `json:"samples"`
 }
 
+// sessionOutput 没有键鼠计数时略去 keys、clicks：输出 0 会被读成「没打字」。
 type sessionOutput struct {
 	ID        string   `json:"id"`
 	Start     string   `json:"start"`
@@ -148,8 +149,8 @@ type sessionOutput struct {
 	EndReason string   `json:"endReason"`
 	Apps      []string `json:"apps"`
 	Snapshots int      `json:"snapshots"`
-	Keys      int      `json:"keys"`
-	Clicks    int      `json:"clicks"`
+	Keys      int      `json:"keys,omitempty"`
+	Clicks    int      `json:"clicks,omitempty"`
 }
 
 func (r *runner) day(w io.Writer, o options) error {

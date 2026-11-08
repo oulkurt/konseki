@@ -1080,34 +1080,6 @@ func (msgs Messages) RecorderOCRDescription() string {
 	return Catalog.Format(msgs.locale, "recorderOCRDescription", nil)
 }
 
-// RecorderInput says "全局键鼠监听"
-// in the language the app shows.
-//
-// 记录设置页的全局键鼠计数开关。
-func RecorderInput() string { return In(i18n.Locale()).RecorderInput() }
-
-// RecorderInput says "全局键鼠监听"
-// in the language of msgs.
-//
-// 记录设置页的全局键鼠计数开关。
-func (msgs Messages) RecorderInput() string {
-	return Catalog.Format(msgs.locale, "recorderInput", nil)
-}
-
-// RecorderInputDescription says "只记录按键和点击次数，不记录内容。"
-// in the language the app shows.
-//
-// 全局键鼠监听开关下的说明。
-func RecorderInputDescription() string { return In(i18n.Locale()).RecorderInputDescription() }
-
-// RecorderInputDescription says "只记录按键和点击次数，不记录内容。"
-// in the language of msgs.
-//
-// 全局键鼠监听开关下的说明。
-func (msgs Messages) RecorderInputDescription() string {
-	return Catalog.Format(msgs.locale, "recorderInputDescription", nil)
-}
-
 // RecorderOCRLanguages says "识别语言"
 // in the language the app shows.
 //
@@ -1292,13 +1264,13 @@ func (msgs Messages) RecorderEnable() string {
 	return Catalog.Format(msgs.locale, "recorderEnable", nil)
 }
 
-// RecorderEnableDescription says "定时截屏、识别屏幕文字、统计键鼠次数，生成每天的小票。截图只存在本机。"
+// RecorderEnableDescription says "定时截屏、识别屏幕文字，生成每天的小票。截图只存在本机。"
 // in the language the app shows.
 //
 // 活动记录器总开关下的说明：做什么，截图存在哪里。摘要不发送图片。
 func RecorderEnableDescription() string { return In(i18n.Locale()).RecorderEnableDescription() }
 
-// RecorderEnableDescription says "定时截屏、识别屏幕文字、统计键鼠次数，生成每天的小票。截图只存在本机。"
+// RecorderEnableDescription says "定时截屏、识别屏幕文字，生成每天的小票。截图只存在本机。"
 // in the language of msgs.
 //
 // 活动记录器总开关下的说明：做什么，截图存在哪里。摘要不发送图片。

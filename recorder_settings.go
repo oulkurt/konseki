@@ -29,7 +29,6 @@ func recorderSettings(r config.Recorder, appDir string) capture.Settings {
 			Languages: slices.Clone(r.OCR.Languages),
 			EveryN:    r.OCR.EveryN,
 		},
-		InputMonitor:  r.InputMonitor,
 		SensitiveApps: slices.Clone(r.SensitiveApps),
 		MaxStorage:    int64(r.MaxStorageMB) << 20,
 		RetentionDays: r.RetentionDays,

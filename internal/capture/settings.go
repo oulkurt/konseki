@@ -17,7 +17,6 @@ type Settings struct {
 	ScreenPoll    time.Duration
 	JPEGQuality   int
 	OCR           OCRSettings
-	InputMonitor  bool
 	SensitiveApps []string
 	MaxStorage    int64
 	RetentionDays int

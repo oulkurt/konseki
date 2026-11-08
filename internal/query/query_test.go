@@ -138,6 +138,10 @@ func TestDayOutput(t *testing.T) {
 	}
 
 	out, _, _ = runQuery(t, f.env, "day", "--date", "yesterday")
+	// 昨天的会话没有键鼠计数：不输出 keys、clicks，输出 0 会被读成「没打字」。
+	if strings.Contains(out, `"keys"`) || strings.Contains(out, `"clicks"`) {
+		t.Fatalf("没有计数的会话输出了 keys 或 clicks：%s", out)
+	}
 	yesterday := decode[struct {
 		Day       string        `json:"day"`
 		Summaries []entryOutput `json:"summaries"`

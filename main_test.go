@@ -79,7 +79,7 @@ func TestRecorderPrivacyControls(t *testing.T) {
 	defer cleanup()
 	a.tab = 1
 	tt := ui.NewTester(a.view, 800, 2400)
-	for _, label := range []string{"屏幕文字识别", "全局键鼠监听", "敏感应用"} {
+	for _, label := range []string{"屏幕文字识别", "敏感应用"} {
 		if !tt.HasText(label) {
 			t.Errorf("缺少设置 %s", label)
 		}

@@ -126,6 +126,8 @@ type Config struct {
 
 // Recorder 是采集设置。时间字段一律是毫秒整数，和 Alma 一致，方便手改文件。
 // 运行时由 package main 换成 capture.Settings，capture 不依赖本包。
+// InputMonitor 留给键鼠计数（P1c）。计数实现前没有代码读它，界面不显示开关。
+// 它照常读写，用户存过的选择不丢。
 type Recorder struct {
 	Enabled       bool      `json:"enabled"`
 	PausedUntil   time.Time `json:"pausedUntil,omitzero"`

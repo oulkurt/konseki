@@ -1,7 +1,7 @@
 /*
  * [INPUT]: 依赖采集配置、运行中应用列表、语言目录、输入控件与模型页的自动摘要开关行。
- * [OUTPUT]: 提供文字识别、输入监听和敏感应用设置，敏感应用可从运行中的应用里添加。
- * [POS]: 记录设置的隐私边界，将输入归一化后交给采集器。
+ * [OUTPUT]: 提供文字识别和敏感应用设置，敏感应用可从运行中的应用里添加。
+ * [POS]: 记录设置的隐私边界，将输入归一化后交给采集器。键鼠计数（P1c）实现前不放开关：开关必须改变采集行为。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -77,12 +77,6 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 				on := a.cfgNow.Recorder.OCR.Enabled
 				if renderPillSwitch(c, "recorder-ocr", &on, pal) {
 					a.updateRecorder(func(r *config.Recorder) { r.OCR.Enabled = on })
-				}
-			})
-			a.settingsRow(c, msg.RecorderInput(), msg.RecorderInputDescription(), pal, func() {
-				on := a.cfgNow.Recorder.InputMonitor
-				if renderPillSwitch(c, "recorder-input", &on, pal) {
-					a.updateRecorder(func(r *config.Recorder) { r.InputMonitor = on })
 				}
 			})
 			a.settingsRow(c, msg.RecorderOCRLanguages(), msg.RecorderOCRLanguagesHelp(), pal, func() {
