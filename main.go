@@ -332,7 +332,7 @@ func main() {
 		log.Fatal(err)
 	}
 	current := cfg.Get()
-	linkErr := linkError(appDir)
+	linkErr := linkExecutable(appDir)
 	mygo.App.SetLocale(current.Language)
 	runner, err := capture.New(recorderSettings(current.Recorder, appDir))
 	if err != nil {

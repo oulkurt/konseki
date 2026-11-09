@@ -124,16 +124,24 @@ type APIError struct {
 	Body   string
 }
 
-func (e *APIError) Error() string {
+// Detail 返回状态码和响应体。响应体按字符截到 400 个，不切断多字节字符。
+// 界面把它当外部细节，跟在本地化前缀后面显示；Error 也用它，两处不各写一份截断。
+func (e *APIError) Detail() string {
 	body := strings.TrimSpace(e.Body)
-	if len(body) > 400 {
-		body = body[:400] + "…"
+	if r := []rune(body); len(r) > 400 {
+		body = string(r[:400]) + "…"
 	}
-	if body == "" {
-		return fmt.Sprintf("模型接口返回 %d", e.Status)
+	switch {
+	case e.Status == 0:
+		return body
+	case body == "":
+		return fmt.Sprint(e.Status)
+	default:
+		return fmt.Sprintf("%d: %s", e.Status, body)
 	}
-	return fmt.Sprintf("模型接口返回 %d：%s", e.Status, body)
 }
+
+func (e *APIError) Error() string { return "模型接口返回 " + e.Detail() }
 
 // Retryable 说这个错误值得再试一次。
 func (e *APIError) Retryable() bool {

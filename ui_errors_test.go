@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖内部错误种类、临时存储、模拟模型服务和离屏页面检查。
- * [OUTPUT]: 验证错误翻译、外部细节与页面语言。
+ * [OUTPUT]: 验证错误翻译、超时、按字符截断的外部细节与页面语言。
  * 验证摘要、清除、命令链接和旧文件的失败路径。
  * 验证连接测试成功后切换语言。
  * [POS]: 界面错误展示边界的回归测试。
@@ -9,15 +9,18 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"konseki/internal/capture"
 	"konseki/internal/config"
@@ -46,6 +49,8 @@ func TestErrorTextLanguages(t *testing.T) {
 		{"link-exists", fmt.Errorf("secret: %w", query.ErrLinkOccupied), "命令链接的位置已被其他文件占用", "A file already exists at the command link location", false},
 		{"clear-count", clearCountError(2), "2 个文件无法删除", "2 files could not be deleted", false},
 		{"unknown", errors.New(external), "操作失败：" + external, "Operation failed: " + external, true},
+		{"timeout", fmt.Errorf("summary: %w", context.DeadlineExceeded), "请求超时", "The request timed out", false},
+		{"net-timeout", &llm.RequestError{Kind: llm.ErrConnection, Cause: &net.DNSError{Err: "i/o timeout", Name: "api.example.com", IsTimeout: true}}, "请求超时", "The request timed out", false},
 	}
 	for _, c := range cases {
 		for _, lang := range []string{"zh-Hans", "en"} {
@@ -67,6 +72,15 @@ func TestErrorTextLanguages(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// 供应商响应体常含中文；按字节截断会切开多字节字符，界面上出现乱码。
+func TestErrorTextTruncatesByCharacter(t *testing.T) {
+	got := errorText("en", &llm.APIError{Status: 500, Body: strings.Repeat("错", 500)})
+	want := "The model service returned an error: 500: " + strings.Repeat("错", 400) + "…"
+	if got != want || !utf8.ValidString(got) {
+		t.Fatalf("响应体没有按字符截断：%q", got)
 	}
 }
 

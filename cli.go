@@ -1,8 +1,8 @@
 /*
  * [INPUT]: 依赖查询命令入口、设置目录、可执行文件和系统软链接。
- * [OUTPUT]: 提供命令分流与返回错误文字的链接工具。
- * [POS]: 进程入口的分流点。只接管查询与帮助参数。
- * 界面使用 ui_errors.go 的链接入口，以保留错误种类。
+ * [OUTPUT]: 提供 runCLI 与 linkExecutable。
+ * [POS]: 进程入口的分流点。runCLI 只接管 query、help、-h、--help，其余参数照常启动界面。
+ * linkExecutable 在启动时维护数据目录里的命令链接，返回原始错误，界面用 errorText 选文案。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -34,18 +34,15 @@ func runCLI(args []string, stdout, stderr io.Writer) (int, bool) {
 }
 
 // linkExecutable 在数据目录里维护指向当前可执行文件的软链接。
-// 失败时返回给界面显示的文字，不终止启动。
-func linkExecutable(dir string) string {
+// 失败时返回原始错误，不终止启动；界面用 errorText 按错误种类选文案。
+func linkExecutable(dir string) error {
 	exe, err := os.Executable()
 	if err != nil {
-		return err.Error()
+		return err
 	}
 	resolved, err := filepath.EvalSymlinks(exe)
 	if err != nil {
-		return err.Error()
+		return err
 	}
-	if err := query.Link(dir, resolved); err != nil {
-		return err.Error()
-	}
-	return ""
+	return query.Link(dir, resolved)
 }

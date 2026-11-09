@@ -2613,3 +2613,17 @@ func ErrorLinkExists() string { return In(i18n.Locale()).ErrorLinkExists() }
 func (msgs Messages) ErrorLinkExists() string {
 	return Catalog.Format(msgs.locale, "errorLinkExists", nil)
 }
+
+// ErrorTimeout says "请求超时"
+// in the language the app shows.
+//
+// 界面错误说明。等待模型或系统响应超过时限。
+func ErrorTimeout() string { return In(i18n.Locale()).ErrorTimeout() }
+
+// ErrorTimeout says "请求超时"
+// in the language of msgs.
+//
+// 界面错误说明。等待模型或系统响应超过时限。
+func (msgs Messages) ErrorTimeout() string {
+	return Catalog.Format(msgs.locale, "errorTimeout", nil)
+}

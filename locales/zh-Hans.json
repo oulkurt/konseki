@@ -472,5 +472,7 @@
   "errorLinkNotAbsolute": "程序路径不是绝对路径",
   "@errorLinkNotAbsolute": {"description": "界面错误说明。"},
   "errorLinkExists": "命令链接的位置已被其他文件占用",
-  "@errorLinkExists": {"description": "界面错误说明。"}
+  "@errorLinkExists": {"description": "界面错误说明。"},
+  "errorTimeout": "请求超时",
+  "@errorTimeout": {"description": "界面错误说明。等待模型或系统响应超过时限。"}
 }

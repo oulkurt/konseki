@@ -175,7 +175,7 @@
   "receiptSerial": "No. {serial}",
   "modelsFetchFailed": "Could not fetch models: ",
   "modelsFetchEmpty": "The provider returned an empty list",
-  "modelsFetchSuccess": "Fetched {count} models",
+  "modelsFetchSuccess": "{count, plural, one {Fetched # model} other {Fetched # models}}",
   "errorUnknown": "Operation failed: ",
   "errorNoEndpoint": "No endpoint configured",
   "errorNoModel": "No model selected",
@@ -184,5 +184,6 @@
   "errorConnection": "Could not connect to the model service: ",
   "errorProvider": "The model service returned an error: ",
   "errorLinkNotAbsolute": "The executable path is not absolute",
-  "errorLinkExists": "A file already exists at the command link location"
+  "errorLinkExists": "A file already exists at the command link location",
+  "errorTimeout": "The request timed out"
 }

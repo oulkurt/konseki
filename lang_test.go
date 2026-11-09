@@ -50,9 +50,8 @@ func TestRootSourceLanguage(t *testing.T) {
 			if value == "痕跡 Konseki" {
 				return true
 			}
-			if strings.ContainsFunc(value, func(r rune) bool {
-				return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana)
-			}) {
+			// 用页面检查同一个 isCJK，全角标点也算，写死的「：」逃不过去。
+			if strings.ContainsFunc(value, isCJK) {
 				t.Errorf("%s: 中文或日文字面量 %s", fset.Position(lit.Pos()), lit.Value)
 			}
 			return true
