@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -81,7 +80,7 @@ func TestConnectionReportsModelAndLatency(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("连接测试超时")
 	}
-	if !a.testOK || !strings.Contains(a.testResult, "actual-model") || !strings.Contains(a.testResult, "ms") {
-		t.Fatalf("连接结果错误：%q", a.testResult)
+	if !a.testOK || a.testModel != "actual-model" || a.testLatency < 0 {
+		t.Fatalf("连接结果错误：模型=%q 耗时=%d", a.testModel, a.testLatency)
 	}
 }

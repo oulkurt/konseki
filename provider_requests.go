@@ -2,6 +2,7 @@
  * [INPUT]: 依赖供应商配置、模型客户端与双语目录。
  * [OUTPUT]: 提供凭据扫描、连接测试与模型列表请求。
  * [POS]: 供应商设置的后台请求边界。结果经界面队列发布。
+ * 连接测试保存模型与耗时，由设置页按当前语言显示。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -36,11 +37,10 @@ func (a *app) testConnection(idx int) {
 		return
 	}
 	pc, client := a.cfgNow.Providers[idx], a.llmc
-	lang := a.cfgNow.Language
-	a.testing, a.testResult, a.testErr = true, "", nil
+	a.testing, a.testModel, a.testErr = true, "", nil
 	go func() {
 		started := time.Now()
-		result, ok := "", false
+		model, latency, ok := "", 0, false
 		r, err := llm.Resolve(pc, true)
 		if err == nil {
 			key := pc.APIKey
@@ -52,15 +52,15 @@ func (a *app) testConnection(idx int) {
 			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "Reply with OK.", MaxTokens: 32})
 			err = e
 			if err == nil {
-				model := resp.Model
+				model = resp.Model
 				if model == "" {
 					model = r.Model
 				}
-				result = locales.In(lang).ModelsTestSuccess(model, int(time.Since(started).Milliseconds()))
+				latency = int(time.Since(started).Milliseconds())
 				ok = true
 			}
 		}
-		a.post(func() { a.testing, a.testResult, a.testErr, a.testOK = false, result, err, ok })
+		a.post(func() { a.testing, a.testModel, a.testLatency, a.testErr, a.testOK = false, model, latency, err, ok })
 	}()
 }
 

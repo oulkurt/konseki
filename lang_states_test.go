@@ -114,8 +114,8 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 						a.openProvider = providerKey(pc)
 						want = msg.ModelsKey()
 						if state == "provider-result" {
-							a.testResult = msg.ModelsTestSuccess(user[4], 12)
-							want = a.testResult
+							a.testModel, a.testLatency = user[4], 12
+							want = msg.ModelsTestSuccess(a.testModel, a.testLatency)
 						}
 					case "provider-search":
 						a.addProviderOpen = true

@@ -81,7 +81,8 @@ type app struct {
 	baseURLDraft    string
 	modelDraft      string
 	testing         bool
-	testResult      string
+	testModel       string
+	testLatency     int
 	testErr         error
 	testOK          bool
 	detected        []providers.Credential

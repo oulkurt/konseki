@@ -2,6 +2,7 @@
  * [INPUT]: 依赖内部错误种类、临时存储、模拟模型服务和离屏页面检查。
  * [OUTPUT]: 验证错误翻译、外部细节与页面语言。
  * 验证摘要、清除、命令链接和旧文件的失败路径。
+ * 验证连接测试成功后切换语言。
  * [POS]: 界面错误展示边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -459,5 +460,36 @@ func TestAgentErrorSourcesLanguages(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestConnectionSuccessLanguageSwitch(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	pc := config.ProviderConfig{Preset: "custom", Label: "provider", ChatBase: "https://example.test", DefaultModel: "test-model"}
+	if err := a.cfg.Update(func(c *config.Config) { c.Language = "zh-Hans"; c.Providers = []config.ProviderConfig{pc} }); err != nil {
+		t.Fatal(err)
+	}
+	a.cfgNow = a.cfg.Get()
+	a.tab, a.settingsTab, a.openProvider = 1, 1, providerKey(pc)
+	a.llmc.HTTP.Transport = errorTestTransport(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"model":"test-model","choices":[{"message":{"content":"ok"}}]}`)), Header: make(http.Header)}, nil
+	})
+	jobs := make(chan func(), 1)
+	a.post = func(f func()) { jobs <- f }
+	a.testConnection(0)
+	select {
+	case f := <-jobs:
+		f()
+	case <-time.After(10 * time.Second):
+		t.Fatal("连接测试超时")
+	}
+	if !a.testOK {
+		t.Fatalf("连接测试失败: %v", a.testErr)
+	}
+	tt := ui.NewTester(a.view, 780, 3000)
+	for _, lang := range []string{"zh-Hans", "en"} {
+		tt.SetLocale(lang)
+		checkPageLanguage(t, tt, a, lang, "provider", "test-model")
 	}
 }

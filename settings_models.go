@@ -1,7 +1,9 @@
 /*
  * [INPUT]: 依赖供应商配置、摘要生成器、凭据扫描和语言目录。
  * [OUTPUT]: 提供模型和推理档位选择、供应商编辑、自动摘要开关行和隐私设置。
- * [POS]: 模型设置页的组合边界，网络操作由 provider_requests.go 执行。供应商输入框只在用户输入时写配置，其他时候跟随配置。
+ * [POS]: 模型设置页的组合边界。网络操作由 provider_requests.go 执行。
+ * 连接结果按当前语言显示。用户输入时才写供应商配置。
+ * 未输入时，供应商输入框跟随配置。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -247,8 +249,8 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 		})
 		if a.testErr != nil {
 			ui.Text(c, errorText(c.Locale(), a.testErr)).FontSize(12).TextColor(pal.textSecondary)
-		} else if a.testResult != "" {
-			ui.Text(c, a.testResult).FontSize(12).TextColor(pal.textSecondary)
+		} else if a.testModel != "" {
+			ui.Text(c, msg.ModelsTestSuccess(a.testModel, a.testLatency)).FontSize(12).TextColor(pal.textSecondary)
 		}
 	})
 }
