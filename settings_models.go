@@ -111,7 +111,7 @@ func (a *app) renderAutoSummaryRow(c *ui.Context, pal palette, key string) {
 		on := a.cfgNow.Summary.Auto
 		if renderPillSwitch(c, key, &on, pal) {
 			if err := a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = on }); err != nil {
-				a.err = err.Error()
+				a.err = err
 			}
 			a.cfgNow = a.cfg.Get()
 		}
@@ -245,7 +245,9 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 				a.removeProvider(idx)
 			}
 		})
-		if a.testResult != "" {
+		if a.testErr != nil {
+			ui.Text(c, errorText(c.Locale(), a.testErr)).FontSize(12).TextColor(pal.textSecondary)
+		} else if a.testResult != "" {
 			ui.Text(c, a.testResult).FontSize(12).TextColor(pal.textSecondary)
 		}
 	})

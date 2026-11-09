@@ -448,5 +448,29 @@
   "receiptSerial": "单号 {serial}",
   "@receiptSerial": {
     "description": "小票：receiptSerial"
-  }
+  },
+  "modelsFetchFailed": "拉取模型失败：",
+  "@modelsFetchFailed": {"description": "模型列表请求的结果提示。"},
+  "modelsFetchEmpty": "接口返回了空列表",
+  "@modelsFetchEmpty": {"description": "模型列表请求的结果提示。"},
+  "modelsFetchSuccess": "拉到 {count} 个模型",
+  "@modelsFetchSuccess": {"description": "模型列表请求的结果提示。", "placeholders": {"count": {"type": "int", "example": "3"}}},
+  "errorUnknown": "操作失败：",
+  "@errorUnknown": {"description": "界面错误说明。"},
+  "errorNoEndpoint": "尚未配置接口地址",
+  "@errorNoEndpoint": {"description": "界面错误说明。"},
+  "errorNoModel": "尚未选择模型",
+  "@errorNoModel": {"description": "界面错误说明。"},
+  "errorInvalidResponse": "无法解析模型响应",
+  "@errorInvalidResponse": {"description": "界面错误说明。"},
+  "errorEmptyResponse": "模型没有返回内容",
+  "@errorEmptyResponse": {"description": "界面错误说明。"},
+  "errorConnection": "无法连接模型接口：",
+  "@errorConnection": {"description": "界面错误说明。"},
+  "errorProvider": "模型接口返回错误：",
+  "@errorProvider": {"description": "界面错误说明。"},
+  "errorLinkNotAbsolute": "程序路径不是绝对路径",
+  "@errorLinkNotAbsolute": {"description": "界面错误说明。"},
+  "errorLinkExists": "命令链接的位置已被其他文件占用",
+  "@errorLinkExists": {"description": "界面错误说明。"}
 }

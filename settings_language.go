@@ -16,7 +16,7 @@ import (
 
 func (a *app) setLanguage(lang string) {
 	if err := a.cfg.Update(func(c *config.Config) { c.Language = lang }); err != nil {
-		a.err = err.Error()
+		a.err = err
 		return
 	}
 	a.cfgNow = a.cfg.Get()

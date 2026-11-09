@@ -46,7 +46,7 @@ func (a *app) setRecorderEnabled(enabled bool) {
 		return
 	}
 	if err := a.cfg.Update(func(c *config.Config) { c.Recorder.Enabled = enabled }); err != nil {
-		a.err = err.Error()
+		a.err = err
 		a.cfgNow = a.cfg.Get()
 		return
 	}

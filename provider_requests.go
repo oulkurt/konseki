@@ -1,5 +1,5 @@
 /*
- * [INPUT]: 依赖供应商配置与模型客户端。
+ * [INPUT]: 依赖供应商配置、模型客户端与双语目录。
  * [OUTPUT]: 提供连接测试与模型列表请求。
  * [POS]: 供应商设置的后台请求。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -38,7 +37,7 @@ func (a *app) testConnection(idx int) {
 	}
 	pc, client := a.cfgNow.Providers[idx], a.llmc
 	lang := a.cfgNow.Language
-	a.testing, a.testResult = true, ""
+	a.testing, a.testResult, a.testErr = true, "", nil
 	go func() {
 		started := time.Now()
 		result, ok := "", false
@@ -50,7 +49,7 @@ func (a *app) testConnection(idx int) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
-			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "只回复两个字：收到", MaxTokens: 32})
+			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "Reply with OK.", MaxTokens: 32})
 			err = e
 			if err == nil {
 				model := resp.Model
@@ -61,10 +60,7 @@ func (a *app) testConnection(idx int) {
 				ok = true
 			}
 		}
-		if err != nil {
-			result = err.Error()
-		}
-		a.post(func() { a.testing, a.testResult, a.testOK = false, result, ok })
+		a.post(func() { a.testing, a.testResult, a.testErr, a.testOK = false, result, err, ok })
 	}()
 }
 
@@ -134,11 +130,11 @@ func (a *app) fetchModels(idx int) {
 		a.post(func() {
 			a.fetchingModels = false
 			if err != nil {
-				a.fetchMsg = "拉取失败：" + err.Error()
+				a.fetchMsg = locales.In(a.cfgNow.Language).ModelsFetchFailed() + errorText(a.cfgNow.Language, err)
 				return
 			}
 			if len(chat) == 0 {
-				a.fetchMsg = "接口返回了空列表"
+				a.fetchMsg = locales.In(a.cfgNow.Language).ModelsFetchEmpty()
 				return
 			}
 			a.cfg.Update(func(c *config.Config) {
@@ -154,7 +150,7 @@ func (a *app) fetchModels(idx int) {
 				}
 			})
 			a.cfgNow = a.cfg.Get()
-			a.fetchMsg = fmt.Sprintf("拉到 %d 个模型", len(chat))
+			a.fetchMsg = locales.In(a.cfgNow.Language).ModelsFetchSuccess(len(chat))
 		})
 	}()
 }

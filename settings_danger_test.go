@@ -143,8 +143,8 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
-	if a.clearErr != "" || a.clearRunning || len(a.sums.Days()) != 0 {
-		t.Fatalf("清除未完成: %q", a.clearErr)
+	if a.clearErr != nil || a.clearRunning || len(a.sums.Days()) != 0 {
+		t.Fatalf("清除未完成: %v", a.clearErr)
 	}
 	select {
 	case <-posted:
@@ -175,8 +175,8 @@ func TestClearFailureStaysInSettings(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
-	if a.clearErr == "" || a.tab != 1 || a.shred.pending {
-		t.Fatalf("失败后状态错误：tab=%d error=%q shred=%v", a.tab, a.clearErr, a.shred.pending)
+	if a.clearErr == nil || a.tab != 1 || a.shred.pending {
+		t.Fatalf("失败后状态错误：tab=%d error=%v shred=%v", a.tab, a.clearErr, a.shred.pending)
 	}
 }
 
@@ -279,7 +279,7 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	if a.legacyChecked || len(a.legacyFiles) != 0 {
 		t.Fatal("旧文件缓存未刷新")
 	}
-	if a.clearErr != "" {
+	if a.clearErr != nil {
 		t.Fatal(a.clearErr)
 	}
 	if len(a.receipt.Lines) != 0 || !a.lastLoad.IsZero() {

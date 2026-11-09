@@ -1,13 +1,13 @@
 /*
  * [INPUT]: 依赖摘要任务、采集清除操作与旧版技能导出文件。
- * [OUTPUT]: 提供确认界面与按顺序执行的后台清除流程。
+ * [OUTPUT]: 提供确认界面、清除失败种类与后台清除流程。
  * [POS]: 设置页危险操作的边界；最后一步删除旧导出文件，不写任何文件。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
 
 import (
-	"errors"
+	"fmt"
 	"time"
 
 	"konseki/internal/skill"
@@ -15,6 +15,10 @@ import (
 
 	"github.com/egoist/mygo/ui"
 )
+
+type clearCountError int
+
+func (e clearCountError) Error() string { return fmt.Sprintf("%d files could not be deleted", e) }
 
 func (a *app) renderDanger(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
@@ -36,8 +40,8 @@ func (a *app) renderDanger(c *ui.Context, pal palette) {
 			if btn.Clicked() {
 				a.clearConfirm = true
 			}
-			if a.clearErr != "" {
-				ui.Text(c, a.clearErr).TextColor(c.Theme().Danger).FontSize(12)
+			if a.clearErr != nil {
+				ui.Text(c, errorText(c.Locale(), a.clearErr)).TextColor(c.Theme().Danger).FontSize(12)
 			}
 		})
 	})
@@ -65,7 +69,7 @@ func (a *app) clearActivity() {
 	}
 	a.clearRunning = true
 	a.clearReceipt = a.receipt
-	a.clearErr = ""
+	a.clearErr = nil
 	a.sumEpoch++
 	if a.sumCancel != nil {
 		a.sumCancel()
@@ -74,7 +78,6 @@ func (a *app) clearActivity() {
 	runner, sums := a.runner, a.sums
 	legacyDir := a.legacyDir()
 	post := a.post
-	lang := a.cfgNow.Language
 	go func() {
 		err := clearSequence(done, func() error {
 			cleared, err := runner.ClearAll()
@@ -82,7 +85,7 @@ func (a *app) clearActivity() {
 				return err
 			}
 			if cleared.Failed != 0 {
-				return errors.New(locales.In(lang).RecorderDeleteFailed(cleared.Failed))
+				return clearCountError(cleared.Failed)
 			}
 			return nil
 		}, sums.Clear, func() error {
@@ -95,7 +98,7 @@ func (a *app) clearActivity() {
 			a.sumCancel = nil
 			a.sumDone = nil
 			if err != nil {
-				a.clearErr = err.Error()
+				a.clearErr = err
 				return
 			}
 			a.sumEntries = nil

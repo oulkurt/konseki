@@ -1,5 +1,5 @@
 /*
- * [INPUT]: 依赖采集、会话存储、配置、摘要服务和命令分流。
+ * [INPUT]: 依赖采集、会话存储、配置、摘要服务和界面错误边界。
  * [OUTPUT]: 提供应用入口、刷新缓存与后台摘要。
  * [POS]: 应用组合根。入口先分流只读查询命令并维护命令软链接，再启动窗口；刷新后缓存小票供视图读取。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -37,7 +37,7 @@ type app struct {
 	runningApps          func() []capture.Front
 	running              runningAppsCache
 	// linkErr 是启动时维护数据目录软链接失败的说明，显示在 Agent 技能卡片上。
-	linkErr string
+	linkErr error
 
 	// ---- 持久层 ----
 	cfg    *config.Store
@@ -52,7 +52,7 @@ type app struct {
 	doctor          string
 	showDiag        bool
 	lastLoad        time.Time
-	err             string
+	err             error
 	listState       ui.ListState
 	scrollState     ui.ScrollState
 	expanded        map[string]bool
@@ -82,6 +82,7 @@ type app struct {
 	modelDraft      string
 	testing         bool
 	testResult      string
+	testErr         error
 	testOK          bool
 	detected        []providers.Credential
 	detectDone      bool
@@ -110,7 +111,7 @@ type app struct {
 	sumDone           chan struct{}
 	sumEpoch          uint64
 	clearRunning      bool
-	clearErr          string
+	clearErr          error
 	clearReceipt      ReceiptDay
 	shred             shredAnimation
 	clearConfirm      bool
@@ -127,7 +128,7 @@ type app struct {
 	// 旧版导出的文件列表只在通用页第一次渲染时检查一次，结果缓存。
 	legacyFiles   []string
 	legacyChecked bool
-	legacyErr     string
+	legacyErr     error
 	// 最近一次点过的复制按钮和时刻，按钮文字在两秒内显示「已复制」。
 	agentCopiedKey string
 	agentCopiedAt  time.Time
@@ -149,7 +150,7 @@ func (a *app) legacyDir() string {
 func (a *app) resetLegacy() {
 	a.legacyChecked = false
 	a.legacyFiles = nil
-	a.legacyErr = ""
+	a.legacyErr = nil
 }
 
 func (a *app) ensureInit() {
@@ -185,7 +186,7 @@ func (a *app) refresh() {
 	if a.receiptStore == nil {
 		store, err := capture.NewStore(a.runner.Root())
 		if err != nil {
-			a.err = err.Error()
+			a.err = err
 		} else {
 			a.receiptStore = store
 		}
@@ -195,7 +196,7 @@ func (a *app) refresh() {
 		var err error
 		sessions, err = a.receiptStore.ReadSessions(a.dayKey())
 		if err != nil && !os.IsNotExist(err) {
-			a.err = err.Error()
+			a.err = err
 		}
 	}
 	day, err := time.ParseInLocation("2006-01-02", a.dayKey(), time.Local)
@@ -215,12 +216,12 @@ func (a *app) loadDay() {
 	blocks, err := a.runner.Timeline(key)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			a.err = err.Error()
+			a.err = err
 		}
 		a.blocks = nil
 		return
 	}
-	a.err = ""
+	a.err = nil
 	a.blocks = blocks
 }
 
@@ -231,7 +232,7 @@ func (a *app) loadSummaries() {
 	}
 	ents, err := a.sums.Load(a.dayKey())
 	if err != nil {
-		a.sumErr = err.Error()
+		a.sumErr = errorText(a.cfgNow.Language, err)
 		return
 	}
 	a.sumErr = ""
@@ -310,7 +311,7 @@ func (a *app) runSummary(force bool) {
 			a.sumRunning = false
 			a.sumRedactions = redactions
 			if err != nil {
-				a.sumErr = err.Error()
+				a.sumErr = errorText(a.cfgNow.Language, err)
 				return
 			}
 			a.sumEntries = entries
@@ -330,7 +331,7 @@ func main() {
 		log.Fatal(err)
 	}
 	current := cfg.Get()
-	linkErr := linkExecutable(appDir)
+	linkErr := linkError(appDir)
 	mygo.App.SetLocale(current.Language)
 	runner, err := capture.New(recorderSettings(current.Recorder, appDir))
 	if err != nil {

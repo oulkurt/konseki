@@ -20,7 +20,7 @@ import (
 
 func (a *app) updateRecorder(fn func(*config.Recorder)) {
 	if err := a.cfg.Update(func(cfg *config.Config) { fn(&cfg.Recorder) }); err != nil {
-		a.err = err.Error()
+		a.err = err
 		return
 	}
 	a.applyRecorder()

@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖供应商预设和用户配置。
- * [OUTPUT]: 提供模型协议、端点和候选模型的解析结果。
+ * [OUTPUT]: 提供模型协议、端点、候选模型和配置错误种类。
  * [POS]: 模型设置与网络请求共用的解析边界。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -114,11 +114,11 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		r.Kind = AnthropicMessages
 		r.BaseURL = anthropicBase
 	default:
-		return r, fmt.Errorf("%s 没有配置接口地址", name)
+		return r, fmt.Errorf("%s: %w", name, ErrNoEndpoint)
 	}
 
 	if r.Model == "" {
-		return r, fmt.Errorf("%s 还没有选模型", name)
+		return r, fmt.Errorf("%s: %w", name, ErrNoModel)
 	}
 
 	// Azure 的部署名是模型 id，但请求要用 api-key 头而不是 Bearer。

@@ -1,12 +1,16 @@
 /**
  * [INPUT]: 依赖界面文本、白名单和注入的用户数据。
- * [OUTPUT]: 验证小票与设置三子页中英混排；提供用户数据剔除、两张放行表和 checkPageLanguage 页面检查。
+ * [OUTPUT]: 验证页面语言和根包中文字符串；提供用户数据剔除及页面检查。
  * [POS]: 根模块的文案验收工具。页面级语言测试先剔除用户数据，再用它判断界面文案是否混入另一种语言。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -17,6 +21,44 @@ import (
 
 	"github.com/egoist/mygo/ui"
 )
+
+// TestRootSourceLanguage 防止界面绕过语言目录引入中文文案。
+func TestRootSourceLanguage(t *testing.T) {
+	paths, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.BasicLit)
+			if !ok || lit.Kind != token.STRING {
+				return true
+			}
+			value, err := strconv.Unquote(lit.Value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// 品牌名在所有语言中保持原样。
+			if value == "痕跡 Konseki" {
+				return true
+			}
+			if strings.ContainsFunc(value, func(r rune) bool {
+				return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana)
+			}) {
+				t.Errorf("%s: 中文或日文字面量 %s", fset.Position(lit.Pos()), lit.Value)
+			}
+			return true
+		})
+	}
+}
 
 var latinWord = regexp.MustCompile(`[A-Za-z]{2,}`)
 

@@ -57,6 +57,7 @@ func (a *app) importCredential(cred providers.Credential) {
 	a.cfgNow = a.cfg.Get()
 	a.rebuildGenerator()
 	a.testResult = ""
+	a.testErr = nil
 	a.testOK = true
 }
 
@@ -147,6 +148,7 @@ func (a *app) setDefaultProvider(pc config.ProviderConfig) {
 	a.cfgNow = a.cfg.Get()
 	a.rebuildGenerator()
 	a.testResult = ""
+	a.testErr = nil
 	a.testOK = true
 }
 

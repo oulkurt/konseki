@@ -66,7 +66,7 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 					if ui.Button(c.Key("btn-agent-open-repo"), msg.GeneralAgentOpen()).Clicked() {
 						if a.openExternal != nil {
 							if err := a.openExternal(agentSkillRepo); err != nil {
-								a.err = err.Error()
+								a.err = err
 							}
 						}
 					}
@@ -75,8 +75,8 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 			})
 
 			ui.Text(c, msg.GeneralAgentRedact()).Padding(0, 18, 14, 18).FontSize(12).TextColor(pal.textSecondary)
-			if a.linkErr != "" {
-				ui.Text(c, msg.GeneralAgentLinkError(a.linkErr)).FontSize(12).TextColor(c.Theme().Danger)
+			if a.linkErr != nil {
+				ui.Text(c, msg.GeneralAgentLinkError(errorText(c.Locale(), a.linkErr))).FontSize(12).TextColor(c.Theme().Danger)
 			}
 			a.renderLegacyRow(c, pal, msg)
 		})
@@ -126,8 +126,8 @@ func (a *app) renderLegacyRow(c *ui.Context, pal palette, msg locales.Messages) 
 	if !a.legacyChecked {
 		a.checkLegacy(msg)
 	}
-	if a.legacyErr != "" {
-		ui.Text(c, a.legacyErr).FontSize(12).TextColor(c.Theme().Danger)
+	if a.legacyErr != nil {
+		ui.Text(c, msg.GeneralAgentLegacyError(errorText(c.Locale(), a.legacyErr))).FontSize(12).TextColor(c.Theme().Danger)
 	}
 	if len(a.legacyFiles) == 0 {
 		return
@@ -139,9 +139,9 @@ func (a *app) renderLegacyRow(c *ui.Context, pal palette, msg locales.Messages) 
 			Border(1, c.Theme().Danger)
 		if btn.Clicked() {
 			if _, err := skill.RemoveLegacy(dir); err != nil {
-				a.legacyErr = msg.GeneralAgentLegacyError(err.Error())
+				a.legacyErr = err
 			} else {
-				a.legacyErr = ""
+				a.legacyErr = nil
 			}
 			a.checkLegacy(msg)
 		}
@@ -153,7 +153,7 @@ func (a *app) checkLegacy(msg locales.Messages) {
 	files, err := skill.FindLegacy(a.legacyDir())
 	if err != nil {
 		a.legacyFiles = nil
-		a.legacyErr = msg.GeneralAgentLegacyError(err.Error())
+		a.legacyErr = err
 		return
 	}
 	a.legacyFiles = files

@@ -102,8 +102,8 @@ func (a *app) view(c *ui.Context) {
 							})
 					})
 
-					if a.err != "" {
-						ui.Text(c, msg.ShellReadError()+a.err).FontSize(12).TextColor(t.Danger)
+					if a.err != nil {
+						ui.Text(c, msg.ShellReadError()+errorText(c.Locale(), a.err)).FontSize(12).TextColor(t.Danger)
 					}
 
 					// ---- 分页：时间轴 / 设置 ----

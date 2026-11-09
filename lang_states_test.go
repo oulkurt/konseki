@@ -7,6 +7,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -63,11 +64,11 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 				want := ""
 				switch state {
 				case "read-error":
-					a.err = user[0]
-					want = msg.ShellReadError() + user[0]
+					a.err = errors.New(user[0])
+					want = msg.ShellReadError() + errorText(lang, a.err)
 				case "clear-error":
-					a.clearErr = msg.RecorderDeleteFailed(2)
-					want = a.clearErr
+					a.clearErr = clearCountError(2)
+					want = msg.RecorderDeleteFailed(2)
 				case "confirmation":
 					a.clearConfirm = true
 					want = msg.RecorderClearTitle()
@@ -96,9 +97,9 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 						a.legacyFiles = []string{"legacy"}
 						want = msg.GeneralAgentLegacy()
 					} else {
-						a.linkErr = user[0]
-						a.legacyErr = msg.GeneralAgentLegacyError(user[0])
-						want = msg.GeneralAgentLinkError(user[0])
+						a.linkErr = errors.New(user[0])
+						a.legacyErr = errors.New(user[0])
+						want = msg.GeneralAgentLinkError(errorText(lang, a.linkErr))
 					}
 				case "provider-edit", "provider-search", "import", "scanning", "provider-result":
 					a.settingsTab = 1

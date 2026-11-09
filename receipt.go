@@ -24,8 +24,8 @@ func (a *app) renderTimelinePage(c *ui.Context, pal palette, inset float32) {
 		ui.Column(c).FillWidth().Padding(0, 22, 12, 22).Gap(12).Children(func() {
 			ui.Row(c).FillWidth().Padding(0, 6).DragWindow().Children(func() { ui.Text(c, "痕跡 Konseki").FontSize(11.5).Bold().TextColor(pal.textSecondary) })
 			a.renderTabs(c, pal)
-			if a.err != "" {
-				ui.Text(c, locales.In(c.Locale()).ShellReadError()+a.err).TextColor(c.Theme().Danger)
+			if a.err != nil {
+				ui.Text(c, locales.In(c.Locale()).ShellReadError()+errorText(c.Locale(), a.err)).TextColor(c.Theme().Danger)
 			}
 		})
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPrinter(c, paperWidth) })

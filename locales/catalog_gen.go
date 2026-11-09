@@ -2445,3 +2445,171 @@ func ReceiptSerial(serial string) string { return In(i18n.Locale()).ReceiptSeria
 func (msgs Messages) ReceiptSerial(serial string) string {
 	return Catalog.Format(msgs.locale, "receiptSerial", map[string]any{"serial": serial})
 }
+
+// ModelsFetchFailed says "拉取模型失败："
+// in the language the app shows.
+//
+// 模型列表请求的结果提示。
+func ModelsFetchFailed() string { return In(i18n.Locale()).ModelsFetchFailed() }
+
+// ModelsFetchFailed says "拉取模型失败："
+// in the language of msgs.
+//
+// 模型列表请求的结果提示。
+func (msgs Messages) ModelsFetchFailed() string {
+	return Catalog.Format(msgs.locale, "modelsFetchFailed", nil)
+}
+
+// ModelsFetchEmpty says "接口返回了空列表"
+// in the language the app shows.
+//
+// 模型列表请求的结果提示。
+func ModelsFetchEmpty() string { return In(i18n.Locale()).ModelsFetchEmpty() }
+
+// ModelsFetchEmpty says "接口返回了空列表"
+// in the language of msgs.
+//
+// 模型列表请求的结果提示。
+func (msgs Messages) ModelsFetchEmpty() string {
+	return Catalog.Format(msgs.locale, "modelsFetchEmpty", nil)
+}
+
+// ModelsFetchSuccess says "拉到 {count} 个模型"
+// in the language the app shows.
+//
+// 模型列表请求的结果提示。
+func ModelsFetchSuccess(count int) string { return In(i18n.Locale()).ModelsFetchSuccess(count) }
+
+// ModelsFetchSuccess says "拉到 {count} 个模型"
+// in the language of msgs.
+//
+// 模型列表请求的结果提示。
+func (msgs Messages) ModelsFetchSuccess(count int) string {
+	return Catalog.Format(msgs.locale, "modelsFetchSuccess", map[string]any{"count": count})
+}
+
+// ErrorUnknown says "操作失败："
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorUnknown() string { return In(i18n.Locale()).ErrorUnknown() }
+
+// ErrorUnknown says "操作失败："
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorUnknown() string {
+	return Catalog.Format(msgs.locale, "errorUnknown", nil)
+}
+
+// ErrorNoEndpoint says "尚未配置接口地址"
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorNoEndpoint() string { return In(i18n.Locale()).ErrorNoEndpoint() }
+
+// ErrorNoEndpoint says "尚未配置接口地址"
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorNoEndpoint() string {
+	return Catalog.Format(msgs.locale, "errorNoEndpoint", nil)
+}
+
+// ErrorNoModel says "尚未选择模型"
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorNoModel() string { return In(i18n.Locale()).ErrorNoModel() }
+
+// ErrorNoModel says "尚未选择模型"
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorNoModel() string {
+	return Catalog.Format(msgs.locale, "errorNoModel", nil)
+}
+
+// ErrorInvalidResponse says "无法解析模型响应"
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorInvalidResponse() string { return In(i18n.Locale()).ErrorInvalidResponse() }
+
+// ErrorInvalidResponse says "无法解析模型响应"
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorInvalidResponse() string {
+	return Catalog.Format(msgs.locale, "errorInvalidResponse", nil)
+}
+
+// ErrorEmptyResponse says "模型没有返回内容"
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorEmptyResponse() string { return In(i18n.Locale()).ErrorEmptyResponse() }
+
+// ErrorEmptyResponse says "模型没有返回内容"
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorEmptyResponse() string {
+	return Catalog.Format(msgs.locale, "errorEmptyResponse", nil)
+}
+
+// ErrorConnection says "无法连接模型接口："
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorConnection() string { return In(i18n.Locale()).ErrorConnection() }
+
+// ErrorConnection says "无法连接模型接口："
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorConnection() string {
+	return Catalog.Format(msgs.locale, "errorConnection", nil)
+}
+
+// ErrorProvider says "模型接口返回错误："
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorProvider() string { return In(i18n.Locale()).ErrorProvider() }
+
+// ErrorProvider says "模型接口返回错误："
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorProvider() string {
+	return Catalog.Format(msgs.locale, "errorProvider", nil)
+}
+
+// ErrorLinkNotAbsolute says "程序路径不是绝对路径"
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorLinkNotAbsolute() string { return In(i18n.Locale()).ErrorLinkNotAbsolute() }
+
+// ErrorLinkNotAbsolute says "程序路径不是绝对路径"
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorLinkNotAbsolute() string {
+	return Catalog.Format(msgs.locale, "errorLinkNotAbsolute", nil)
+}
+
+// ErrorLinkExists says "命令链接的位置已被其他文件占用"
+// in the language the app shows.
+//
+// 界面错误说明。
+func ErrorLinkExists() string { return In(i18n.Locale()).ErrorLinkExists() }
+
+// ErrorLinkExists says "命令链接的位置已被其他文件占用"
+// in the language of msgs.
+//
+// 界面错误说明。
+func (msgs Messages) ErrorLinkExists() string {
+	return Catalog.Format(msgs.locale, "errorLinkExists", nil)
+}

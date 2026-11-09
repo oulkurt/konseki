@@ -43,7 +43,7 @@ func (a *app) commitRecorderField(i int, value int) {
 		value = (value + f.step/2) / f.step * f.step
 	}
 	if err := a.cfg.Update(func(c *config.Config) { f.set(&c.Recorder, value) }); err != nil {
-		a.err = err.Error()
+		a.err = err
 		return
 	}
 	a.applyRecorder()

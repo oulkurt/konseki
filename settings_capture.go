@@ -104,7 +104,7 @@ func (a *app) pauseRecorder(until time.Time) {
 		return
 	}
 	if err := a.cfg.Update(func(cfg *config.Config) { cfg.Recorder.PausedUntil = until }); err != nil {
-		a.err = err.Error()
+		a.err = err
 		return
 	}
 	a.cfgNow = a.cfg.Get()
@@ -152,7 +152,7 @@ func (a *app) renderRecorderStorage(c *ui.Context, pal palette) {
 					for _, days := range []int{7, 14, 30, 90, 0} {
 						if m.Item(label(days)).Checked(a.cfgNow.Recorder.RetentionDays == days).Chosen() {
 							if err := a.cfg.Update(func(cfg *config.Config) { cfg.Recorder.RetentionDays = days }); err != nil {
-								a.err = err.Error()
+								a.err = err
 								return
 							}
 							a.applyRecorder()

@@ -44,7 +44,7 @@ func (a *app) rebuildGenerator() {
 	resolved, err := llm.Resolve(*pc, true)
 	if err != nil {
 		a.gen = nil
-		a.sumErr = err.Error()
+		a.sumErr = errorText(a.cfgNow.Language, err)
 		return
 	}
 
