@@ -77,6 +77,7 @@ func TestErrorPagesLanguages(t *testing.T) {
 		err        error
 	}{
 		{"global", "system", errors.New(external)},
+		{"timeline", "system", errors.New(external)},
 		{"provider", "endpoint", llm.ErrNoEndpoint},
 		{"provider", "model", llm.ErrNoModel},
 		{"provider", "response", &llm.RequestError{Kind: llm.ErrInvalidResponse, Cause: errors.New(external)}},
@@ -103,7 +104,10 @@ func TestErrorPagesLanguages(t *testing.T) {
 				shown := errorText(lang, tc.err)
 				want := ""
 				switch tc.page {
-				case "global":
+				case "global", "timeline":
+					if tc.page == "timeline" {
+						a.tab = 0
+					}
 					a.err = tc.err
 					want = msg.ShellReadError() + shown
 				case "provider":
