@@ -1,5 +1,6 @@
 # providers/
 > L2 | 父级: ../CLAUDE.md
+CLAUDE.md: 描述本目录的职责和成员。
 providers.go: 定义公开目录类型，查询预设并展开区域端点。
 presets.go: 由离线脚本生成预设数据，初始化 table.go 的切片。
 table.go: 声明目录存储，隔离生成数据与公开 API。
