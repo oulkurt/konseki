@@ -1,7 +1,7 @@
 /*
- * [INPUT]: 依赖MyGo 界面基础组件。
+ * [INPUT]: 依赖 MyGo 界面基础组件与玻璃材质。
  * [OUTPUT]: 提供配色和设置控件。
- * [POS]: 共享视图构件。
+ * [POS]: 根模块的共享视图构件，供设置页和导航使用。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
