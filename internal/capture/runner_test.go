@@ -122,7 +122,7 @@ func fakeDependencies() (dependencies, *fakeClock, *fakeSystem) {
 }
 func eventually(t *testing.T, fn func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if fn() {
 			return

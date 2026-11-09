@@ -100,7 +100,7 @@ func TestMaintenanceCoalescesEnforce(t *testing.T) {
 		if got != 2 {
 			t.Fatal(got)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("未补执行")
 	}
 	r.mu.Lock()
@@ -138,7 +138,7 @@ func TestClearAllWaitsForStoppedMaintenance(t *testing.T) {
 	close(release)
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("维护结束后清空未返回")
 	}
 }

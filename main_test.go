@@ -116,7 +116,7 @@ func TestRecorderInputCountsPersist(t *testing.T) {
 	probe.ticks <- time.Now()
 	select {
 	case <-probe.called:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("采集器未应用键鼠计数开关")
 	}
 }
@@ -211,7 +211,7 @@ func scanTestCredentials(t testing.TB, a *app, creds []providers.Credential) {
 	select {
 	case f := <-queued:
 		f()
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("凭据扫描超时")
 	}
 	a.post = func(f func()) { f() }

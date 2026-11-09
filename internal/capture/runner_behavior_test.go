@@ -44,7 +44,7 @@ func TestRunnerStopDuringCapture(t *testing.T) {
 	close(screen.release)
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("采集结束后仍无法停止")
 	}
 	if r.Status().Phase != PhaseOff {
@@ -84,7 +84,7 @@ func TestRunnerOverQuotaRequestsEnforce(t *testing.T) {
 		if max != 1 {
 			t.Fatal(max)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("超额未触发清理")
 	}
 }

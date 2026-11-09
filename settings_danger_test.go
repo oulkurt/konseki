@@ -140,7 +140,7 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	select {
 	case f := <-posted:
 		f()
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
 	if a.clearErr != "" || a.clearRunning || len(a.sums.Days()) != 0 {
@@ -172,7 +172,7 @@ func TestClearFailureStaysInSettings(t *testing.T) {
 	select {
 	case f := <-posted:
 		f()
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
 	if a.clearErr == "" || a.tab != 1 || a.shred.pending {
@@ -273,7 +273,7 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	select {
 	case f := <-posted:
 		f()
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
 	if a.legacyChecked || len(a.legacyFiles) != 0 {

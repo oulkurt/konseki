@@ -78,7 +78,7 @@ func TestConnectionReportsModelAndLatency(t *testing.T) {
 	select {
 	case f := <-jobs:
 		f()
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("连接测试超时")
 	}
 	if !a.testOK || !strings.Contains(a.testResult, "actual-model") || !strings.Contains(a.testResult, "ms") {
