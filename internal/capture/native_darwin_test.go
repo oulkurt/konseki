@@ -1,0 +1,264 @@
+//go:build darwin
+
+/*
+ * [INPUT]: 依赖合成 CGImage、位图缩放、ImageIO 和 Vision；内存门槛用 ps 读当前 RSS。
+ * [OUTPUT]: 验证原生空白判断、指纹、编码、OCR、OCR 队列释放帧与性能；KONSEKI_OCR_SOAK=1 时验证同一帧反复识别 RSS 不涨。
+ * [POS]: 不抓屏、不请求授权的 macOS 原生管线测试。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+package capture
+
+import (
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	_ "image/png"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/ebitengine/purego"
+)
+
+func nativeFrame(t testing.TB, img *image.RGBA) *Frame {
+	t.Helper()
+	initPlatform()
+	f := &Frame{W: img.Rect.Dx(), H: img.Rect.Dy(), RGBA: img.Pix}
+	withPool(func() {
+		f.native = rgbaToImage(f)
+
+	})
+	if f.native == 0 {
+		t.Fatal("CGImage 创建失败")
+	}
+	f.RGBA = nil
+	t.Cleanup(func() { releaseFrame(f) })
+	return f
+}
+func pattern(w, h int) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			i := y*img.Stride + x*4
+			v := byte((x*17 + y*29 + (x*y)%251) % 256)
+			img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = v, byte(int(v)*3%256), byte(int(v)*7%256), 255
+		}
+	}
+	return img
+}
+func TestNativeBlank(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 320, 180))
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{0, 0, 0, 255}}, image.Point{}, draw.Src)
+	black := nativeFrame(t, img)
+	var blank bool
+	withPool(func() { blank = isBlank(black.native) })
+	if !blank {
+		t.Fatal("黑帧未识别")
+	}
+	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{80, 100, 120, 255}}, image.Point{}, draw.Src)
+	colored := nativeFrame(t, img)
+	withPool(func() { blank = isBlank(colored.native) })
+	if blank {
+		t.Fatal("有内容的帧被判空白")
+	}
+}
+func TestNativeFingerprint(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 640, 360))
+	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
+	for y := 12; y < 350; y += 18 {
+		for x := 30; x < 610; x += 12 {
+			draw.Draw(img, image.Rect(x, y, x+8, y+5), image.Black, image.Point{}, draw.Src)
+		}
+	}
+	a := fingerprintFrame(nativeFrame(t, img))
+	if !duplicate(a, fingerprintFrame(nativeFrame(t, img))) {
+		t.Fatal("同一画面不一致")
+	}
+	edited := image.NewRGBA(img.Bounds())
+	copy(edited.Pix, img.Pix)
+	for y := 12; y < 30; y++ {
+		for x := 30; x < 130; x++ {
+			i := y*edited.Stride + x*4
+			edited.Pix[i], edited.Pix[i+1], edited.Pix[i+2] = 255-edited.Pix[i], 255-edited.Pix[i+1], 255-edited.Pix[i+2]
+		}
+	}
+	if !duplicate(a, fingerprintFrame(nativeFrame(t, edited))) {
+		t.Fatal("少量变化不应触发")
+	}
+	shifted := image.NewRGBA(img.Bounds())
+	draw.Draw(shifted, shifted.Bounds(), image.White, image.Point{}, draw.Src)
+	draw.Draw(shifted, image.Rect(0, 8, 640, 360), img, image.Point{}, draw.Src)
+	if duplicate(a, fingerprintFrame(nativeFrame(t, shifted))) {
+		t.Fatal("文字滚动应触发")
+	}
+}
+func TestNativeSaveJPEG(t *testing.T) {
+	f := nativeFrame(t, pattern(3000, 1700))
+	var sizes []int64
+	for _, q := range []int{30, 95} {
+		path := filepath.Join(t.TempDir(), "shot.jpg")
+		if !platformSaveJPEG(f, path, q) {
+			t.Fatal("JPEG 编码失败")
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := jpeg.DecodeConfig(file)
+		file.Close()
+		if err != nil || cfg.Width > 2560 || cfg.Height > 2560 {
+			t.Fatal(cfg, err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sizes = append(sizes, info.Size())
+	}
+	if sizes[1] <= sizes[0] {
+		t.Fatal(sizes)
+	}
+}
+
+// ocrSample 读入 Vision 中英文识别测试图。
+func ocrSample(t testing.TB) *image.RGBA {
+	t.Helper()
+	file, err := os.Open("testdata/timeline-empty-zh-Hans-light.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	img, _, err := image.Decode(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rgba := image.NewRGBA(img.Bounds())
+	draw.Draw(rgba, rgba.Bounds(), img, img.Bounds().Min, draw.Src)
+	return rgba
+}
+
+func TestNativeOCR(t *testing.T) {
+	f := nativeFrame(t, ocrSample(t))
+	text, _, err := (darwinOCR{}).Recognize(f, []string{"zh-Hans", "en-US"})
+	if err != nil || !strings.Contains(text, "今天还没有记录") || !strings.Contains(text, "Konseki") {
+		t.Fatalf("OCR: %q %v", text, err)
+	}
+}
+
+// TestNativeOCRMemory 同一帧反复识别 300 次，RSS 不能随次数增长。
+// Vision 直接收 CGImage 时，同一张图每识别一次就多留一块整图大小的映射，这是已知最坏的情况。
+// 读当前 RSS 而不是峰值：每次新图时 RSS 会上下波动几十 MB，峰值分不出泄漏和尖峰。
+// 跑一次约 30 秒，设 KONSEKI_OCR_SOAK=1 才跑。
+func TestNativeOCRMemory(t *testing.T) {
+	if os.Getenv("KONSEKI_OCR_SOAK") == "" {
+		t.Skip("设 KONSEKI_OCR_SOAK=1 才跑")
+	}
+	f := nativeFrame(t, ocrSample(t))
+	calls := 0
+	recognize := func(n int) {
+		for ; n > 0; n-- {
+			calls++
+			if _, _, err := (darwinOCR{}).Recognize(f, []string{"zh-Hans", "en-US"}); err != nil {
+				t.Fatalf("第 %d 次识别失败：%v", calls, err)
+			}
+		}
+	}
+	rssMB := func() int {
+		out, err := exec.Command("ps", "-o", "rss=", "-p", strconv.Itoa(os.Getpid())).Output()
+		if err != nil {
+			t.Fatalf("读 RSS 失败：%v", err)
+		}
+		kb, err := strconv.Atoi(strings.TrimSpace(string(out)))
+		if err != nil {
+			t.Fatalf("RSS 输出 %q 不是数字：%v", out, err)
+		}
+		return kb >> 10
+	}
+	// 前 60 次让 Vision 加载完模型和缓存，之后的增长才算泄漏。
+	recognize(60)
+	warm := rssMB()
+	recognize(240)
+	final := rssMB()
+	t.Logf("预热 60 次后 RSS %d MB，再识别 240 次后 %d MB", warm, final)
+	if final-warm > 50 {
+		t.Fatalf("预热后再识别 240 次，RSS 涨了 %d MB", final-warm)
+	}
+}
+func BenchmarkNativePipeline(b *testing.B) {
+	f := nativeFrame(b, pattern(5120, 2880))
+	b.Run("Blank", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			withPool(func() { isBlank(f.native) })
+		}
+	})
+	b.Run("Fingerprint", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			fingerprintFrame(f)
+		}
+	})
+	b.Run("SaveJPEG", func(b *testing.B) {
+		path := filepath.Join(b.TempDir(), "shot.jpg")
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			if !platformSaveJPEG(f, path, 85) {
+				b.Fatal("编码失败")
+			}
+		}
+	})
+	// 每次文字识别前多出的一步：把整帧画进像素缓冲。
+	b.Run("PixelBuffer", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			withPool(func() {
+				pb := pixelBuffer(f.native)
+				if pb == 0 {
+					b.Fatal("像素缓冲创建失败")
+				}
+				cfRelease(pb)
+			})
+		}
+	})
+}
+
+func TestNativeOCRQueueReleasesFrames(t *testing.T) {
+	f := nativeFrame(t, pattern(80, 60))
+	lib, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retainCount func(uintptr) int64
+	purego.RegisterLibFunc(&retainCount, lib, "CFGetRetainCount")
+	baseline := retainCount(f.native)
+	st, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := &blockingOCR{started: make(chan struct{}, 1), release: make(chan struct{})}
+	q := newOCRQueue(engine, 20*time.Millisecond, nil)
+	cfg := OCRSettings{Enabled: true, EveryN: 1}
+	task := func(id string) ocrTask { return ocrTask{frame: f, id: id, day: "2026-11-05", store: st} }
+	q.submit("s", cfg, task("1"))
+	<-engine.started
+	q.submit("s", cfg, task("2"))
+	q.submit("s", cfg, task("3"))
+	q.mu.Lock()
+	old := q.tasks
+	q.mu.Unlock()
+	q.submit("s", cfg, task("4"))
+	q.mu.Lock()
+	cleared := old[0].frame == nil
+	q.mu.Unlock()
+	if !cleared || retainCount(f.native) != baseline+3 {
+		close(engine.release)
+		q.close()
+		t.Fatal("丢弃任务未释放原生帧或清空槽位")
+	}
+	eventually(t, func() bool { rows, _ := st.ReadOCR("2026-11-05"); return len(rows) > 0 && rows[0].Status == "timeout" })
+	close(engine.release)
+	q.close()
+	eventually(t, func() bool { return retainCount(f.native) == baseline })
+}

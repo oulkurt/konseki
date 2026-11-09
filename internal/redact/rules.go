@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖 regexp、sort、strconv、strings 和 unicode/utf8。
+ * [OUTPUT]: 提供按 kind 扫描敏感区间的 matcher、边界校验和校验和检查。
+ * [POS]: 脱敏层的规则实现。redact.go 负责占位符和反查表，这里只找区间。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package redact
 
 import (

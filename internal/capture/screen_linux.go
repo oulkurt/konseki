@@ -1,5 +1,11 @@
 //go:build linux
 
+/*
+ * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查。
+ * [OUTPUT]: 提供屏幕、文字识别和 JPEG 接口桩。
+ * [POS]: 采集模块的非 macOS 平台桩。它不执行实际采集。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 // Linux 实现骨架。
@@ -38,7 +44,7 @@ var errLinuxNotImplemented = errors.New("linux backend not implemented yet")
 
 type linuxScreen struct{}
 
-func newScreen() Screen {
+func newPlatformScreen() Screen {
 	return linuxScreen{}
 }
 
@@ -62,10 +68,9 @@ type linuxOCR struct{}
 
 func newOCR() OCREngine { return linuxOCR{} }
 
-func (linuxOCR) Recognize(f *Frame) (string, int, error) {
+func (linuxOCR) Recognize(f *Frame, languages []string) (string, int, error) {
 	// TODO: Tesseract
 	return "", 0, errLinuxNotImplemented
 }
 
-// platformSaveThumb 未实现。
-func platformSaveThumb(f *Frame, path string) bool { return false }
+func platformSaveJPEG(f *Frame, path string, quality int) bool { return false }

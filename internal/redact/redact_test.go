@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖脱敏规则、占位符与并发调用。
+ * [OUTPUT]: 验证遮蔽、还原、放行和校验边界。
+ * [POS]: 脱敏模块的行为回归测试。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package redact
 
 import (

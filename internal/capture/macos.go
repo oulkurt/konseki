@@ -1,8 +1,15 @@
 //go:build darwin
 
+/*
+ * [INPUT]: 依赖 CoreGraphics、CoreVideo、ImageIO、Vision 与 Objective-C 运行时。
+ * [OUTPUT]: 提供窗口查询、位图缩放、JPEG 编码和文字识别原语。文字识别先把图画进像素缓冲，Vision 不直接收 CGImage。
+ * [POS]: macOS 原生桥接层；screen_darwin.go 编排帧与资源生命周期。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 import (
+	"errors"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -12,32 +19,34 @@ import (
 // 通过 purego 直接和 Objective-C runtime 说话，不用 cgo。
 // 好处：交叉编译干净、二进制小，和 mygo 走的是同一条路。
 
-const (
-	thumbWidth  = 1200 // 磁盘上缩略图的宽度
-	jpegQuality = 0.60 // 缩略图的 JPEG 质量
-)
-
 var (
-	msgSend  uintptr
-	imgFn    func(disp uint32) uintptr
-	dispFn   func() uint32
-	cgListFn func(opt, rel, winid uint32) uintptr
+	msgSend       uintptr
+	msgSendDouble func(uintptr, uintptr, float64) uintptr
+	imgFn         func(disp uint32) uintptr
+	dispFn        func() uint32
+	cgListFn      func(opt, rel, winid uint32) uintptr
 
 	cgGetW func(img uintptr) int
 	cgGetH func(img uintptr) int
 
-	cgDataProvider         func(img uintptr) uintptr
-	cgDataProviderCopyData func(prov uintptr) uintptr
-	cgBitsPerPixel         func(img uintptr) uint32
-	cgBytesPerRow          func(img uintptr) int
-	cfDataLen              func(d uintptr) int
-	cfDataBytePtr          func(d uintptr) uintptr
+	cgColorSpace     func() uintptr
+	cgBitmapCreate   func(unsafe.Pointer, int, int, int, int, uintptr, uint32) uintptr
+	cgBitmapImage    func(uintptr) uintptr
+	cgBitmapData     func(uintptr) unsafe.Pointer
+	cgContextDraw    func(uintptr, cgRect, uintptr)
+	cgContextQuality func(uintptr, int32)
+	cfRetain         func(uintptr) uintptr
 
-	destNew        func(data, uti, count uintptr, opts uintptr) uintptr
-	destAdd        func(dest, img, props uintptr)
-	destFin        func(dest uintptr) uint8
-	imgSrcFromData func(data uintptr, idx int) uintptr
-	imgSrcThumb    func(src uintptr, idx int, opts uintptr) uintptr
+	cvCreate      func(alloc uintptr, w, h int, format uint32, attrs uintptr, out *uintptr) int32
+	cvLock        func(pb uintptr, flags uint64) int32
+	cvUnlock      func(pb uintptr, flags uint64) int32
+	cvBase        func(pb uintptr) unsafe.Pointer
+	cvBytesPerRow func(pb uintptr) int
+	cvSurfaceKey  uintptr
+
+	destNew func(data, uti, count uintptr, opts uintptr) uintptr
+	destAdd func(dest, img, props uintptr)
+	destFin func(dest uintptr) uint8
 )
 
 func initRuntime() {
@@ -49,6 +58,7 @@ func initRuntime() {
 	if err != nil {
 		panic(err)
 	}
+	purego.RegisterFunc(&msgSendDouble, msgSend)
 	for _, fw := range []string{
 		"/System/Library/Frameworks/Foundation.framework/Foundation",
 		"/System/Library/Frameworks/AppKit.framework/AppKit",
@@ -68,17 +78,29 @@ func initRuntime() {
 
 	purego.RegisterLibFunc(&cgGetW, cg, "CGImageGetWidth")
 	purego.RegisterLibFunc(&cgGetH, cg, "CGImageGetHeight")
-	purego.RegisterLibFunc(&cgDataProvider, cg, "CGImageGetDataProvider")
-	purego.RegisterLibFunc(&cgDataProviderCopyData, cg, "CGDataProviderCopyData")
-	purego.RegisterLibFunc(&cgBitsPerPixel, cg, "CGImageGetBitsPerPixel")
-	purego.RegisterLibFunc(&cgBytesPerRow, cg, "CGImageGetBytesPerRow")
+	mustReg(cg, "CGColorSpaceCreateDeviceRGB", &cgColorSpace)
+	mustReg(cg, "CGBitmapContextCreate", &cgBitmapCreate)
+	mustReg(cg, "CGBitmapContextCreateImage", &cgBitmapImage)
+	mustReg(cg, "CGBitmapContextGetData", &cgBitmapData)
+	mustReg(cg, "CGContextDrawImage", &cgContextDraw)
+	mustReg(cg, "CGContextSetInterpolationQuality", &cgContextQuality)
 
 	cf, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	if err != nil {
 		panic(err)
 	}
-	mustReg(cf, "CFDataGetLength", &cfDataLen)
-	mustReg(cf, "CFDataGetBytePtr", &cfDataBytePtr)
+	mustReg(cf, "CFRetain", &cfRetain)
+
+	cv, err := purego.Dlopen("/System/Library/Frameworks/CoreVideo.framework/CoreVideo", purego.RTLD_GLOBAL|purego.RTLD_NOW)
+	if err != nil {
+		panic(err)
+	}
+	mustReg(cv, "CVPixelBufferCreate", &cvCreate)
+	mustReg(cv, "CVPixelBufferLockBaseAddress", &cvLock)
+	mustReg(cv, "CVPixelBufferUnlockBaseAddress", &cvUnlock)
+	mustReg(cv, "CVPixelBufferGetBaseAddress", &cvBase)
+	mustReg(cv, "CVPixelBufferGetBytesPerRow", &cvBytesPerRow)
+	cvSurfaceKey = nativeGlobal(cv, "kCVPixelBufferIOSurfacePropertiesKey")
 
 	io, err := purego.Dlopen("/System/Library/Frameworks/ImageIO.framework/ImageIO", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	if err != nil {
@@ -87,8 +109,6 @@ func initRuntime() {
 	mustReg(io, "CGImageDestinationCreateWithData", &destNew)
 	mustReg(io, "CGImageDestinationAddImage", &destAdd)
 	mustReg(io, "CGImageDestinationFinalize", &destFin)
-	mustReg(io, "CGImageSourceCreateWithData", &imgSrcFromData)
-	mustReg(io, "CGImageSourceCreateThumbnailAtIndex", &imgSrcThumb)
 }
 
 // O 发一条 ObjC 消息。指针参数经 uintptr 转换，靠 go:uintptrescapes 保活。
@@ -110,6 +130,16 @@ func mustReg(lib uintptr, name string, fn any) {
 	}
 	purego.RegisterFunc(fn, sym)
 }
+
+func nativeGlobal(lib uintptr, name string) uintptr {
+	sym, err := purego.Dlsym(lib, name)
+	if err != nil {
+		panic(err)
+	}
+	return *(*uintptr)(unsafe.Pointer(sym))
+}
+
+func objcBool(v uintptr) bool { return uint8(v) != 0 }
 
 func cls(name string) uintptr { return uintptr(objc.GetClass(name)) }
 
@@ -157,6 +187,7 @@ func frontWindow() (app, title string, pid int) {
 	if arr == 0 {
 		return
 	}
+	defer cfRelease(arr)
 	n := O(arr, "count")
 	for i := uintptr(0); i < n; i++ {
 		d := O(arr, "objectAtIndex:", i)
@@ -174,110 +205,83 @@ func frontWindow() (app, title string, pid int) {
 // grab 抓一帧屏幕，返回原始 CGImage。
 func grab() uintptr { return imgFn(dispFn()) }
 
-// ocrImage 在全分辨率的 CGImage 上做 OCR。
-//
-// 这是关键设计：OCR 用全分辨率原图（内存里的 CGImage，不落盘），
-// 磁盘上只留 1200px 的缩略图当视觉参考。
-// 于是「识别准」和「占空间小」不再互相牺牲——
-// 实测缩到 1400px 再 OCR，中文界面会糊成 "'•¥s.JJ •.'# *\""。
-func ocrImage(img uintptr) (string, int) {
-	data := writeJPEGData(img, 0.92)
-	if data == 0 {
-		return "", 0
+// cgRect 与 CoreGraphics 的 CGRect 使用相同的四个 CGFloat。
+type cgRect struct{ X, Y, W, H float64 }
+
+const (
+	// bitmapRGBA 是 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big，内存里按 R、G、B、A 排列。
+	bitmapRGBA = 1 | 4<<12
+	// bitmapBGRA 是 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little，内存布局与 pixelFormatBGRA 相同。
+	bitmapBGRA = 2 | 2<<12
+	// pixelFormatBGRA 是 kCVPixelFormatType_32BGRA，即四字符码 'BGRA'。
+	pixelFormatBGRA = 0x42475241
+)
+
+// 截屏 CGImage 的底层数据可为 BGRA，不能假定通道顺序。
+// 此处由 CoreGraphics 绘入明确的 RGBA 目标，指纹只读取目标字节。
+func bitmap(img uintptr, w, h int, createImage bool) ([]byte, uintptr) {
+	if img == 0 || w <= 0 || h <= 0 {
+		return nil, 0
 	}
-	return ocrData(data)
+	space := cgColorSpace()
+	if space == 0 {
+		return nil, 0
+	}
+	defer cfRelease(space)
+	ctx := cgBitmapCreate(nil, w, h, 8, w*4, space, bitmapRGBA)
+	if ctx == 0 {
+		return nil, 0
+	}
+	defer cfRelease(ctx)
+	cgContextQuality(ctx, 3)
+	cgContextDraw(ctx, cgRect{W: float64(w), H: float64(h)}, img)
+	if createImage {
+		return nil, cgBitmapImage(ctx)
+	}
+	data := cgBitmapData(ctx)
+	if data == nil {
+		return nil, 0
+	}
+	pix := make([]byte, w*h*4)
+	copy(pix, unsafe.Slice((*byte)(data), len(pix)))
+	return pix, 0
 }
 
-// isBlank 判断是不是黑屏/白屏。
-//
-// 为什么要这个：macOS 在锁屏、屏幕保护、或权限刚被吊销时会返回一张
-// 全黑图。实测遇到过 —— 落盘 19KB、OCR 0 行、像素均值 2。
-// 不拦的话会攒一堆无意义的「黑屏」记录，还会污染时长统计。
-//
-// 实现走 CGImage 的 dataProvider，直接读原始像素缓冲区：
-// NSBitmapImageRep 的 bitmapData 在小尺寸下会返回无效指针（实测 SIGSEGV），
-// 而 CGImageGetDataProvider + CFDataGetBytePtr 是所有尺寸都可靠的路径。
 func isBlank(img uintptr) bool {
-	if img == 0 {
+	w, h := cgGetW(img), cgGetH(img)
+	if w <= 0 || h <= 0 {
 		return true
 	}
-	small := downscaleTo(img, 64)
-	if small == 0 || cfDataLen == nil {
+	h = max(1, h*64/w)
+	pix, _ := bitmap(img, 64, h, false)
+	if len(pix) == 0 {
 		return false
 	}
-	prov := cgDataProvider(small)
-	if prov == 0 {
-		return false
+	var sum uint64
+	for i := 0; i < len(pix); i += 4 {
+		sum += uint64(pix[i]) + uint64(pix[i+1]) + uint64(pix[i+2])
 	}
-	data := cgDataProviderCopyData(prov)
-	if data == 0 {
-		return false
-	}
-	n := cfDataLen(data)
-	if n < 16 {
-		return false
-	}
-	ptr := cfDataBytePtr(data)
-	if ptr == 0 {
-		return false
-	}
-
-	bpp := int64(cgBitsPerPixel(small)) / 8 // 每像素字节数
-	if bpp <= 0 {
-		bpp = 4
-	}
-	rowBytes := int64(cgBytesPerRow(small))
-	if rowBytes <= 0 {
-		return false
-	}
-	height := int64(cgGetH(small))
-
-	// 同上：ptr 来自 CFDataGetBytePtr，指向 CFData 的内部缓冲区，
-	// CFData 在本函数作用域内被 data 变量持有，不会被释放。
-	p := unsafe.Pointer(ptr) //nolint:govet
-	var sum, cnt uint64
-	// 稀疏采样：每 4 行、每 16 像素取一个
-	for y := int64(0); y < height; y += 4 {
-		row := unsafe.Add(p, y*rowBytes)
-		for x := int64(0); x*3*bpp < rowBytes; x += 16 {
-			off := unsafe.Add(row, x*bpp)
-			if uintptr(off)-uintptr(p) >= uintptr(n)-4 {
-				break
-			}
-			// 实测 CGDisplayCreateImage 出来的是 BGRA：
-			// 全黑屏的字节序列是 255 2 2 2（alpha 在最前，然后是 BGR）。
-			// 所以取的是 +1/+2/+3，跳过 alpha —— 否则 alpha=255
-			// 会把均值拉到 0.34 左右，黑屏永远判定不出来。
-			c0 := *(*byte)(unsafe.Add(off, 1))
-			c1 := *(*byte)(unsafe.Add(off, 2))
-			c2 := *(*byte)(unsafe.Add(off, 3))
-			sum += uint64(c0) + uint64(c1) + uint64(c2)
-			cnt += 3
-		}
-	}
-	if cnt == 0 {
-		return false
-	}
-	avg := float64(sum) / float64(cnt) / 255.0
+	avg := float64(sum) / float64(len(pix)/4*3*255)
 	return avg < 0.05 || avg > 0.98
 }
 
-// saveThumb 把 CGImage 缩成小图存盘，只作为「那天屏幕长什么样」的凭证。
-func saveThumb(img uintptr, path string) bool {
-	small := downscale(img)
-	if small == 0 {
-		return false
+func downscaleTo(img uintptr, limit int) uintptr {
+	w, h := cgGetW(img), cgGetH(img)
+	if w <= 0 || h <= 0 {
+		return 0
 	}
-	return writeJPEG(small, path)
-}
-
-// writeJPEG 用 ImageIO 的 CGImageDestination 编码到文件。
-func writeJPEG(img uintptr, path string) bool {
-	data := writeJPEGData(img, jpegQuality)
-	if data == 0 {
-		return false
+	if w <= limit && h <= limit {
+		return img
 	}
-	return O(data, "writeToFile:atomically:", nsstr(path), 1) != 0
+	if w >= h {
+		h = max(1, h*limit/w)
+		w = limit
+	} else {
+		w = max(1, w*limit/h)
+		h = limit
+	}
+	_, scaled := bitmap(img, w, h, true)
+	return scaled
 }
 
 // writeJPEGData 把 CGImage 编码成内存里的 JPEG NSData。
@@ -293,11 +297,10 @@ func writeJPEGData(img uintptr, quality float64) uintptr {
 	if dest == 0 {
 		return 0
 	}
-	var q [1]float64
-	q[0] = quality
-	num := O(cls("NSNumber"), "numberWithDouble:", *(*uintptr)(unsafe.Pointer(&q[0])))
+	num := msgSendDouble(cls("NSNumber"), uintptr(objc.SEL(objc.RegisterName("numberWithDouble:"))), quality)
 	props := O(cls("NSDictionary"), "dictionaryWithObject:forKey:",
 		num, nsstr("kCGImageDestinationLossyCompressionQuality"))
+	defer cfRelease(dest)
 	destAdd(dest, img, props)
 	if destFin(dest) == 0 {
 		return 0
@@ -305,64 +308,23 @@ func writeJPEGData(img uintptr, quality float64) uintptr {
 	return data
 }
 
-// downscaleTo 缩到指定宽度。
-func downscaleTo(img uintptr, targetW int) uintptr {
-	w, h := cgGetW(img), cgGetH(img)
-	if h == 0 {
-		return 0
-	}
-	if w <= targetW {
-		return img
-	}
-	full := writeJPEGData(img, 0.85)
-	if full == 0 {
-		return 0
-	}
-	src := imgSrcFromData(full, 0)
-	if src == 0 {
-		return 0
-	}
-	opts := O(cls("NSMutableDictionary"), "dictionary")
-	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithInt:", uintptr(targetW)), nsstr("kCGImageSourceThumbnailMaxPixelSize"))
-	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), nsstr("kCGImageSourceCreateThumbnailFromImageAlways"))
-	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 0), nsstr("kCGImageSourceCreateThumbnailWithTransform"))
-	return imgSrcThumb(src, 0, opts)
-}
-
-// downscale 用 ImageIO 的缩略图接口，直接给个小 CGImage，不碰 AppKit 重绘。
-func downscale(img uintptr) uintptr {
-	w, h := cgGetW(img), cgGetH(img)
-	if h == 0 {
-		return 0
-	}
-	if w <= thumbWidth {
-		return img
-	}
-	full := writeJPEGData(img, 0.9)
-	if full == 0 {
-		return 0
-	}
-	src := imgSrcFromData(full, 0)
-	if src == 0 {
-		return 0
-	}
-	opts := O(cls("NSMutableDictionary"), "dictionary")
-	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithInt:", thumbWidth), nsstr("kCGImageSourceThumbnailMaxPixelSize"))
-	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 1), nsstr("kCGImageSourceCreateThumbnailFromImageAlways"))
-	O(opts, "setObject:forKey:", O(cls("NSNumber"), "numberWithBool:", 0), nsstr("kCGImageSourceCreateThumbnailWithTransform"))
-	return imgSrcThumb(src, 0, opts)
-}
-
-// ocrData 用 Vision 框架识别文字。accurate 模式，中英日都能认。
-func ocrData(data uintptr) (string, int) {
+// ocrImage 用 Vision 的 accurate 模式识别 CGImage。
+//
+// 图像先画进带 IOSurface 的像素缓冲再交给 Vision，不直接交 CGImage。
+// Vision 直接收 CGImage 时，会给这张图留一块整图大小的 IOSurface 映射：
+// 同一张图每识别一次，RSS 就涨一张图；Objective-C 里画出来的新图每次也涨。
+// 生产帧来自 CGDisplayCreateImage，本机测不了它的内存类型，所以一律走像素缓冲。
+// 这条路在同一张图反复识别和每次新图两种情况下 RSS 都不涨。
+func ocrImage(data uintptr, langs []string) (string, int, error) {
 	if data == 0 {
-		return "", 0
+		return "", 0, errors.New("Vision 识别初始化失败")
 	}
 	req := O(O(cls("VNRecognizeTextRequest"), "alloc"), "init")
-	O(req, "setRecognitionLevel:", 1) // accurate
+	defer O(req, "release")
+	O(req, "setRecognitionLevel:", 0) // accurate
 	O(req, "setUsesLanguageCorrection:", 1)
 	// 显式指定语言：不指定时 Vision 对中英混排的识别会明显退化
-	langs := []string{"zh-Hans", "zh-Hant", "en-US", "ja-JP"}
+
 	if marr := mutableArray(); marr != 0 {
 		for _, l := range langs {
 			O(marr, "addObject:", nsstr(l))
@@ -370,11 +332,19 @@ func ocrData(data uintptr) (string, int) {
 		O(req, "setRecognitionLanguages:", marr)
 	}
 
-	handler := O(O(cls("VNImageRequestHandler"), "alloc"), "initWithData:options:", data, 0)
-	if handler == 0 {
-		return "", 0
+	pb := pixelBuffer(data)
+	if pb == 0 {
+		return "", 0, errors.New("OCR 像素缓冲创建失败")
 	}
-	O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0)
+	defer cfRelease(pb)
+	handler := O(O(cls("VNImageRequestHandler"), "alloc"), "initWithCVPixelBuffer:options:", pb, O(cls("NSDictionary"), "dictionary"))
+	if handler == 0 {
+		return "", 0, errors.New("Vision 识别初始化失败")
+	}
+	defer O(handler, "release")
+	if !objcBool(O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0)) {
+		return "", 0, errors.New("Vision 识别失败")
+	}
 
 	results := O(req, "results")
 	n := O(results, "count")
@@ -388,94 +358,69 @@ func ocrData(data uintptr) (string, int) {
 		out = append(out, gostr(O(O(cands, "objectAtIndex:", 0), "string"))...)
 		out = append(out, '\n')
 	}
-	return string(out), int(n)
+	return string(out), int(n), nil
 }
 
-// ---------- Frame 与 CGImage 的互转 ----------
-//
-// 接口层用 RGBA 统一各平台，这里负责和 CGImage 的原生 BGRA 互转。
-// 记住：CGDisplayCreateImage 的缓冲区是 BGRA 且 alpha 在最前，
-// 详见 docs/findings.md 第 4 节。
-
-// imageToRGBA 把 CGImage 读成紧凑的 RGBA 切片。
-func imageToRGBA(img uintptr) []byte {
-	w, h := int(cgGetW(img)), int(cgGetH(img))
-	if w == 0 || h == 0 || cgDataProvider == nil {
-		return nil
-	}
-	prov := cgDataProvider(img)
-	if prov == 0 {
-		return nil
-	}
-	data := cgDataProviderCopyData(prov)
-	if data == 0 {
-		return nil
-	}
-	n := cfDataLen(data)
-	ptr := cfDataBytePtr(data)
-	if ptr == 0 || n < 16 {
-		return nil
-	}
-	rowBytes := int(cgBytesPerRow(img))
-	bpp := int(cgBitsPerPixel(img)) / 8
-	if rowBytes <= 0 || bpp < 3 {
-		return nil
-	}
-
-	out := make([]byte, w*h*4)
-	// uintptr -> unsafe.Pointer 的转换，go vet 会警告。此处安全：
-	// ptr 是 CFDataGetBytePtr 返回的内部缓冲区指针，CFData 由 data
-	// 变量持有到函数结束，期间不会被释放或移动。读操作全在本函数内。
-	src := unsafe.Pointer(ptr) //nolint:govet
-	for y := 0; y < h; y++ {
-		row := unsafe.Add(src, y*rowBytes)
-		for x := 0; x < w; x++ {
-			off := unsafe.Add(row, x*bpp)
-			if uintptr(off)-uintptr(src) >= uintptr(n)-4 {
-				return out
-			}
-			// BGRA -> RGBA
-			b := *(*byte)(off)
-			g := *(*byte)(unsafe.Add(off, 1))
-			r := *(*byte)(unsafe.Add(off, 2))
-			a := *(*byte)(unsafe.Add(off, 3))
-			d := (y*w + x) * 4
-			out[d] = r
-			out[d+1] = g
-			out[d+2] = b
-			out[d+3] = a
-		}
-	}
-	return out
-}
-
-// rgbaToImage 把 Frame 重新组装成 CGImage，交给 Vision 做 OCR。
-//
-// 绕一圈似乎多余，但这样主循环就完全不依赖平台原生句柄，
-// 而 OCR 用全分辨率这一关键设计仍然成立。
+// 合成帧的来源是 Go 的 RGBA 像素，不是屏幕截图的 BGRA 缓冲区。
+// 位图上下文复制这些字节，并返回需要释放的 CGImage。
 func rgbaToImage(f *Frame) uintptr {
-	if f == nil || len(f.RGBA) < f.W*f.H*4 || f.W == 0 || f.H == 0 {
+	if f == nil || f.W <= 0 || f.H <= 0 || len(f.RGBA) < f.W*f.H*4 {
 		return 0
 	}
-	// 用 NSBitmapImageRep 从 RGBA 像素构造，再取 CGImage
-	rep := O(O(cls("NSBitmapImageRep"), "alloc"), "initWithBitmapDataPlanes:pixelsWide:pixelsHigh:bitsPerSample:samplesPerPixel:hasAlpha:isPlanar:colorSpaceName:bytesPerRow:bitsPerPixel:",
-		0, uintptr(f.W), uintptr(f.H), 8, 4, 1, 0, nsstr("NSDeviceRGBColorSpace"), uintptr(f.W*4), 32)
-	if rep == 0 {
+	space := cgColorSpace()
+	if space == 0 {
 		return 0
 	}
-	dst := O(rep, "bitmapData")
-	if dst == 0 {
+	defer cfRelease(space)
+	ctx := cgBitmapCreate(nil, f.W, f.H, 8, f.W*4, space, bitmapRGBA)
+	if ctx == 0 {
 		return 0
 	}
-	// 直接拷贝 RGBA 进 rep 的缓冲区。
-	// 同上：dst 是 NSBitmapImageRep 的内部像素缓冲区，rep 在作用域内被持有，
-	// 拷贝立即完成，不存在悬垂风险。
-	copy(unsafe.Slice((*byte)(unsafe.Pointer(dst)), f.W*f.H*4), f.RGBA) //nolint:govet
-	// 让 rep 重新解析像素
-	O(rep, "setSize:", 0)
-	cg := O(rep, "CGImage")
-	if cg == 0 {
+	defer cfRelease(ctx)
+	data := cgBitmapData(ctx)
+	if data == nil {
 		return 0
 	}
-	return cg
+	copy(unsafe.Slice((*byte)(data), f.W*f.H*4), f.RGBA)
+	return cgBitmapImage(ctx)
+}
+
+// pixelBuffer 把 CGImage 画进一块新的、带 IOSurface 的 BGRA 像素缓冲。调用方负责释放。
+func pixelBuffer(img uintptr) uintptr {
+	w, h := cgGetW(img), cgGetH(img)
+	if w <= 0 || h <= 0 {
+		return 0
+	}
+	// 属性里放一个空的 IOSurface 字典，CoreVideo 才会用 IOSurface 做底层存储。
+	attrs := O(cls("NSDictionary"), "dictionaryWithObject:forKey:", O(cls("NSDictionary"), "dictionary"), cvSurfaceKey)
+	var pb uintptr
+	if cvCreate(0, w, h, pixelFormatBGRA, attrs, &pb) != 0 || pb == 0 {
+		return 0
+	}
+	if !drawPixelBuffer(pb, img, w, h) {
+		cfRelease(pb)
+		return 0
+	}
+	return pb
+}
+
+// drawPixelBuffer 在锁住基地址期间把 img 画进 pb。解锁在本函数里完成，
+// 调用方拿到 false 再释放 pb，不会出现先释放、后解锁。
+func drawPixelBuffer(pb, img uintptr, w, h int) bool {
+	if cvLock(pb, 0) != 0 {
+		return false
+	}
+	defer cvUnlock(pb, 0)
+	space := cgColorSpace()
+	if space == 0 {
+		return false
+	}
+	defer cfRelease(space)
+	ctx := cgBitmapCreate(cvBase(pb), w, h, 8, cvBytesPerRow(pb), space, bitmapBGRA)
+	if ctx == 0 {
+		return false
+	}
+	defer cfRelease(ctx)
+	cgContextDraw(ctx, cgRect{W: float64(w), H: float64(h)}, img)
+	return true
 }

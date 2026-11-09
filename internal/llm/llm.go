@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖调用方提供的请求、密钥与上下文。
+ * [OUTPUT]: 提供模型协议客户端、响应与可区分的错误种类。
+ * [POS]: 模型服务的网络边界；摘要层负责脱敏。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 // Package llm 是和模型供应商说话的唯一出口。
 //
 // 只支持两种线上协议：
@@ -80,6 +86,25 @@ type Client struct {
 	HTTP *http.Client
 }
 
+// 错误种类供界面选择文案；错误文字只供日志使用。
+var (
+	ErrNoEndpoint      = errors.New("没有配置接口地址")
+	ErrNoModel         = errors.New("还没有选模型")
+	ErrInvalidResponse = errors.New("解析模型响应失败")
+	ErrEmptyResponse   = errors.New("模型没有返回任何内容")
+	ErrConnection      = errors.New("连不上模型接口")
+)
+
+// RequestError 保留错误种类与外部原因。
+type RequestError struct {
+	Kind  error
+	Cause error
+}
+
+func (e *RequestError) Error() string        { return e.Kind.Error() + ": " + e.Cause.Error() }
+func (e *RequestError) Unwrap() error        { return e.Cause }
+func (e *RequestError) Is(target error) bool { return target == e.Kind }
+
 // New 返回一个能用的客户端。timeout 为 0 时给 5 分钟 ——
 // 一个小时的屏幕内容摘要，慢模型两步推理确实能跑到几分钟。
 func New(timeout time.Duration) *Client {
@@ -99,16 +124,24 @@ type APIError struct {
 	Body   string
 }
 
-func (e *APIError) Error() string {
+// Detail 返回状态码和响应体。响应体按字符截到 400 个，不切断多字节字符。
+// 界面把它当外部细节，跟在本地化前缀后面显示；Error 也用它，两处不各写一份截断。
+func (e *APIError) Detail() string {
 	body := strings.TrimSpace(e.Body)
-	if len(body) > 400 {
-		body = body[:400] + "…"
+	if r := []rune(body); len(r) > 400 {
+		body = string(r[:400]) + "…"
 	}
-	if body == "" {
-		return fmt.Sprintf("模型接口返回 %d", e.Status)
+	switch {
+	case e.Status == 0:
+		return body
+	case body == "":
+		return fmt.Sprint(e.Status)
+	default:
+		return fmt.Sprintf("%d: %s", e.Status, body)
 	}
-	return fmt.Sprintf("模型接口返回 %d：%s", e.Status, body)
 }
+
+func (e *APIError) Error() string { return "模型接口返回 " + e.Detail() }
 
 // Retryable 说这个错误值得再试一次。
 func (e *APIError) Retryable() bool {
@@ -171,7 +204,7 @@ type openAIResponse struct {
 
 func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, error) {
 	if strings.TrimSpace(req.BaseURL) == "" {
-		return nil, errors.New("没有配置接口地址")
+		return nil, ErrNoEndpoint
 	}
 	body := openAIRequest{
 		Model:     req.Model,
@@ -200,13 +233,13 @@ func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, er
 
 	var out openAIResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("解析模型响应失败：%w", err)
+		return nil, &RequestError{Kind: ErrInvalidResponse, Cause: err}
 	}
 	if out.Error != nil && out.Error.Message != "" {
-		return nil, errors.New(out.Error.Message)
+		return nil, &APIError{Body: out.Error.Message}
 	}
 	if len(out.Choices) == 0 {
-		return nil, errors.New("模型没有返回任何内容")
+		return nil, ErrEmptyResponse
 	}
 	return &Response{
 		Text:  out.Choices[0].Message.Content,
@@ -261,7 +294,7 @@ type anthropicResponse struct {
 
 func (c *Client) completeAnthropic(ctx context.Context, req Request) (*Response, error) {
 	if strings.TrimSpace(req.BaseURL) == "" {
-		return nil, errors.New("没有配置接口地址")
+		return nil, ErrNoEndpoint
 	}
 	maxTok := orDefault(req.MaxTokens, 4096)
 	body := anthropicRequest{
@@ -294,10 +327,10 @@ func (c *Client) completeAnthropic(ctx context.Context, req Request) (*Response,
 
 	var out anthropicResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("解析模型响应失败：%w", err)
+		return nil, &RequestError{Kind: ErrInvalidResponse, Cause: err}
 	}
 	if out.Error != nil && out.Error.Message != "" {
-		return nil, errors.New(out.Error.Message)
+		return nil, &APIError{Body: out.Error.Message}
 	}
 	var sb strings.Builder
 	for _, blk := range out.Content {
@@ -306,7 +339,7 @@ func (c *Client) completeAnthropic(ctx context.Context, req Request) (*Response,
 		}
 	}
 	if sb.Len() == 0 {
-		return nil, errors.New("模型没有返回任何内容")
+		return nil, ErrEmptyResponse
 	}
 	return &Response{
 		Text:  sb.String(),
@@ -373,7 +406,7 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any, an
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("连不上模型接口：%w", err)
+		return nil, &RequestError{Kind: ErrConnection, Cause: err}
 	}
 	defer resp.Body.Close()
 
@@ -398,7 +431,7 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 		return c.Complete(ctx, req)
 	}
 	if strings.TrimSpace(req.BaseURL) == "" {
-		return nil, errors.New("没有配置接口地址")
+		return nil, ErrNoEndpoint
 	}
 	body := openAIRequest{
 		Model:     req.Model,
@@ -431,7 +464,7 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("连不上模型接口：%w", err)
+		return nil, &RequestError{Kind: ErrConnection, Cause: err}
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -495,7 +528,7 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map[string]string) ([]string, error) {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
-		return nil, errors.New("没有配置接口地址")
+		return nil, ErrNoEndpoint
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint(base, "models"), nil)
 	if err != nil {
@@ -509,7 +542,10 @@ func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map
 	}
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, &RequestError{Kind: ErrConnection, Cause: err}
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -522,7 +558,7 @@ func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
+		return nil, &RequestError{Kind: ErrInvalidResponse, Cause: err}
 	}
 	ids := make([]string, 0, len(out.Data))
 	for _, m := range out.Data {

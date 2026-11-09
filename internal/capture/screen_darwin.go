@@ -1,5 +1,11 @@
 //go:build darwin
 
+/*
+ * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查；依赖 macos.go 的原生原语和线程绑定自动释放池。
+ * [OUTPUT]: 实现屏幕、权限、JPEG、OCR 和帧引用生命周期。
+ * [POS]: Runner 与 macOS 原生桥接层之间的适配边界。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 // macOS 实现：CGDisplayCreateImage + Vision OCR。
@@ -7,7 +13,7 @@ package capture
 // 这条路已经实测跑通，细节和踩的坑见 docs/findings.md。
 
 import (
-	"time"
+	"errors"
 
 	"github.com/ebitengine/purego"
 )
@@ -22,8 +28,8 @@ import (
 //   - 授权后往往需要重启 App 才生效，旧进程的 CGDisplayCreateImage 仍返回黑图
 //   - App 名不需要权限，只有窗口标题和截屏需要
 var (
-	preflightScreen func() bool
-	requestScreen   func() bool
+	preflightScreen func() uint8
+	requestScreen   func() uint8
 )
 
 func initScreenPerm() {
@@ -52,48 +58,33 @@ func screenPermission(ask bool) string {
 	if preflightScreen == nil {
 		return "unknown"
 	}
-	if preflightScreen() {
+	if preflightScreen() != 0 {
 		return "granted"
 	}
 	if !ask {
 		return "denied"
 	}
 	// 只有用户还没明确拒绝时，这个调用才会真的弹框
-	if requestScreen != nil && requestScreen() {
+	if requestScreen != nil && requestScreen() != 0 {
 		return "granted"
 	}
 	return "denied"
 }
 
-// probeCapture 用「能不能截到非黑图」来判断权限是否真的生效。
-//
-// 这是必需的兜底：macOS 在「已授权但进程是授权前启动的」情况下，
-// preflight 会返回 true，但 CGDisplayCreateImage 拿到的仍是全黑图。
-// 只有实测一帧才能确认。
-func probeCapture() (ok bool, blank bool) {
-	img := grab()
-	if img == 0 {
-		return false, false
-	}
-	if isBlank(img) {
-		return false, true
-	}
-	return true, false
-}
-
 type darwinScreen struct{}
 
-func newScreen() Screen {
-	initRuntime()
-	initScreenPerm()
+func newPlatformScreen() Screen {
 	return darwinScreen{}
 }
 
-func (darwinScreen) FrontWindow() (string, string, int) {
-	return frontWindow()
+func (darwinScreen) FrontWindow() (app, title string, pid int) {
+	initPlatform()
+	withPool(func() { app, title, pid = frontWindow() })
+	return
 }
 
 func (darwinScreen) Permission(ask bool) PermState {
+	initPlatform()
 	switch screenPermission(ask) {
 	case "granted":
 		return PermGranted
@@ -104,39 +95,94 @@ func (darwinScreen) Permission(ask bool) PermState {
 	}
 }
 
-func (darwinScreen) Grab() *Frame {
-	img := grab()
-	if img == 0 {
-		return nil
-	}
-	f := &Frame{W: int(cgGetW(img)), H: int(cgGetH(img))}
-	f.Blank = isBlank(img)
-	if !f.Blank {
-		f.RGBA = imageToRGBA(img)
-	}
-	return f
+func (darwinScreen) Grab() (f *Frame) {
+	initPlatform()
+	withPool(func() {
+		img := grab()
+		if img == 0 {
+			return
+		}
+		f = &Frame{W: int(cgGetW(img)), H: int(cgGetH(img)), native: img}
+		f.Blank = isBlank(img)
+	})
+	return
 }
 
 type darwinOCR struct{}
 
 func newOCR() OCREngine { return darwinOCR{} }
 
-func (darwinOCR) Recognize(f *Frame) (string, int, error) {
-	img := rgbaToImage(f)
-	if img == 0 {
-		return "", 0, nil
-	}
-	text, n := ocrImage(img)
-	return text, n, nil
+func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int, err error) {
+	withPool(func() {
+		img := frameImage(f)
+		if img != 0 {
+			defer cfRelease(img)
+		}
+		if img == 0 {
+			err = errors.New("OCR 图像无效")
+			return
+		}
+		text, lines, err = ocrImage(img, languages)
+	})
+	return
 }
 
-var _ = time.Now
+func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
+	withPool(func() {
+		img := frameImage(f)
+		if img != 0 {
+			defer cfRelease(img)
+		}
+		if img == 0 {
+			return
+		}
+		small := downscaleTo(img, screenshotMaxDimension)
+		if small != 0 && small != img {
+			defer cfRelease(small)
+		}
+		img = small
+		if img == 0 {
+			return
+		}
+		if quality < 1 {
+			quality = 1
+		}
+		if quality > 100 {
+			quality = 100
+		}
+		data := writeJPEGData(img, float64(quality)/100)
+		ok = data != 0 && objcBool(O(data, "writeToFile:atomically:", nsstr(path), 0))
+	})
+	return
+}
 
-// platformSaveThumb 把 Frame 缩成小图存盘（磁盘上只留视觉凭证）。
-func platformSaveThumb(f *Frame, path string) bool {
-	img := rgbaToImage(f)
-	if img == 0 {
-		return false
+func frameImage(f *Frame) uintptr {
+	if f != nil && f.native != 0 {
+		return cfRetain(f.native)
 	}
-	return saveThumb(img, path)
+	return rgbaToImage(f)
+}
+func retainFrame(f *Frame) *Frame {
+	if f == nil {
+		return nil
+	}
+	copy := *f
+	if copy.native != 0 {
+		cfRetain(copy.native)
+	}
+	return &copy
+}
+func releaseFrame(f *Frame) {
+	if f != nil && f.native != 0 {
+		cfRelease(f.native)
+		f.native = 0
+	}
+}
+func nativePixels(f *Frame) []byte {
+	if f == nil || f.native == 0 {
+		return nil
+	}
+	var pix []byte
+	withPool(func() { pix, _ = bitmap(f.native, dedupWidth, dedupHeight, false) })
+	return pix
 }

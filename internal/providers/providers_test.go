@@ -1,6 +1,15 @@
+/*
+ * [INPUT]: 依赖生成目录、临时凭据文件与假钥匙串。
+ * [OUTPUT]: 验证预设约束、端点继承与隔离凭据解析。
+ * [POS]: 供应商目录的离线回归测试。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package providers
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -116,15 +125,51 @@ func TestDisplayNameFallsBack(t *testing.T) {
 	}
 }
 
-// DetectLocal 在没有任何 CLI 的机器上也必须安全返回。
-func TestDetectLocalDoesNotPanic(t *testing.T) {
-	creds := DetectLocal()
-	for _, c := range creds {
-		if c.Source == "" {
-			t.Error("凭据没有来源标识")
+// 扫描只读临时 HOME 和假的钥匙串。测试绝不碰开发者本机的真实凭据。
+func TestDetectLocalParsesInjectedSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	orig := readClaudeKeychain
+	t.Cleanup(func() { readClaudeKeychain = orig })
+	claude := `{"claudeAiOauth":{"accessToken":"fake-claude-token","refreshToken":"r","expiresAt":"2026-11-06T03:00:00Z"}}`
+	readClaudeKeychain = func() ([]byte, error) { return []byte(claude), nil }
+	files := map[string]string{
+		".claude/.credentials.json": claude,
+		".codex/auth.json":          `{"OPENAI_API_KEY":"fake-key","tokens":{"access_token":"fake-codex-token","account_id":"acc"}}`,
+	}
+	for name, body := range files {
+		path := filepath.Join(home, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
 		}
-		if strings.Contains(c.Label, c.AccessToken) && c.AccessToken != "" {
-			t.Error("Label 里不应该出现 token 明文")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
 		}
+	}
+
+	got := map[string]string{}
+	for _, c := range DetectLocal() {
+		got[c.Source+"|"+c.Kind] = c.AccessToken
+		if strings.Contains(c.Label, c.AccessToken) {
+			t.Errorf("Label %q 里出现了令牌", c.Label)
+		}
+	}
+	want := map[string]string{
+		"claude|oauth":  "fake-claude-token",
+		"codex|api_key": "fake-key",
+		"codex|oauth":   "fake-codex-token",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("扫描结果 %v，期望 %v", got, want)
+	}
+}
+
+func TestDetectLocalEmptyHome(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	orig := readClaudeKeychain
+	t.Cleanup(func() { readClaudeKeychain = orig })
+	readClaudeKeychain = func() ([]byte, error) { return nil, os.ErrNotExist }
+	if creds := DetectLocal(); len(creds) != 0 {
+		t.Fatalf("没有任何 CLI 时应返回空，得到 %d 条", len(creds))
 	}
 }

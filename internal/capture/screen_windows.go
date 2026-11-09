@@ -1,5 +1,11 @@
 //go:build windows
 
+/*
+ * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查。
+ * [OUTPUT]: 提供屏幕、文字识别和 JPEG 接口桩。
+ * [POS]: 采集模块的非 macOS 平台桩。它不执行实际采集。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 // Windows 实现骨架。
@@ -36,7 +42,7 @@ var errNotImplemented = errors.New("windows backend not implemented yet")
 
 type windowsScreen struct{}
 
-func newScreen() Screen {
+func newPlatformScreen() Screen {
 	return windowsScreen{}
 }
 
@@ -61,10 +67,9 @@ type windowsOCR struct{}
 
 func newOCR() OCREngine { return windowsOCR{} }
 
-func (windowsOCR) Recognize(f *Frame) (string, int, error) {
+func (windowsOCR) Recognize(f *Frame, languages []string) (string, int, error) {
 	// TODO: Windows.Media.Ocr
 	return "", 0, errNotImplemented
 }
 
-// platformSaveThumb 未实现。
-func platformSaveThumb(f *Frame, path string) bool { return false }
+func platformSaveJPEG(f *Frame, path string, quality int) bool { return false }

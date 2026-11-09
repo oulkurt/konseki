@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖屏幕采集接口的权限、抓帧与前台窗口查询。
+ * [OUTPUT]: 生成包含抓帧结果的平台权限诊断报告。
+ * [POS]: 采集模块的诊断入口，不参与后台调度。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package capture
 
 import (
@@ -5,14 +11,6 @@ import (
 	"runtime"
 	"strings"
 )
-
-// saveThumbFromFrame 从 Frame 生成缩略图落盘。
-//
-// 这一步是「省空间」的关键：磁盘上只存小图当视觉凭证，
-// OCR 用的是全分辨率原图（已经在 Recognize 里消费掉了）。
-func saveThumbFromFrame(f *Frame, path string) bool {
-	return platformSaveThumb(f, path)
-}
 
 // printPermReportFor 生成人可读的权限检查结果。
 func printPermReportFor(scr Screen) string {
@@ -38,6 +36,7 @@ func printPermReportFor(scr Screen) string {
 	}
 
 	f := scr.Grab()
+	defer releaseFrame(f)
 	switch {
 	case f == nil:
 		b.WriteString("抓帧能力: 失败（没拿到图像）\n")

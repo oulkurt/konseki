@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖 crypto/hmac、SHA-256 与进程级随机 salt。
+ * [OUTPUT]: 提供 Options、Categories、New、Masker.Mask、Masker.Restore 和 Masker.Hits。
+ * [POS]: 脱敏层的入口。规则扫描在 rules.go，调用方是摘要生成器和只读查询。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 // Package redact 在文本离开本机之前，把不该出门的值换成可逆占位符。
 //
 // 为什么需要这一层：Konseki 会截屏 OCR，屏幕上什么都有——别人发来的

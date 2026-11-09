@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖系统钥匙串命令与 CLI 凭据文件。
+ * [OUTPUT]: 只读发现 Claude Code 与 Codex 凭据；缺失时跳过。
+ * [POS]: 目录的本机凭据适配；不写凭据，不参与 query。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package providers
 
 import (
@@ -38,12 +44,16 @@ func detectLocal() []Credential {
 	return out
 }
 
-// claudeFromKeychain 用 security(1) 读 Claude Code 的钥匙串项。
+// readClaudeKeychain 用 security(1) 读 Claude Code 的钥匙串项。
 // -s 是服务名，"Claude Code-credentials" 是 Claude Code 官方写死的服务名；
 // -w 只输出密码（这里的密码就是一份 JSON），不打印元数据。
+// 做成变量是为了让测试换掉它：测试绝不能把开发者本机的真实令牌读进进程。
+var readClaudeKeychain = func() ([]byte, error) {
+	return exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
+}
+
 func claudeFromKeychain() []Credential {
-	cmd := exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w")
-	b, err := cmd.Output()
+	b, err := readClaudeKeychain()
 	if err != nil {
 		return nil
 	}

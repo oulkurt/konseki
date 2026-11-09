@@ -1,0 +1,121 @@
+/*
+ * [INPUT]: 依赖摘要任务、采集清除操作与旧版技能导出文件。
+ * [OUTPUT]: 提供确认界面、清除失败种类与后台清除流程。
+ * [POS]: 设置页危险操作的边界；最后一步删除旧导出文件，不写任何文件。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
+package main
+
+import (
+	"fmt"
+	"time"
+
+	"konseki/internal/skill"
+	"konseki/locales"
+
+	"github.com/egoist/mygo/ui"
+)
+
+type clearCountError int
+
+func (e clearCountError) Error() string { return fmt.Sprintf("%d files could not be deleted", e) }
+
+func (a *app) renderDanger(c *ui.Context, pal palette) {
+	msg := locales.In(c.Locale())
+	usage := a.status.Usage
+	hasData := usage.Bytes > 0 || usage.Shots > 0 || usage.Snapshots > 0 || usage.Sessions > 0 || a.hasSummaries
+	a.settingsCard(c, pal, func() {
+		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
+			ui.Text(c, msg.RecorderDanger()).Bold().TextColor(c.Theme().Danger)
+			ui.Text(c, msg.RecorderClearDescription()).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.4)
+			label := msg.RecorderClear()
+			if a.clearRunning {
+				label = msg.RecorderClearing()
+			}
+			btn := ui.Button(c.Key("clear-activity"), label).Disabled(!hasData || a.clearRunning)
+			if hasData && !a.clearRunning {
+				// 不可撤销的操作用危险色描边，和普通按钮区分开。
+				btn.TextColor(c.Theme().Danger).Border(1, c.Theme().Danger)
+			}
+			if btn.Clicked() {
+				a.clearConfirm = true
+			}
+			if a.clearErr != nil {
+				ui.Text(c, errorText(c.Locale(), a.clearErr)).TextColor(c.Theme().Danger).FontSize(12)
+			}
+		})
+	})
+	if ui.AlertDialog(c, &a.clearConfirm, msg.RecorderClearTitle(), msg.RecorderClearDescription(), msg.RecorderCancel(), msg.RecorderConfirm()) == 1 {
+		a.clearActivity()
+	}
+}
+
+// clearSequence 等待摘要退出，再依次清除采集、摘要和旧导出文件。
+func clearSequence(done <-chan struct{}, captureClear, summaryClear, removeLegacy func() error) error {
+	if done != nil {
+		<-done
+	}
+	for _, step := range []func() error{captureClear, summaryClear, removeLegacy} {
+		if err := step(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *app) clearActivity() {
+	if a.clearRunning || a.runner == nil || a.sums == nil {
+		return
+	}
+	a.clearRunning = true
+	a.clearReceipt = a.receipt
+	a.clearErr = nil
+	a.sumEpoch++
+	if a.sumCancel != nil {
+		a.sumCancel()
+	}
+	done := a.sumDone
+	runner, sums := a.runner, a.sums
+	legacyDir := a.legacyDir()
+	post := a.post
+	go func() {
+		err := clearSequence(done, func() error {
+			cleared, err := runner.ClearAll()
+			if err != nil {
+				return err
+			}
+			if cleared.Failed != 0 {
+				return clearCountError(cleared.Failed)
+			}
+			return nil
+		}, sums.Clear, func() error {
+			_, err := skill.RemoveLegacy(legacyDir)
+			return err
+		})
+		post(func() {
+			a.clearRunning = false
+			a.sumRunning = false
+			a.sumCancel = nil
+			a.sumDone = nil
+			if err != nil {
+				a.clearErr = err
+				return
+			}
+			a.sumEntries = nil
+			a.blocks = nil
+			a.receiptStore = nil
+			a.receipt = ReceiptDay{}
+			a.hasSummaries = false
+			a.recentSessions = nil
+			a.lastSessions = time.Time{}
+			a.status = runner.Status()
+			a.lastLoad = time.Time{}
+			a.tab = 0
+			a.dayFilter = ""
+			a.scrollState.Y = 0
+			a.shred.pending = true
+			a.shred.start = time.Time{}
+			a.resetLegacy()
+		})
+	}()
+}

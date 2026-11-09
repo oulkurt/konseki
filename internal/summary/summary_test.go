@@ -1,9 +1,17 @@
+/*
+ * [INPUT]: 依赖临时摘要存储和假模型服务。
+ * [OUTPUT]: 验证摘要生成、存储、清除和脱敏。
+ * [POS]: 摘要模块的行为回归测试，不请求真实服务。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package summary
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +214,32 @@ func TestEntryIDStable(t *testing.T) {
 	}
 	if !strings.HasPrefix(a, "2026-11-04-") {
 		t.Errorf("ID 前缀不对：%q", a)
+	}
+}
+
+func TestClearPreservesOtherFiles(t *testing.T) {
+	root := t.TempDir()
+	s, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Upsert(Entry{ID: "one", Day: "2026-11-04"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "summaries", "notes.txt")
+	if err := os.WriteFile(path, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Clear(); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Days(); len(got) != 0 {
+		t.Fatalf("清除后仍有摘要: %v", got)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Clear(); err != nil {
+		t.Fatal(err)
 	}
 }

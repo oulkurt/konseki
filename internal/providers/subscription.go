@@ -1,3 +1,9 @@
+/*
+ * [INPUT]: 依赖 Claude Code 本机 JSONL 用量记录。
+ * [OUTPUT]: 提供订阅额度结构和本机滚动窗口用量估算。
+ * [POS]: 目录的用量读取边界；未知额度保持未知。
+ * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 package providers
 
 // 订阅额度。

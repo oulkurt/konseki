@@ -45,3 +45,4 @@ docs/mygo/ui/accessibility.md 无障碍
 | `../README.md` | 项目总览、当前进度、如何跑起来 |
 | `architecture.md` | 代码分层与数据流 |
 | `decisions.md` | 技术选型记录 |
+| `icon.svg` | 应用图标母版，`#dev` 片段是开发版配色；`scripts/render-icon.sh` 渲染出 `resources/icon.png` 和 `resources/icon-dev.png` |
