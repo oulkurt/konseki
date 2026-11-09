@@ -1,9 +1,9 @@
 //go:build windows
 
 /*
- * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查；依赖平台屏幕与文字识别能力。
- * [OUTPUT]: 提供采集接口的平台实现。
- * [POS]: 采集模块的平台适配，与外壳隔离。
+ * [INPUT]: 依赖 capture_gate.go 在调用前执行许可检查。
+ * [OUTPUT]: 提供屏幕、文字识别和 JPEG 接口桩。
+ * [POS]: 采集模块的非 macOS 平台桩。它不执行实际采集。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package capture

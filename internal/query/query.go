@@ -1,7 +1,8 @@
 /*
  * [INPUT]: 依赖设置、采集、摘要和脱敏的只读接口。
- * [OUTPUT]: 提供 Agent 用的 Main 命令入口、Env 和软链接 Link。
- * [POS]: 只读查询命令的入口。每条命令输出一个 JSON 文档，不建目录、不写文件、不读密钥。
+ * [OUTPUT]: 提供 Agent 用的 Main 命令入口和 Env。
+ * [POS]: 只读查询命令入口。链接写入由 link.go 提供。
+ * 每条命令输出一个 JSON 文档。不建目录、不写文件、不读密钥。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 // Package query 是 Konseki 给其他 Agent 的只读命令。
