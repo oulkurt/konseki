@@ -1,6 +1,7 @@
 /*
- * [INPUT]: 依赖内部错误种类、双语目录和离屏页面检查。
- * [OUTPUT]: 验证错误种类的翻译、外部细节和页面语言。
+ * [INPUT]: 依赖内部错误种类、临时存储、模拟模型服务和离屏页面检查。
+ * [OUTPUT]: 验证错误翻译、外部细节与页面语言。
+ * 验证摘要、清除、命令链接和旧文件的失败路径。
  * [POS]: 界面错误展示边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -12,10 +13,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"konseki/internal/capture"
 	"konseki/internal/config"
 	"konseki/internal/llm"
 	"konseki/internal/query"
@@ -67,21 +70,40 @@ func TestErrorTextLanguages(t *testing.T) {
 }
 
 func TestErrorPagesLanguages(t *testing.T) {
-	external := "外部细节 external detail"
+	const external = "外部细节 external detail"
+	cases := []struct {
+		page, name string
+		err        error
+	}{
+		{"global", "system", errors.New(external)},
+		{"provider", "endpoint", llm.ErrNoEndpoint},
+		{"provider", "model", llm.ErrNoModel},
+		{"provider", "response", &llm.RequestError{Kind: llm.ErrInvalidResponse, Cause: errors.New(external)}},
+		{"provider", "empty", llm.ErrEmptyResponse},
+		{"provider", "connection", &llm.RequestError{Kind: llm.ErrConnection, Cause: errors.New(external)}},
+		{"provider", "api", &llm.APIError{Status: 429, Body: external}},
+		{"provider", "other", errors.New(external)},
+		{"clear", "count", clearCountError(2)},
+		{"clear", "system", errors.New(external)},
+		{"agent-link", "relative", query.ErrExecutableNotAbsolute},
+		{"agent-link", "occupied", query.ErrLinkOccupied},
+		{"agent-link", "system", errors.New(external)},
+		{"agent-legacy", "system", errors.New(external)},
+	}
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, page := range []string{"global", "provider", "clear", "agent-link", "agent-legacy"} {
-			t.Run(lang+"/"+page, func(t *testing.T) {
+		for _, tc := range cases {
+			t.Run(lang+"/"+tc.page+"/"+tc.name, func(t *testing.T) {
 				a, cleanup := newTestApp(t)
 				defer cleanup()
 				a.cfgNow.Language = lang
 				a.tab = 1
 				a.lastLoad = time.Now().Add(time.Hour)
 				msg := locales.In(lang)
-				shown := errorText(lang, errors.New(external))
+				shown := errorText(lang, tc.err)
 				want := ""
-				switch page {
+				switch tc.page {
 				case "global":
-					a.err = errors.New(external)
+					a.err = tc.err
 					want = msg.ShellReadError() + shown
 				case "provider":
 					a.settingsTab = 1
@@ -92,20 +114,20 @@ func TestErrorPagesLanguages(t *testing.T) {
 					a.cfgNow = a.cfg.Get()
 					a.openProvider = providerKey(pc)
 					a.detectStarted, a.detectDone = true, true
-					a.testErr = errors.New(external)
+					a.testErr = tc.err
 					want = shown
 				case "clear":
-					a.clearErr = errors.New(external)
+					a.clearErr = tc.err
 					want = shown
 				case "agent-link":
 					a.settingsTab = 2
 					a.legacyChecked = true
-					a.linkErr = errors.New(external)
+					a.linkErr = tc.err
 					want = msg.GeneralAgentLinkError(shown)
 				case "agent-legacy":
 					a.settingsTab = 2
 					a.legacyChecked = true
-					a.legacyErr = errors.New(external)
+					a.legacyErr = tc.err
 					want = msg.GeneralAgentLegacyError(shown)
 				}
 				tt := ui.NewTester(a.view, 780, 3000)
@@ -310,5 +332,132 @@ func TestSettingsSaveFailureLanguages(t *testing.T) {
 			}
 			checkPageLanguage(t, tt, a, lang, a.err.Error())
 		})
+	}
+}
+
+func TestSummaryFailureLanguages(t *testing.T) {
+	const external = "外部响应 external response"
+	for _, lang := range []string{"zh-Hans", "en"} {
+		t.Run(lang, func(t *testing.T) {
+			a, cleanup := newTestApp(t)
+			defer cleanup()
+			if err := a.cfg.Update(func(c *config.Config) {
+				c.Language = lang
+				c.Providers = []config.ProviderConfig{{Preset: "test", ChatBase: "https://example.test", DefaultModel: "test-model"}}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			a.cfgNow = a.cfg.Get()
+			a.llmc.HTTP.Transport = errorTestTransport(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 429, Body: io.NopCloser(strings.NewReader(external)), Header: make(http.Header)}, nil
+			})
+			jobs := make(chan func(), 1)
+			a.post = func(f func()) { jobs <- f }
+			a.rebuildGenerator()
+			now := time.Now()
+			a.blocks = []capture.Block{{Start: now.Add(-time.Minute), End: now, App: "user-app", Samples: 1}}
+			a.runSummary(true)
+			select {
+			case f := <-jobs:
+				f()
+			case <-time.After(10 * time.Second):
+				t.Fatal("摘要任务超时")
+			}
+			want := locales.In(lang).ErrorProvider() + "429: " + external
+			if a.sumErr != want {
+				t.Fatalf("摘要错误 %q，期望 %q", a.sumErr, want)
+			}
+			a.lastLoad = time.Now().Add(time.Hour)
+			tt := ui.NewTester(a.view, 780, 1000)
+			tt.SetLocale(lang)
+			checkPageLanguage(t, tt, a, lang, "user-app", external)
+			if tt.HasText(want) {
+				t.Fatal("摘要错误状态已渲染，需更新页面测试")
+			}
+		})
+	}
+}
+
+func TestClearFailureLanguages(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		t.Run(lang, func(t *testing.T) {
+			a, cleanup := newTestApp(t)
+			defer cleanup()
+			path := filepath.Join(a.appDir, "summaries")
+			if err := os.Rename(path, path+"-saved"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("blocked"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			a.tab = 1
+			jobs := make(chan func(), 1)
+			a.post = func(f func()) { jobs <- f }
+			a.clearActivity()
+			select {
+			case f := <-jobs:
+				f()
+			case <-time.After(10 * time.Second):
+				t.Fatal("清除任务超时")
+			}
+			if a.clearErr == nil {
+				t.Fatal("清除应当失败")
+			}
+			tt := ui.NewTester(a.view, 780, 3000)
+			tt.SetLocale(lang)
+			if !tt.HasText(errorText(lang, a.clearErr)) {
+				t.Fatalf("清除错误未显示：%q", tt.Texts())
+			}
+			checkPageLanguage(t, tt, a, lang, a.clearErr.Error())
+		})
+	}
+}
+
+func TestAgentErrorSourcesLanguages(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, source := range []string{"link", "legacy"} {
+			t.Run(lang+"/"+source, func(t *testing.T) {
+				a, cleanup := newTestApp(t)
+				defer cleanup()
+				a.tab, a.settingsTab = 1, 2
+				a.lastLoad = time.Now().Add(time.Hour)
+				if source == "link" {
+					if err := os.WriteFile(filepath.Join(a.appDir, query.LinkName), []byte("occupied"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					a.linkErr = query.Link(a.appDir, filepath.Join(a.appDir, "app"))
+					if !errors.Is(a.linkErr, query.ErrLinkOccupied) {
+						t.Fatalf("链接错误: %v", a.linkErr)
+					}
+					a.legacyChecked = true
+				} else {
+					path := filepath.Join(a.appDir, "not-a-directory")
+					if err := os.WriteFile(path, []byte("blocked"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					a.legacySkillDir = func() string { return path }
+					a.checkLegacy(locales.In(lang))
+					if a.legacyErr == nil {
+						t.Fatal("旧文件检查应当失败")
+					}
+				}
+				tt := ui.NewTester(a.view, 780, 3000)
+				tt.SetLocale(lang)
+				msg := locales.In(lang)
+				if source == "link" {
+					want := msg.GeneralAgentLinkError(errorText(lang, a.linkErr))
+					if !tt.HasText(want) {
+						t.Fatalf("链接错误未显示：%q", tt.Texts())
+					}
+					checkPageLanguage(t, tt, a, lang)
+				} else {
+					want := msg.GeneralAgentLegacyError(errorText(lang, a.legacyErr))
+					if !tt.HasText(want) {
+						t.Fatalf("旧文件错误未显示：%q", tt.Texts())
+					}
+					checkPageLanguage(t, tt, a, lang, a.legacyErr.Error())
+				}
+			})
+		}
 	}
 }
