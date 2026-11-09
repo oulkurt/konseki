@@ -2,7 +2,7 @@
 
 /*
  * [INPUT]: 依赖 macOS 的只读输入、前台应用和锁屏查询。
- * [OUTPUT]: 验证系统观测和运行中应用列表可调用且返回合理值。
+ * [OUTPUT]: 验证系统观测、累计键鼠计数和运行中应用列表；测量累计读数耗时。
  * [POS]: 平台桥接冒烟测试，不请求权限或抓屏。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestNativeObservationsSmoke(t *testing.T) {
@@ -85,4 +86,31 @@ func BenchmarkLiveFront(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		source.LiveFront()
 	}
+}
+
+func TestNativeTotals(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		n := nativeObservations{}
+		first, ok := n.Totals()
+		if !ok {
+			t.Error("累计读数不可用")
+			return
+		}
+		second, ok := n.Totals()
+		if !ok || second.Keys < first.Keys || second.Clicks < first.Clicks {
+			t.Errorf("累计读数递减: %+v %+v", first, second)
+		}
+		start := time.Now()
+		for i := 0; i < 1000; i++ {
+			if _, ok := n.Totals(); !ok {
+				t.Error("累计读数不可用")
+				return
+			}
+		}
+		us := float64(time.Since(start).Nanoseconds()) / 1000 / 1000
+		t.Logf("Totals 平均 %.3f 微秒；每秒 4 拍 CPU %.6f%%", us, us*4/10000)
+	}()
+	<-done
 }

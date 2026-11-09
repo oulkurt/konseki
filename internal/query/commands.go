@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖采集快照、会话和摘要的只读接口。
- * [OUTPUT]: 实现 status、days、day、snapshots 四条命令的输出。
+ * [OUTPUT]: 实现四条查询命令的输出，保留键鼠计数缺失与零值。
  * [POS]: 查询命令的数据视图，所有文字字段在编码前单独遮蔽。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -141,7 +141,7 @@ type blockOutput struct {
 	Samples int      `json:"samples"`
 }
 
-// sessionOutput 没有键鼠计数时略去 keys、clicks：输出 0 会被读成「没打字」。
+// sessionOutput 保留计数缺失与零值的区别。
 type sessionOutput struct {
 	ID        string   `json:"id"`
 	Start     string   `json:"start"`
@@ -149,8 +149,8 @@ type sessionOutput struct {
 	EndReason string   `json:"endReason"`
 	Apps      []string `json:"apps"`
 	Snapshots int      `json:"snapshots"`
-	Keys      int      `json:"keys,omitempty"`
-	Clicks    int      `json:"clicks,omitempty"`
+	Keys      *int     `json:"keys,omitempty"`
+	Clicks    *int     `json:"clicks,omitempty"`
 }
 
 func (r *runner) day(w io.Writer, o options) error {
@@ -238,8 +238,8 @@ type snapshotOutput struct {
 	Title     string `json:"title"`
 	Trigger   string `json:"trigger"`
 	Dup       bool   `json:"dup,omitempty"`
-	Keys      int    `json:"keys,omitempty"`
-	Clicks    int    `json:"clicks,omitempty"`
+	Keys      *int   `json:"keys,omitempty"`
+	Clicks    *int   `json:"clicks,omitempty"`
 	Shot      string `json:"shot,omitempty"`
 	OCR       string `json:"ocr,omitempty"`
 	OCRRepeat bool   `json:"ocrRepeat,omitempty"`

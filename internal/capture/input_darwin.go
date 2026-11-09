@@ -1,8 +1,8 @@
 //go:build darwin
 
 /*
- * [INPUT]: 依赖 capture_gate.go 保护公开授权入口；依赖 CoreGraphics、NSWorkspace、窗口所有者与辅助功能权限。
- * [OUTPUT]: 提供系统观测、运行中应用列表、权限读取和辅助功能授权请求。
+ * [INPUT]: 依赖 capture_gate.go 保护公开授权入口；依赖 CoreGraphics、HIToolbox、NSWorkspace、窗口所有者与辅助功能权限。
+ * [OUTPUT]: 提供系统观测、累计键鼠计数、运行中应用列表、权限读取和辅助功能授权请求。
  * [POS]: macOS 只读观测边界，不注册输入监听。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -18,6 +18,8 @@ import (
 
 var platformInit sync.Once
 var eventSeconds func(int32, uint32) float64
+var eventCounter func(int32, uint32) uint32
+var secureInput func() uint8
 var sessionDictionary func() uintptr
 var cfRelease func(uintptr)
 var accessibilityTrusted func() uint8
@@ -32,6 +34,11 @@ func initPlatform() {
 			cg, _ := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
 			mustReg(cg, "CGEventSourceSecondsSinceLastEventType", &eventSeconds)
 			mustReg(cg, "CGSessionCopyCurrentDictionary", &sessionDictionary)
+			// 键鼠计数是可选功能：符号缺失时 Totals 返回 false，采集照常运行。
+			optionalReg(cg, "CGEventSourceCounterForEventType", &eventCounter)
+			if hit, err := purego.Dlopen("/System/Library/Frameworks/Carbon.framework/Frameworks/HIToolbox.framework/HIToolbox", purego.RTLD_NOW); err == nil {
+				optionalReg(hit, "IsSecureEventInputEnabled", &secureInput)
+			}
 			cf, _ := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
 			mustReg(cf, "CFRelease", &cfRelease)
 			ax, _ := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_NOW)
@@ -40,6 +47,13 @@ func initPlatform() {
 			accessibilityPrompt = nativeGlobal(ax, "kAXTrustedCheckOptionPrompt")
 		})
 	})
+}
+
+// optionalReg 注册可选符号。找不到时函数保持 nil，只关掉依赖它的功能。
+func optionalReg(lib uintptr, name string, fn any) {
+	if sym, err := purego.Dlsym(lib, name); err == nil {
+		purego.RegisterFunc(fn, sym)
+	}
 }
 
 type nativeObservations struct{}
@@ -61,6 +75,16 @@ func (nativeObservations) Intervals() (time.Duration, time.Duration, time.Durati
 		a = b
 	}
 	return seconds(10), a, seconds(22)
+}
+
+// Totals 读 HID 系统状态（state 1）的累计数。10 是 keyDown；1、3 是左键、右键按下，
+// 和 Intervals 判定点击的事件一致。读不到安全输入状态时不计数：否则排除不了密码框里的按键。
+func (nativeObservations) Totals() (InputTotals, bool) {
+	initPlatform()
+	if eventCounter == nil || secureInput == nil {
+		return InputTotals{}, false
+	}
+	return InputTotals{Keys: eventCounter(1, 10), Clicks: eventCounter(1, 1) + eventCounter(1, 3), Secure: secureInput() != 0}, true
 }
 
 // RunningApps 列出有 Dock 图标的运行中应用，按名字排序，供设置页加入敏感应用。

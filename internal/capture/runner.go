@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖状态机、平台观测、后台工作器和事实存储。
- * [OUTPUT]: 提供 Runner、状态快照与时间轴聚合。
+ * [OUTPUT]: 提供 Runner 与采集状态快照。
  * [POS]: 采集生命周期的协调边界；首次采集前在循环中恢复会话。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -22,6 +22,7 @@ type Dependencies struct {
 	Screen      Screen
 	OCR         OCREngine
 	Input       InputSource
+	Totals      TotalsSource
 	Front       FrontSource
 	Lock        LockSource
 	Clock       Clock
@@ -34,13 +35,14 @@ func NewWithDependencies(cfg Settings, d Dependencies) (*Runner, error) {
 	if d.Screen == nil || d.OCR == nil || d.Input == nil || d.Front == nil || d.Lock == nil || d.Clock == nil || d.Permissions == nil || d.SaveJPEG == nil {
 		return nil, fmt.Errorf("capture: 采集依赖不完整")
 	}
-	return newRunner(cfg, dependencies{screen: d.Screen, ocr: d.OCR, input: d.Input, front: d.Front, lock: d.Lock, clock: d.Clock, perms: d.Permissions, save: d.SaveJPEG})
+	return newRunner(cfg, dependencies{screen: d.Screen, ocr: d.OCR, input: d.Input, totals: d.Totals, front: d.Front, lock: d.Lock, clock: d.Clock, perms: d.Permissions, save: d.SaveJPEG})
 }
 
 type dependencies struct {
 	screen         Screen
 	ocr            OCREngine
 	input          InputSource
+	totals         TotalsSource
 	front          FrontSource
 	lock           LockSource
 	clock          Clock
@@ -63,6 +65,8 @@ type Runner struct {
 	done            chan struct{}
 	pausedUntil     time.Time
 	machine         Machine
+	counts          inputCounts
+	countsVersion   uint64
 	session         *Session
 	front           Front
 	lastShot        time.Time
@@ -82,7 +86,7 @@ type Runner struct {
 
 func New(cfg Settings) (*Runner, error) {
 	native := nativeObservations{}
-	return newRunner(cfg, dependencies{screen: newScreen(), ocr: newOCR(), input: native, front: native, lock: native, clock: systemClock{}, perms: native, save: platformSaveJPEG})
+	return newRunner(cfg, dependencies{screen: newScreen(), ocr: newOCR(), input: native, totals: native, front: native, lock: native, clock: systemClock{}, perms: native, save: platformSaveJPEG})
 }
 func newRunner(cfg Settings, d dependencies) (*Runner, error) {
 	st, err := NewStore(cfg.Root)
@@ -100,6 +104,10 @@ func (r *Runner) Apply(s Settings) {
 	s.SensitiveApps = append([]string(nil), s.SensitiveApps...)
 	s.OCR.Languages = append([]string(nil), s.OCR.Languages...)
 	r.mu.Lock()
+	if r.configured && r.cfg.InputCounts != s.InputCounts {
+		r.counts.invalidate()
+		r.countsVersion++
+	}
 	prune := r.configured && r.cfg.RetentionDays != s.RetentionDays
 	enforce := r.configured && r.cfg.MaxStorage != s.MaxStorage
 	r.cfg = s
@@ -136,9 +144,16 @@ func (r *Runner) requestEnforce() {
 		}
 	}
 }
-func (r *Runner) Storage() *Storage     { r.mu.Lock(); defer r.mu.Unlock(); return r.storage }
-func (r *Runner) Pause(until time.Time) { r.mu.Lock(); r.pausedUntil = until; r.mu.Unlock() }
-func (r *Runner) Resume()               { r.Pause(time.Time{}) }
+func (r *Runner) Storage() *Storage { r.mu.Lock(); defer r.mu.Unlock(); return r.storage }
+func (r *Runner) Pause(until time.Time) {
+	r.mu.Lock()
+	if r.pausedUntil != until {
+		r.counts.private = true
+	}
+	r.pausedUntil = until
+	r.mu.Unlock()
+}
+func (r *Runner) Resume() { r.Pause(time.Time{}) }
 func (r *Runner) Status() Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -154,6 +169,12 @@ func (r *Runner) Status() Status {
 	if r.session != nil {
 		v := *r.session
 		v.Apps = append([]string(nil), v.Apps...)
+		if v.Keys != nil {
+			v.Keys = new(*v.Keys)
+		}
+		if v.Clicks != nil {
+			v.Clicks = new(*v.Clicks)
+		}
 		session = &v
 	}
 	dropped := 0
@@ -278,6 +299,8 @@ func (r *Runner) ClearAll() (Cleared, error) {
 	r.session = nil
 	r.skipRecovery = true
 	r.machine = Machine{}
+	r.counts = inputCounts{}
+	r.countsVersion++
 	r.baseline = nil
 	r.generation++
 	r.closed = nil
@@ -510,6 +533,14 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, st *Store, sto
 		case res := <-results:
 			finish(res, r.deps.clock.Now(), false)
 		case <-ticks:
+			r.mu.Lock()
+			enabled, version := r.cfg.InputCounts, r.countsVersion
+			r.mu.Unlock()
+			var totals InputTotals
+			var totalsOK bool
+			if enabled && r.deps.totals != nil {
+				totals, totalsOK = r.deps.totals.Totals()
+			}
 			key, click, scroll := r.deps.input.Intervals()
 			now := r.deps.clock.Now()
 			if lastPermissions.IsZero() || now.Sub(lastPermissions) >= 5*time.Second {
@@ -523,6 +554,13 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, st *Store, sto
 				lastSystem = now
 			}
 			r.mu.Lock()
+			if version != r.countsVersion || !r.cfg.InputCounts {
+				totalsOK = false
+			}
+			enabled = r.cfg.InputCounts
+			if !enabled || !totalsOK {
+				r.counts.invalidate()
+			}
 			r.front = front
 			r.perms = perms
 			if !r.pausedUntil.IsZero() && !now.Before(r.pausedUntil) {
@@ -531,6 +569,8 @@ func (r *Runner) loop(stop <-chan struct{}, done chan<- struct{}, st *Store, sto
 			o := Observation{Now: now, SinceKey: key, SinceClick: click, SinceScroll: scroll, Front: front, LiveSensitive: liveSensitive, Locked: locked, ScreenPermission: perms.Screen, PausedUntil: r.pausedUntil, PreviousTick: previousTick, Slept: !previousTick.IsZero() && now.Round(0).Sub(previousTick.Round(0)) > 5*time.Second}
 			previousTick = now
 			r.perform(r.machine.Step(o, r.cfg), now, front, results, &inFlight)
+			private := locked || liveSensitive || systemFront(front) || sensitiveFront(front, r.cfg.SensitiveApps) || (!r.pausedUntil.IsZero() && now.Before(r.pausedUntil))
+			r.counts.observe(enabled, totalsOK, totals, private, r.session != nil && r.machine.Phase == PhaseActive && r.machine.Block == BlockNone)
 			r.mu.Unlock()
 		}
 	}
@@ -564,8 +604,10 @@ func (r *Runner) perform(actions []Action, now time.Time, front Front, results c
 				}
 			}
 			r.session = &Session{ID: r.st.NewSnapshotID(now), Start: now}
+			r.counts.open(r.cfg.InputCounts)
 		case ActionCloseSession:
 			if r.session != nil {
+				r.session.Keys, r.session.Clicks = r.counts.session.values()
 				r.session.End = a.At
 				r.session.EndReason = a.Reason
 				if *inFlight && r.flightSession == r.session.ID {
@@ -614,6 +656,12 @@ func (r *Runner) persist(res captureResult) error {
 	id := job.store.NewSnapshotID(job.at)
 	path := r.lastPath
 	size := int64(0)
+	var counts countBucket
+	countSession := r.session != nil && r.session.ID == job.session
+	if countSession {
+		counts = r.counts.takeSnapshot(r.cfg.InputCounts)
+	}
+	keys, clicks := counts.values()
 	w, h := res.frame.W, res.frame.H
 	if res.duplicate {
 		w, h = r.lastW, r.lastH
@@ -649,7 +697,7 @@ func (r *Runner) persist(res captureResult) error {
 		} else if path == "" {
 			return nil
 		}
-		snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: res.title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, ImgKB: int(size / 1024)}
+		snap := Snapshot{ID: id, TS: job.at.Format(time.RFC3339Nano), Session: job.session, Trigger: job.trigger, App: job.front.App, Bundle: job.front.Bundle, Title: res.title, PID: job.front.PID, Shot: path, Dup: res.duplicate, W: w, H: h, Bytes: size, Keys: keys, Clicks: clicks, ImgKB: int(size / 1024)}
 		appendSnapshot := r.deps.appendSnapshot
 		if appendSnapshot == nil {
 			appendSnapshot = (*Store).Append
@@ -663,11 +711,11 @@ func (r *Runner) persist(res captureResult) error {
 		return nil
 	}()
 	r.mu.Lock()
-	if err != nil {
+	if err != nil || (res.duplicate && path == "") {
+		if countSession && r.session != nil && r.session.ID == job.session {
+			r.counts.restoreSnapshot(counts)
+		}
 		return err
-	}
-	if res.duplicate && path == "" {
-		return nil
 	}
 
 	if !res.duplicate {
@@ -700,74 +748,6 @@ func (r *Runner) persist(res captureResult) error {
 		r.queue.submit(job.session, job.ocr, ocrTask{frame: res.frame, id: id, day: job.at.In(time.Local).Format("2006-01-02"), store: job.store})
 	}
 	return nil
-}
-
-// ---------- 时间轴聚合 ----------
-
-// Block 是一个时间段：同一 App、间隔小于 10 分钟的连续采样归并而成。
-type Block struct {
-	Start, End time.Time
-	App        string
-	Titles     []string
-	Samples    int
-}
-
-// Duration 返回这个时间块的跨度。
-func (b Block) Duration() time.Duration { return b.End.Sub(b.Start) }
-
-// Timeline 读某一天的数据并聚合成时间块。
-// dateKey 形如 2026-11-04；传空字符串表示今天。
-func (r *Runner) Timeline(dateKey string) ([]Block, error) {
-	if dateKey == "" {
-		dateKey = r.deps.clock.Now().Format("2006-01-02")
-	}
-	r.mu.Lock()
-	st := r.st
-	r.mu.Unlock()
-	snaps, err := st.ReadSnapshots(dateKey)
-	if err != nil {
-		return nil, err
-	}
-	return Aggregate(snaps), nil
-}
-
-// Aggregates 把原始采样聚合成时间块。
-//
-// 规则：同一 App 且与上一块的间隔小于 10 分钟，就并入同一块。
-// 这样一次连续的工作不会因为中间心跳几次就被切碎。
-func Aggregate(snaps []Snapshot) []Block {
-	var blocks []Block
-	for _, s := range snaps {
-		ts, err := parseTS(s.TS)
-		if err != nil {
-			continue
-		}
-		if n := len(blocks); n > 0 && blocks[n-1].App == s.App && ts.Sub(blocks[n-1].End) < 10*time.Minute {
-			b := &blocks[n-1]
-			b.End = ts
-			b.Samples++
-			if s.Title != "" && (len(b.Titles) == 0 || b.Titles[len(b.Titles)-1] != s.Title) {
-				b.Titles = append(b.Titles, s.Title)
-			}
-			continue
-		}
-		blocks = append(blocks, Block{Start: ts, End: ts, App: s.App, Titles: []string{s.Title}, Samples: 1})
-	}
-	sort.Slice(blocks, func(i, j int) bool { return blocks[i].Start.Before(blocks[j].Start) })
-	return blocks
-}
-
-// parseTS 容忍多种时间格式，避免数据源差异导致整段丢记录。
-func parseTS(v string) (time.Time, error) {
-	for _, layout := range []string{
-		time.RFC3339, time.RFC3339Nano,
-		"2006-01-02T15:04:05", "2006-01-02 15:04:05",
-	} {
-		if t, err := time.ParseInLocation(layout, v, time.Local); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, fmt.Errorf("cannot parse %q", v)
 }
 
 // DoctorReport 返回一份人可读的环境检查结果。

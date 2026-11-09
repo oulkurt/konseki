@@ -1136,6 +1136,36 @@ func (msgs Messages) RecorderOCREveryHelp() string {
 	return Catalog.Format(msgs.locale, "recorderOCREveryHelp", nil)
 }
 
+// RecorderInputCounts says "键鼠计数"
+// in the language the app shows.
+//
+// 记录设置页的键鼠计数开关。
+func RecorderInputCounts() string { return In(i18n.Locale()).RecorderInputCounts() }
+
+// RecorderInputCounts says "键鼠计数"
+// in the language of msgs.
+//
+// 记录设置页的键鼠计数开关。
+func (msgs Messages) RecorderInputCounts() string {
+	return Catalog.Format(msgs.locale, "recorderInputCounts", nil)
+}
+
+// RecorderInputCountsDescription says "只记按键和点击的次数，不记内容。密码框里的按键和敏感应用里的输入都不计。"
+// in the language the app shows.
+//
+// 键鼠计数开关的隐私说明。
+func RecorderInputCountsDescription() string {
+	return In(i18n.Locale()).RecorderInputCountsDescription()
+}
+
+// RecorderInputCountsDescription says "只记按键和点击的次数，不记内容。密码框里的按键和敏感应用里的输入都不计。"
+// in the language of msgs.
+//
+// 键鼠计数开关的隐私说明。
+func (msgs Messages) RecorderInputCountsDescription() string {
+	return Catalog.Format(msgs.locale, "recorderInputCountsDescription", nil)
+}
+
 // RecorderSensitive says "敏感应用"
 // in the language the app shows.
 //

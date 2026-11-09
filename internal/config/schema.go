@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖 JSON 设置、本机目录环境变量和脱敏规则。
- * [OUTPUT]: 提供设置类型、默认值、版本迁移和脱敏规则翻译。
+ * [OUTPUT]: 提供设置类型、默认值、版本迁移和脱敏规则翻译；旧键鼠配置键不迁移。
  * [POS]: 配置模块的语义边界，供 store 持久化。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -126,8 +126,6 @@ type Config struct {
 
 // Recorder 是采集设置。时间字段一律是毫秒整数，和 Alma 一致，方便手改文件。
 // 运行时由 package main 换成 capture.Settings，capture 不依赖本包。
-// InputMonitor 留给键鼠计数（P1c）。计数实现前没有代码读它，界面不显示开关。
-// 它照常读写，用户存过的选择不丢。
 type Recorder struct {
 	Enabled       bool      `json:"enabled"`
 	PausedUntil   time.Time `json:"pausedUntil,omitzero"`
@@ -138,7 +136,7 @@ type Recorder struct {
 	ScreenPollMs  int       `json:"screenPollMs"`
 	JPEGQuality   int       `json:"jpegQuality"`
 	OCR           OCRConfig `json:"ocr"`
-	InputMonitor  bool      `json:"inputMonitor"`
+	InputCounts   bool      `json:"inputCounts"`
 	SensitiveApps []string  `json:"sensitiveApps"`
 	MaxStorageMB  int       `json:"maxStorageMB"`
 	RetentionDays int       `json:"retentionDays"`
@@ -168,7 +166,6 @@ func Default() Config {
 				Languages: []string{"en-US", "zh-Hans", "zh-Hant", "ja"},
 				EveryN:    3,
 			},
-			InputMonitor: true,
 			SensitiveApps: []string{
 				"com.apple.keychainaccess",
 				"com.1password.1password",
@@ -223,7 +220,7 @@ type wireRecorder struct {
 	ScreenPollMs  *int       `json:"screenPollMs,omitempty"`
 	JPEGQuality   *int       `json:"jpegQuality,omitempty"`
 	OCR           *wireOCR   `json:"ocr,omitempty"`
-	InputMonitor  *bool      `json:"inputMonitor,omitempty"`
+	InputCounts   *bool      `json:"inputCounts,omitempty"`
 	SensitiveApps *[]string  `json:"sensitiveApps,omitempty"`
 	MaxStorageMB  *int       `json:"maxStorageMB,omitempty"`
 	RetentionDays *int       `json:"retentionDays,omitempty"`

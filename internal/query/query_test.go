@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖两天夹具和命令入口。
- * [OUTPUT]: 验证 status、days、day、snapshots 的输出、用法错误、只读性和软链接。
+ * [OUTPUT]: 验证查询输出、键鼠计数缺失与零值、用法错误、只读性和软链接。
  * [POS]: query 包命令契约与文件系统边界的回归测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -10,7 +10,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"konseki/internal/capture"
+	"konseki/internal/config"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -133,7 +135,7 @@ func TestDayOutput(t *testing.T) {
 		t.Fatalf("块顺序 = %+v", got.Blocks)
 	}
 	s := got.Sessions[0]
-	if s.ID != "session-today" || s.EndReason != "idle" || len(s.Apps) != 3 || s.Keys != 12 || s.Clicks != 3 {
+	if s.ID != "session-today" || s.EndReason != "idle" || len(s.Apps) != 3 || s.Keys == nil || *s.Keys != 12 || s.Clicks == nil || *s.Clicks != 3 {
 		t.Fatalf("会话 = %+v", s)
 	}
 
@@ -497,5 +499,31 @@ func TestSessionOnlyDay(t *testing.T) {
 	got := decode[struct{ Days []dayCount }](t, out)
 	if code != 0 || len(got.Days) != 1 || got.Days[0].Snapshots != 0 || got.Days[0].Sessions != 1 {
 		t.Fatal(out, stderr)
+	}
+}
+
+func TestInputCountsOutputPresence(t *testing.T) {
+	f := newFixture(t, config.Default())
+	for i, counted := range []bool{false, true} {
+		at := fixtureNow.Add(time.Duration(i) * time.Minute)
+		snap := capture.Snapshot{ID: fmt.Sprintf("s%d", i), TS: at.Format(time.RFC3339)}
+		session := capture.Session{ID: fmt.Sprintf("session%d", i), Start: at, End: at.Add(time.Second)}
+		if counted {
+			snap.Keys, snap.Clicks = new(0), new(0)
+			session.Keys, session.Clicks = new(0), new(0)
+		}
+		if err := f.store.Append(snap); err != nil {
+			t.Fatal(err)
+		}
+		f.addSession(session)
+	}
+	for _, cmd := range []string{"day", "snapshots"} {
+		out, stderr, code := runQuery(t, f.env, cmd)
+		if code != 0 {
+			t.Fatalf("%s: %s", cmd, stderr)
+		}
+		if strings.Count(out, `"keys"`) != 1 || strings.Count(out, `"clicks"`) != 1 || !strings.Contains(out, `"keys": 0`) || !strings.Contains(out, `"clicks": 0`) {
+			t.Fatalf("%s: %s", cmd, out)
+		}
 	}
 }

@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖平台实现提供帧、识别结果和系统观测。
- * [OUTPUT]: 提供采集外壳可替换的依赖接口。
+ * [OUTPUT]: 提供采集外壳可替换的依赖接口和累计键鼠计数。
  * [POS]: 采集外壳与平台实现之间的契约。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -71,6 +71,17 @@ type OCREngine interface {
 type InputSource interface {
 	Intervals() (key, click, scroll time.Duration)
 }
+
+// InputTotals 是系统启动以来的累计按键和点击次数，只有次数，没有内容。
+// Secure 为真表示系统安全输入打开，例如焦点在密码框里。
+type InputTotals struct {
+	Keys, Clicks uint32
+	Secure       bool
+}
+
+// TotalsSource 返回系统累计键鼠计数。
+type TotalsSource interface{ Totals() (InputTotals, bool) }
+
 type FrontSource interface{ Front() Front }
 type LockSource interface{ Locked() bool }
 type Clock interface {

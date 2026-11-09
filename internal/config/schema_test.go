@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时设置文件与配置存储。
- * [OUTPUT]: 验证迁移、默认值和归一化边界。
+ * [OUTPUT]: 验证迁移、默认值、键鼠计数配置往返和归一化边界。
  * [POS]: 配置模块的磁盘契约测试。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -155,5 +156,23 @@ func TestClearedSensitiveAppsSurviveReload(t *testing.T) {
 	}
 	if got := s.Get().Recorder.SensitiveApps; len(got) != 0 {
 		t.Fatalf("清空的敏感应用重启后又回来了: %q", got)
+	}
+}
+
+func TestInputCountsMigrationAndRoundTrip(t *testing.T) {
+	s, dir := openFixture(t, `{"version":2,"recorder":{"inputMonitor":true}}`)
+	if s.Get().Recorder.InputCounts {
+		t.Fatal("旧键不能开启键鼠计数")
+	}
+	if err := s.Update(func(c *Config) { c.Recorder.InputCounts = true }); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil || strings.Contains(string(data), "inputMonitor") {
+		t.Fatalf("旧键未移除: %s %v", data, err)
+	}
+	s, err = Open(dir)
+	if err != nil || !s.Get().Recorder.InputCounts {
+		t.Fatalf("新键未往返: %v", err)
 	}
 }

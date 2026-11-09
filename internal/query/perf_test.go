@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖 KONSEKI_QUERY_PERF、临时数据目录和 search 命令。
- * [OUTPUT]: 在 7 天、每天 2000 条 2 KB 屏幕文字的夹具上打印 search 的五轮耗时和中位数。
+ * [OUTPUT]: 在含键鼠计数和屏幕文字的七天夹具上测量 search。
  * [POS]: 查询命令的性能门槛，未设置环境变量时跳过。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -48,7 +48,7 @@ func TestQueryPerf(t *testing.T) {
 			sn := capture.Snapshot{
 				ID: fmt.Sprintf("%s-%05d", at.Format("20060102-150405.000"), i),
 				TS: at.Format(time.RFC3339), App: "Editor", Title: "main.go",
-				OCR: text, Keys: 1,
+				OCR: text, Keys: new(1),
 			}
 			if err := enc.Encode(sn); err != nil {
 				t.Fatal(err)

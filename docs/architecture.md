@@ -4,7 +4,7 @@
 
 界面跨帧保存模型数据、控件状态与 ui.Handle。ui.Context 和本轮 Element 不进入后台任务。后台任务通过 app.post 发布结果；该回调绑定 Window.Update，让界面线程接收状态更新。供应商探测和模型请求不阻塞界面构建。
 
-capture.Machine 是纯状态机。它接收时间和观测，输出采集、探测及会话动作。Runner 读取系统观测，执行动作并反馈结果。Screen、OCREngine、观测源与时钟接口隔离平台能力，测试可注入假依赖。macOS 后端连接 CoreGraphics 与 Vision；其他平台的现有桩不构成全功能承诺。
+capture.Machine 是纯状态机。它接收时间和观测，输出采集、探测及会话动作。Runner 读取系统观测，执行动作并反馈结果。Screen、OCREngine、观测源与时钟接口隔离平台能力，测试可注入假依赖。macOS 后端连接 CoreGraphics 与 Vision；其他平台的现有桩不构成全功能承诺。键鼠计数开启时读取系统累计值，按隐私状态与会话边界计算增量；关闭时不读数。
 
 抓帧任务先去重，再保存 JPEG 与快照。OCR 队列保留原分辨率帧，不从持久化 JPEG 回读识别。JPEG 编码单独缩放和压缩，维护任务继续降低旧截图质量。识别质量与磁盘成本因此各有边界。有界队列和会话抽样限制 OCR 积压。
 

@@ -28,6 +28,7 @@ Each command prints one JSON document. Times are local and use RFC 3339. `--date
 | `query snapshots [--date D] [--from HH:MM] [--to HH:MM] [--app NAME] [--ocr] [--limit N]` | Single captures with time, app, window title, input counts and screenshot path. `--ocr` adds the screen text |
 | `query search TEXT [--days N] [--limit N]` | Matches in summaries, window titles and screen text over the last N days (default 7), newest first |
 
+- `keys` and `clicks` appear only when key and click counts are enabled for the entire interval. A missing field means not counted; `0` means counted with no input. Keys in password fields and all input in sensitive apps are never counted, so the numbers are a lower bound.
 - With `--ocr`, a snapshot whose screen text is the same as the previous one shows `"ocrRepeat": true` instead of the text.
 - `search` merges matches that share the day, app, title and snippet into one. `count` says how many were merged.
 - `"truncated": true` means there were more results than `--limit`. Narrow the time range or raise the limit.

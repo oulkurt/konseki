@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时目录、采集存储、摘要存储和设置编码。
- * [OUTPUT]: 提供查询测试用的两天夹具与命令运行工具。
+ * [OUTPUT]: 提供查询测试用的两天夹具、键鼠计数与命令运行工具。
  * [POS]: query 包测试的数据构造器，全部数据落在 t.TempDir()。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -58,7 +58,7 @@ func (f *testFixture) addSnapshot(at time.Time, id, app, bundle, title, ocr stri
 	sn := capture.Snapshot{
 		ID: id, TS: at.Format(time.RFC3339), App: app, Bundle: bundle,
 		Title: title, OCR: ocr, Trigger: capture.TriggerAppFocus,
-		Keys: 3, Clicks: 1,
+		Keys: new(3), Clicks: new(1),
 	}
 	if withShot {
 		path := f.store.ShotFile(id)
@@ -110,7 +110,7 @@ func standardFixture(t *testing.T) *testFixture {
 	f.addSession(capture.Session{
 		ID: "session-today", Start: at(5, 9, 0), End: at(5, 11, 20),
 		EndReason: capture.EndIdle, Apps: []string{"Editor", "Browser", "Slack"},
-		Snapshots: 4, Keys: 12, Clicks: 3,
+		Snapshots: 4, Keys: new(12), Clicks: new(3),
 	})
 	f.addSession(capture.Session{
 		ID: "session-yesterday", Start: at(4, 14, 0), End: at(4, 15, 0),

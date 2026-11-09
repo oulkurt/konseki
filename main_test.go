@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用存储和 mygo 测试器。
- * [OUTPUT]: 验证应用视图、录制控制、采集聚合、测试应用隔离与旧导出目录隔离。
+ * [OUTPUT]: 验证应用视图、记录控制、键鼠计数设置、采集聚合与测试隔离。
  * [POS]: 应用层无窗口测试及共享测试构造器。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -79,11 +79,61 @@ func TestRecorderPrivacyControls(t *testing.T) {
 	defer cleanup()
 	a.tab = 1
 	tt := ui.NewTester(a.view, 800, 2400)
-	for _, label := range []string{"屏幕文字识别", "敏感应用"} {
+	for _, label := range []string{"屏幕文字识别", "键鼠计数", "敏感应用"} {
 		if !tt.HasText(label) {
 			t.Errorf("缺少设置 %s", label)
 		}
 	}
+}
+
+func TestRecorderInputCountsPersist(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	probe := &inputCountsProbe{ticks: make(chan time.Time, 1), called: make(chan struct{}, 1)}
+	deps := inertCapture()
+	deps.Clock, deps.Totals = probe, probe
+	runner, err := capture.NewWithDependencies(recorderSettings(a.cfgNow.Recorder, a.appDir), deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.runner = runner
+	a.tab = 1
+	tt := ui.NewTester(a.view, 800, 2400)
+	rect, ok := tt.Find("键鼠计数")
+	if !ok {
+		t.Fatal("键鼠计数开关缺失")
+	}
+	tt.ClickAt(740, rect.Y+12)
+	reopened, err := config.Open(a.appDir)
+	if err != nil || !reopened.Get().Recorder.InputCounts {
+		t.Fatalf("开关未落盘: %v", err)
+	}
+	if !recorderSettings(a.cfgNow.Recorder, a.appDir).InputCounts {
+		t.Fatal("采集设置未更新")
+	}
+	runner.Start()
+	defer runner.Stop()
+	probe.ticks <- time.Now()
+	select {
+	case <-probe.called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("采集器未应用键鼠计数开关")
+	}
+}
+
+type inputCountsProbe struct {
+	inertFake
+	ticks  chan time.Time
+	called chan struct{}
+}
+
+func (p *inputCountsProbe) Ticks() (<-chan time.Time, func()) { return p.ticks, func() {} }
+func (p *inputCountsProbe) Totals() (capture.InputTotals, bool) {
+	select {
+	case p.called <- struct{}{}:
+	default:
+	}
+	return capture.InputTotals{}, true
 }
 
 func TestRecentSessionOpensReceipt(t *testing.T) {

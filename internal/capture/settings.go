@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖调用方提供采集目录和运行参数。
- * [OUTPUT]: 提供 Settings 和 OCRSettings 采集契约。
+ * [OUTPUT]: 提供 Settings 和 OCRSettings 采集契约及键鼠计数开关。
  * [POS]: 采集模块的配置边界，不依赖应用设置。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -16,6 +16,7 @@ type Settings struct {
 	TypingPause   time.Duration
 	ScreenPoll    time.Duration
 	JPEGQuality   int
+	InputCounts   bool
 	OCR           OCRSettings
 	SensitiveApps []string
 	MaxStorage    int64
