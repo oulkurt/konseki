@@ -8,7 +8,7 @@ runner_counts_test.go: 验证采集器调用次数、会话计数和写盘回补
 dedup.go: 比较帧的亮度哈希、直方图和像素。
 frame_other.go: 为非 macOS 平台提供帧生命周期桩。
 dedup_test.go: 用合成画面验证去重阈值。
-input_darwin_test.go: 验证 macOS 只读观测、累计键鼠计数和运行中应用列表，并测量窗口查询和累计读数耗时。
+input_darwin_test.go: 验证 macOS 只读观测、累计键鼠计数和运行中应用列表。另测窗口查询和累计读数的耗时。
 input_darwin.go: 读取输入间隔、累计键鼠计数与锁屏状态。读取前台应用和窗口所有者。运行中应用仅列有 Dock 图标的应用。设置页用该列表添加敏感应用。
 input_other.go: 为其他平台提供观测和授权后端桩。
 contract_test.go: 验证存储兼容、过期清理和采集状态。
@@ -29,7 +29,7 @@ runner_behavior_test.go: 验证采集停止、清空残留、超额触发和 OCR
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
 runner.go: 协调采集生命周期、键鼠计数与异步抓帧。清空后的首次启动跳过会话恢复。
 timeline.go: 按注入时钟读取快照并聚合时间轴。
-screen_darwin.go: 提供受保护 Screen 的 macOS 后端，编排 macOS 帧、权限、图像编码与 OCR 生命周期。
+screen_darwin.go: 提供受保护 Screen 的 macOS 后端。它编排帧、权限、图像编码和 OCR 的生命周期。
 screen_linux.go: 提供 Linux 采集接口桩。不执行实际采集。
 screen_windows.go: 提供 Windows 采集接口桩。不执行实际采集。
 sessions.go: 从最新快照向前扫描连续会话，只查之后的关闭记录。

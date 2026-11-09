@@ -10,5 +10,5 @@ search_test.go: 验证合并、排序、截断、遮蔽值内的命中丢弃和 
 redact_test.go: 在五个命令的输出里验证密钥、邮箱、词和放行值，以及总开关关闭后的原文。
 fixture_test.go: 用采集和摘要的写入接口造两天数据，固定 Env.Now。
 example_test.go: KONSEKI_QUERY_EXAMPLE 指向文件时，把五条命令和输出写成示例。
-perf_test.go: KONSEKI_QUERY_PERF=1 时用 7 天 × 2000 条快照测无命中和重复 OCR 命中的搜索中位数，门槛 2 秒。
+perf_test.go: KONSEKI_QUERY_PERF=1 时运行。用 7 天 × 2000 条快照测两种搜索的中位数：无命中、重复 OCR 命中。门槛 2 秒。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
