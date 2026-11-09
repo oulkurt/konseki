@@ -1,6 +1,6 @@
 /**
  * [INPUT]: 依赖界面文本、白名单和注入的用户数据。
- * [OUTPUT]: 验证小票与设置三子页中英混排，并提供用户数据剔除工具。
+ * [OUTPUT]: 验证小票与设置三子页中英混排；提供用户数据剔除、两张放行表和 checkPageLanguage 页面检查。
  * [POS]: 根模块的文案验收工具。页面级语言测试先剔除用户数据，再用它判断界面文案是否混入另一种语言。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -9,6 +9,7 @@ package main
 import (
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,35 @@ import (
 )
 
 var latinWord = regexp.MustCompile(`[A-Za-z]{2,}`)
+
+// ---------- 放行表与页面检查 ----------
+
+// timelineAllow 只放行品牌名：时间轴页没有技术术语。
+var timelineAllow = []string{"痕跡", "Konseki"}
+
+// settingsAllow 在品牌名之外放行设置页的单位、技术术语、语言名、
+// 默认敏感应用的 bundle ID 和产品名。
+var settingsAllow = append(append([]string{}, timelineAllow...),
+	"MB", "ms", "API", "bundle", "ID", "English", "简体中文", "zh-Hans, en-US",
+	"com.1password.1password", "com.apple.keychainaccess", "com.bitwarden.desktop",
+	"Agent", "Claude Code", "Codex", "SKILL.md", "Mac",
+)
+
+// checkPageLanguage 剔除应用目录、技能命令和调用方给的用户数据，再检查当前页面。
+// 时间轴页（tab 0）用 timelineAllow，设置页用 settingsAllow，宽表不放松时间轴。
+func checkPageLanguage(t *testing.T, tt *ui.Tester, a *app, lang string, user ...string) {
+	t.Helper()
+	user = append(user, statusCmd(a.appDir), agentSkillInstall, agentSkillRepo, a.cfgNow.Recorder.Dir(a.appDir), a.legacyDir(), a.appDir)
+	sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
+	allow := settingsAllow
+	if a.tab == 0 {
+		allow = timelineAllow
+	}
+	texts := tt.Texts()
+	if bad := langViolations(stripUserData(texts, user...), lang, allow); len(bad) > 0 {
+		t.Fatalf("界面混入其他语言 %q，文本：%q", bad, texts)
+	}
+}
 
 // langViolations 返回不属于 lang 的文本片段。lang 只认 zh-Hans 和 en，
 // 写错时直接 panic，免得检查静默放行。
@@ -93,7 +123,7 @@ func TestEmptyTimelineLanguages(t *testing.T) {
 			defer cleanup()
 			tt := ui.NewTester(a.view, 780, 1000)
 			tt.SetLocale(lang)
-			if bad := langViolations(tt.Texts(), lang, []string{"痕跡 Konseki", "Konseki"}); len(bad) != 0 {
+			if bad := langViolations(tt.Texts(), lang, timelineAllow); len(bad) != 0 {
 				t.Fatalf("界面混入其他语言 %q，文本：%q", bad, tt.Texts())
 			}
 			want := "今天还没有记录"
@@ -129,7 +159,7 @@ func TestReceiptLanguages(t *testing.T) {
 				user = append(user, s.People...)
 			}
 			sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
-			if bad := langViolations(stripUserData(tt.Texts(), user...), lang, []string{"痕跡", "Konseki"}); len(bad) > 0 {
+			if bad := langViolations(stripUserData(tt.Texts(), user...), lang, timelineAllow); len(bad) > 0 {
 				t.Fatalf("界面混入其他语言 %q，文本：%q", bad, tt.Texts())
 			}
 		})
@@ -148,25 +178,16 @@ func TestLanguageSetting(t *testing.T) {
 }
 
 func TestSettingsLanguages(t *testing.T) {
-	allow := []string{
-		"痕跡 Konseki", "Konseki", "MB", "ms", "API", "bundle", "ID", "English", "简体中文",
-		"zh-Hans, en-US", "com.1password.1password", "com.apple.keychainaccess", "com.bitwarden.desktop",
-		"Agent", "Claude Code", "Codex", "SKILL.md", "Mac",
-	}
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, sub := range []int{0, 1, 2} {
-			t.Run(lang, func(t *testing.T) {
+			t.Run(lang+"/"+strconv.Itoa(sub), func(t *testing.T) {
 				a, cleanup := newTestApp(t)
 				defer cleanup()
 				a.tab = 1
 				a.settingsTab = sub
 				tt := ui.NewTester(a.view, 780, 2600)
 				tt.SetLocale(lang)
-				user := []string{statusCmd(a.appDir), agentSkillInstall, agentSkillRepo, a.cfgNow.Recorder.Dir(a.appDir), a.appDir}
-				sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
-				if bad := langViolations(stripUserData(tt.Texts(), user...), lang, allow); len(bad) != 0 {
-					t.Fatalf("设置子页 %d (%s) 混入其他语言 %q，文本：%q", sub, lang, bad, tt.Texts())
-				}
+				checkPageLanguage(t, tt, a, lang)
 			})
 		}
 	}

@@ -1,5 +1,5 @@
 /*
- * [INPUT]: 依赖离屏界面、双语目录与模拟应用状态。
+ * [INPUT]: 依赖离屏界面、双语目录、模拟应用状态和 lang_test.go 的 checkPageLanguage。
  * [OUTPUT]: 验证菜单、设置状态和错误说明的语言边界。
  * [POS]: 页面语言门禁；夹具中的用户数据在检查前剔除。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -7,7 +7,6 @@
 package main
 
 import (
-	"sort"
 	"testing"
 	"time"
 
@@ -18,18 +17,6 @@ import (
 
 	"github.com/egoist/mygo/ui"
 )
-
-var languageAllow = []string{"痕跡 Konseki", "痕跡", "Konseki", "MB", "ms", "API", "bundle", "ID", "English", "简体中文", "zh-Hans, en-US", "com.1password.1password", "com.apple.keychainaccess", "com.bitwarden.desktop", "Agent", "Claude Code", "Codex", "SKILL.md", "Mac"}
-
-func checkPageLanguage(t *testing.T, tt *ui.Tester, a *app, lang string, user ...string) {
-	t.Helper()
-	user = append(user, statusCmd(a.appDir), agentSkillInstall, agentSkillRepo, a.cfgNow.Recorder.Dir(a.appDir), a.legacyDir(), a.appDir)
-	sort.SliceStable(user, func(i, j int) bool { return len(user[i]) > len(user[j]) })
-	texts := tt.Texts()
-	if bad := langViolations(stripUserData(texts, user...), lang, languageAllow); len(bad) > 0 {
-		t.Fatalf("界面混入其他语言 %q，文本：%q", bad, texts)
-	}
-}
 
 func TestRecorderStateLanguages(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
