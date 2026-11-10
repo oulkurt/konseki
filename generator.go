@@ -59,8 +59,9 @@ func (a *app) rebuildGenerator() {
 
 	cfg := summary.LLMConfig{
 		Kind:      resolved.Kind,
-		BaseURL:   resolved.BaseURL,
+		BaseURL:   resolved.CallBase(),
 		APIKey:    key,
+		AuthKind:  resolved.AuthKind,
 		Header:    headersFor(*pc, resolved),
 		Model:     model,
 		Thinking:  a.cfgNow.Summary.ThinkingEffort,

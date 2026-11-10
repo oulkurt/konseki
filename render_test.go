@@ -70,7 +70,7 @@ func TestTabsRender(t *testing.T) {
 
 	// 切到设置页，各区块位于对应子页。
 	a.tab = 1
-	for page, labels := range [][]string{{"活动记录器"}, {"摘要模型", "供应商"}, {"Agent 技能"}} {
+	for page, labels := range [][]string{{"活动记录器"}, {"摘要模型", "供应商"}, {"Agent技能"}} {
 		a.settingsTab = page
 		tt = ui.NewTester(a.view, 760, 1800)
 		for _, want := range labels {

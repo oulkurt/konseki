@@ -16,29 +16,41 @@ import (
 func (a *app) importCredential(cred providers.Credential) {
 	presetID := "anthropic"
 	model := "claude-sonnet-5-5"
-	if cred.Source == "codex" {
-		if cred.Kind == "api_key" {
-			presetID = "openai"
-		} else {
-			// ChatGPT 订阅走的是 Responses API，Konseki 这边按
-			// OpenAI 兼容处理，模型名用 codex 系列。
-			presetID = "openai"
-		}
+	var models []string
+	switch {
+	case cred.Source == "gemini":
+		presetID = "gemini-cli"
+		model = "gemini-2.5-pro"
+	case cred.Source == "codex":
+		presetID = "openai"
 		model = "gpt-5.2"
+		// 订阅的真实模型列表在 ~/.codex 的目录文件里。读到就一并写进配置，
+		// 免得用户再拉一次 —— 订阅端点没有通用的 /models 可拉。
+		if cred.Kind == "oauth" {
+			if ms := providers.CodexModels(); len(ms) > 0 {
+				models = ms
+				model = ms[0]
+			}
+		}
 	}
 	preset, _ := providers.ByID(presetID)
 
 	pc := config.ProviderConfig{
 		Preset:        presetID,
 		Label:         cred.Label,
-		ChatBase:      preset.Chat,
-		AnthropicBase: preset.Anthropic,
 		Auth:          cred.Kind,
 		AccessToken:   cred.AccessToken,
 		RefreshToken:  cred.RefreshToken,
 		AccountID:     cred.AccountID,
 		ExpiresAt:     cred.ExpiresAt,
+		EnabledModels: models,
 		DefaultModel:  model,
+	}
+	// ChatGPT 订阅的地址由 Resolve 写死成专属端点，这里必须留空：
+	// 填了预设的公开 API 地址，会让人误以为它是 API key 模式。
+	if cred.Source != "codex" || cred.Kind != "oauth" {
+		pc.ChatBase = preset.Chat
+		pc.AnthropicBase = preset.Anthropic
 	}
 	if cred.Kind == "api_key" {
 		pc.APIKey = cred.AccessToken
@@ -98,7 +110,9 @@ func (a *app) addProvider(p providers.Preset) {
 	a.openProvider = providerKey(pc)
 	a.apiKeyDraft = ""
 	a.baseURLDraft = pc.ChatBase
+	a.responsesDraft = pc.ResponsesBase
 	a.modelDraft = model
+	a.modelsAll = false
 }
 
 func (a *app) removeProvider(idx int) {

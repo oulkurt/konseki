@@ -59,7 +59,7 @@ func (a *app) renderRecentSessions(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
-			ui.Text(c, msg.RecorderRecent()).Bold().TextColor(pal.textPrimary)
+			headingText(c, msg.RecorderRecent()).SingleLine().TextColor(pal.textPrimary)
 			for _, item := range a.recentSessions {
 				session := item.session
 				title := item.title
@@ -69,9 +69,9 @@ func (a *app) renderRecentSessions(c *ui.Context, pal palette) {
 				button := ui.ButtonBase(c.Key("recent-"+session.ID)).FillWidth().Padding(6, 0).Label(title)
 				button.Children(func() {
 					ui.Column(c).FillWidth().Gap(3).Children(func() {
-						ui.Text(c, title).Bold().FontSize(12).TextColor(pal.textPrimary)
+						headingText(c, title).FontSize(12).SingleLine().Tooltip(title).TextColor(pal.textPrimary)
 						detail := msg.RecorderSessionDetails(int(session.End.Sub(session.Start).Minutes()), session.Snapshots)
-						ui.Text(c, session.Start.In(time.Local).Format("2006-01-02 15:04")+" · "+detail).FontSize(11).TextColor(pal.textSecondary)
+						numText(c, session.Start.In(time.Local).Format("2006-01-02 15:04")+" · "+detail).FontSize(11).TextColor(pal.textSecondary)
 					})
 				})
 				if button.Clicked() {

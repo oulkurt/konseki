@@ -57,10 +57,13 @@ func (a *app) view(c *ui.Context) {
 							if title == "" {
 								title = msg.ShellUntitled()
 							}
-							ui.Text(c, msg.ShellNow(a.status.Front.App, title)).
+							// 截断后悬停显示全文，窗口标题通常比这一行能放下的长。
+							now := msg.ShellNow(a.status.Front.App, title)
+							ui.Text(c, now).
 								FontSize(11).
 								TextColor(pal.textSecondary).
 								SingleLine().
+								Tooltip(now).
 								Margin(0, 0, 0, 8)
 						}
 

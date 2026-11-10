@@ -37,7 +37,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 			ui.Row(c).FillWidth().Padding(14, 18).AlignItems(ui.Center).Gap(16).Children(func() {
 				ui.Column(c).Grow(1).Gap(3).Children(func() {
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, msg.RecorderTitle()).FontSize(13.5).Bold().TextColor(pal.textPrimary)
+						headingText(c, msg.RecorderTitle()).FontSize(13.5).SingleLine().TextColor(pal.textPrimary)
 						ui.Row(c).Gap(5).AlignItems(ui.Center).Padding(2, 8).Radius(999).Background(pal.rowHoverBg).Border(1, pal.cardBorder).Children(func() {
 							ui.Box(c).Size(6, 6).Radius(3).Background(phaseColor)
 							ui.Text(c, phaseLabel).FontSize(11).Bold().TextColor(pal.textSecondary)
@@ -77,7 +77,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 				for _, item := range [][2]string{{msg.RecorderSessions(), fmt.Sprint(usage.Sessions)}, {msg.RecorderSnapshots(), fmt.Sprint(usage.Snapshots)}, {msg.RecorderCurrentSession(), current}, {msg.RecorderFrontApp(), front}} {
 					ui.Column(c).Grow(1).Basis(0).Padding(10, 12).Gap(4).Radius(10).Background(pal.rowExpandedBg).Border(1, pal.rowDivider).Children(func() {
 						ui.Text(c, item[0]).FontSize(11).TextColor(pal.textSecondary).SingleLine()
-						ui.Text(c, item[1]).FontSize(14).Bold().TextColor(pal.textPrimary).SingleLine()
+						numText(c, item[1]).FontSize(14).Bold().TextColor(pal.textPrimary).SingleLine()
 					})
 				}
 			})
@@ -88,7 +88,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 			}
 			ui.Column(c).FillWidth().Padding(0, 18, 14, 18).Gap(6).Children(func() {
 				ui.Row(c).FillWidth().Gap(8).Children(func() {
-					ui.Text(c, msg.RecorderStorageUsed(fmt.Sprintf("%.1f", float64(usage.Bytes)/(1<<20)), limit, percent)).Grow(1).FontSize(11).TextColor(pal.textSecondary)
+					numText(c, msg.RecorderStorageUsed(fmt.Sprintf("%.1f", float64(usage.Bytes)/(1<<20)), limit, percent)).Grow(1).FontSize(11).TextColor(pal.textSecondary)
 					ui.Text(c, msg.RecorderStorageEvict()).FontSize(11).TextColor(pal.textSecondary)
 				})
 				ui.Box(c).FillWidth().Height(5).Radius(3).Background(pal.rowHoverBg).Draw(func(p *ui.Painter, r ui.Rect) {
@@ -127,7 +127,7 @@ func (a *app) renderRecorderStorage(c *ui.Context, pal palette) {
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Children(func() {
 			ui.Row(c).FillWidth().Padding(14, 18, 0, 18).Children(func() {
-				ui.Text(c, msg.RecorderStorage()).Bold().TextColor(pal.textPrimary)
+				headingText(c, msg.RecorderStorage()).SingleLine().TextColor(pal.textPrimary)
 			})
 			a.settingsRow(c, msg.RecorderStorageLimit(), msg.RecorderStorageHelp(), pal, func() {
 				if !a.storageFocus {

@@ -231,9 +231,11 @@ type Generator struct {
 
 // LLMConfig 是调用模型需要的一切。
 type LLMConfig struct {
-	Kind      llm.Kind
-	BaseURL   string
-	APIKey    string
+	Kind    llm.Kind
+	BaseURL string
+	APIKey  string
+	// AuthKind 是凭据类型："oauth" 走 Bearer，空或 "apikey" 按各家常规方式。
+	AuthKind  string
 	Header    map[string]string
 	Model     string
 	Thinking  string
@@ -431,6 +433,7 @@ func (g *Generator) generateOne(ctx context.Context, w window, ocr map[string]st
 		Kind:      cfg.Kind,
 		BaseURL:   cfg.BaseURL,
 		APIKey:    cfg.APIKey,
+		AuthKind:  cfg.AuthKind,
 		Header:    cfg.Header,
 		Model:     cfg.Model,
 		System:    systemPrompt(cfg.Language),

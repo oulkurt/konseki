@@ -189,6 +189,7 @@ func (c Config) clone() Config {
 	out.Providers = slices.Clone(c.Providers)
 	for i := range out.Providers {
 		out.Providers[i].EnabledModels = slices.Clone(out.Providers[i].EnabledModels)
+		out.Providers[i].DiscoveredModels = slices.Clone(out.Providers[i].DiscoveredModels)
 	}
 	out.Redact.Kinds = maps.Clone(c.Redact.Kinds)
 	out.Redact.Allow = slices.Clone(c.Redact.Allow)

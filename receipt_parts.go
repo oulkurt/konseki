@@ -227,18 +227,19 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, interactive boo
 		ui.Column(c).FillWidth().Gap(4).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(9).Children(func() {
 				ui.Text(c, line.Start.Format("15:04")).Width(42).Shrink(0).FontSize(12).Font("monospace").FontFeatures("tnum").TextColor(receiptFaded)
-				t := ui.Text(c, title).Grow(1).FontSize(13).LineHeight(1.35).TextColor(receiptInk)
+				// 小票的高度由行数撑开，长标题折行会挤乱整张纸，截断后悬停看全文。
+				t := ui.Text(c, title).Grow(1).FontSize(13).LineHeight(1.35).SingleLine().Tooltip(title).TextColor(receiptInk)
 				if bold {
 					t.Bold()
 				}
-				ui.Text(c, receiptDuration(msg, line.End.Sub(line.Start))).Shrink(0).FontSize(12).Font("monospace").TextColor(receiptInk)
+				ui.Text(c, receiptDuration(msg, line.End.Sub(line.Start))).Shrink(0).FontSize(12).Font("monospace").FontFeatures("tnum").TextColor(receiptInk)
 			})
 			ui.Column(c).FillWidth().Padding(0, 0, 0, 51).Gap(4).Children(func() {
 				if body != "" {
 					ui.Text(c, body).FontSize(12).LineHeight(1.45).TextColor(receiptFaded)
 				}
 				if len(meta) > 0 {
-					ui.Text(c, strings.Join(meta, " · ")).FontSize(11).Font("monospace").TextColor(receiptFaded)
+					ui.Text(c, strings.Join(meta, " · ")).FontSize(11).Font("monospace").FontFeatures("tnum").TextColor(receiptFaded)
 				}
 				if a.expanded[line.ID] {
 					renderReceiptDetails(c, msg, line)

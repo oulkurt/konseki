@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖系统钥匙串命令与 CLI 凭据文件。
- * [OUTPUT]: 只读发现 Claude Code 与 Codex 凭据；缺失时跳过。
+ * [OUTPUT]: 只读发现 Claude Code、Codex 与 Gemini CLI 凭据；读取 Codex 模型目录；缺失时跳过。
  * [POS]: 目录的本机凭据适配；不写凭据，不参与 query。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -40,6 +40,9 @@ func detectLocal() []Credential {
 
 	// Codex：所有平台都读 ~/.codex/auth.json。
 	out = append(out, codexFromFile()...)
+
+	// Gemini CLI：所有平台都读 ~/.gemini/oauth_creds.json。
+	out = append(out, geminiFromFile()...)
 
 	return out
 }
@@ -139,6 +142,115 @@ func codexFromFile() []Credential {
 func stringField(m map[string]any, key string) string {
 	s, _ := m[key].(string)
 	return strings.TrimSpace(s)
+}
+
+// geminiFromFile 读 ~/.gemini/oauth_creds.json。
+// 只收带 cloud-platform 权限的凭据：缺这个权限，Code Assist 端点会拒绝。
+func geminiFromFile() []Credential {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".gemini", "oauth_creds.json"))
+	if err != nil {
+		return nil
+	}
+	var root map[string]any
+	if err := json.Unmarshal(b, &root); err != nil {
+		return nil
+	}
+	if !hasCloudPlatformScope(root["scope"]) {
+		return nil
+	}
+	cred := Credential{Source: "gemini", Label: "Gemini CLI", Kind: "oauth"}
+	cred.AccessToken = stringField(root, "access_token")
+	cred.RefreshToken = stringField(root, "refresh_token")
+	cred.ExpiresAt = parseMillisTime(root["expiry_date"])
+	if cred.AccessToken == "" && cred.RefreshToken == "" {
+		return nil
+	}
+	return []Credential{cred}
+}
+
+// hasCloudPlatformScope 兼容字符串和数组两种 scope 写法。
+func hasCloudPlatformScope(v any) bool {
+	switch scope := v.(type) {
+	case string:
+		return strings.Contains(scope, "cloud-platform")
+	case []any:
+		for _, item := range scope {
+			if s, _ := item.(string); strings.Contains(s, "cloud-platform") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parseMillisTime 解析毫秒级 Unix 时间戳。
+// Gemini CLI 存的是数字，也见过存成字符串的版本，两种都收。
+func parseMillisTime(v any) time.Time {
+	var ms int64
+	switch x := v.(type) {
+	case float64:
+		ms = int64(x)
+	case string:
+		n, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		if err != nil {
+			return time.Time{}
+		}
+		ms = n
+	default:
+		return time.Time{}
+	}
+	if ms <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms)
+}
+
+// codexModelEntry 兼容 Codex 模型目录的两种字段名：
+// 官方导出用 id，本机 magpie 配置用 slug。
+type codexModelEntry struct {
+	ID   string `json:"id"`
+	Slug string `json:"slug"`
+}
+
+// CodexModels 读 ~/.codex/magpie-models.json，给导入时填真实模型列表。
+// 顶层可能是 {"models":[...]}，也可能直接是数组；读不到返回空。
+// 这里的模型名只用于选择，不发请求，所以宁可宽容也不要报错。
+func CodexModels() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Join(home, ".codex", "magpie-models.json"))
+	if err != nil {
+		return nil
+	}
+	var entries []codexModelEntry
+	var wrap struct {
+		Models []codexModelEntry `json:"models"`
+	}
+	if json.Unmarshal(b, &wrap) == nil && len(wrap.Models) > 0 {
+		entries = wrap.Models
+	} else if json.Unmarshal(b, &entries) != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range entries {
+		id := strings.TrimSpace(e.ID)
+		if id == "" {
+			id = strings.TrimSpace(e.Slug)
+		}
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 // parseTime 尽力解析时间字符串：支持 RFC3339 和纯 Unix 秒。

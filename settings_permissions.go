@@ -22,7 +22,7 @@ func (a *app) renderRecorderPermissions(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
-			ui.Text(c, msg.RecorderPermissions()).Bold().TextColor(pal.textPrimary)
+			headingText(c, msg.RecorderPermissions()).SingleLine().TextColor(pal.textPrimary)
 			for _, item := range []struct {
 				key, label, url string
 				state           capture.PermState

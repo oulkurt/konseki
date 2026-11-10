@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖供应商预设和用户配置。
- * [OUTPUT]: 提供模型协议、端点、候选模型和配置错误种类。
+ * [OUTPUT]: 提供模型协议、端点、鉴权方式、候选模型和配置错误种类。
  * [POS]: 模型设置与网络请求共用的解析边界。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -15,6 +15,8 @@ package llm
 // 规则尽量简单可预测：
 //   - 用户填了 base，就用用户的；
 //   - 没填就用预设的；
+//   - OpenAI 预设优先走 Responses —— 新版模型和订阅令牌都只认它；
+//   - 本机导入的订阅凭据走各自的专属端点，地址写死在下面；
 //   - Anthropic 官方和少数厂商支持原生 Messages 协议，能选就优先用它
 //     （thinking、cache 这些都只有原生协议才有）；
 //   - 其余一律走 OpenAI 兼容，因为它的覆盖面最广。
@@ -27,11 +29,28 @@ import (
 	"konseki/internal/providers"
 )
 
+// 订阅专属端点。它们不在 magpie 的预设表里，只有本机导入的凭据能用：
+//   - ChatGPT/Codex 的 OAuth 令牌只对 codex 的 Responses 端点有效；
+//   - Gemini CLI 的 OAuth 令牌只对 Code Assist 的 v1internal 有效。
+//
+// 写死而不是进预设表，是因为它们不是「可选的公开 API 地址」，
+// 用户填了别的地址也没有意义。
+const (
+	codexSubscriptionBase = "https://chatgpt.com/backend-api/codex"
+	geminiCLIBase         = "https://cloudcode-pa.googleapis.com/v1internal"
+	geminiCLIDefaultModel = "gemini-2.5-pro"
+)
+
 // Resolved 是一次调用所需的全部参数。不含密钥，调用方自己填。
 type Resolved struct {
 	Kind    Kind
 	BaseURL string
-	Headers map[string]string
+	// GeminiBase 是 Gemini 原生协议的调用地址，止于 /v1internal。
+	// 只有 GeminiGenerate 会填它，此时 BaseURL 留空。
+	GeminiBase string
+	// AuthKind 是鉴权方式："oauth" 走 Bearer，其余按各家常规方式。
+	AuthKind string
+	Headers  map[string]string
 	// Model 是最终使用的模型 id。
 	Model string
 	// ProviderName 只用于 UI 展示。
@@ -39,8 +58,17 @@ type Resolved struct {
 	// SupportsAnthropic 说这个供应商有没有原生 Messages 端点。
 	// UI 用它决定要不要显示「用原生协议」的开关。
 	SupportsAnthropic bool
-	// Models 是候选模型列表（预设 + 用户启用 + 已拉取的）。
+	// Models 是候选模型列表（预设/档位模型，有发现清单时按用户勾选过滤）。
 	Models []string
+}
+
+// CallBase 返回请求要用的 base。
+// Gemini 订阅端点只填 GeminiBase，调用方统一经这里取，免得每处都判空。
+func (r Resolved) CallBase() string {
+	if strings.TrimSpace(r.BaseURL) != "" {
+		return r.BaseURL
+	}
+	return r.GeminiBase
 }
 
 // Resolve 把一个 ProviderConfig 解析成可调用的参数。
@@ -76,10 +104,15 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 
 	chatBase := firstNonEmpty(pc.ChatBase, region.Chat, preset.Chat)
 	anthropicBase := firstNonEmpty(pc.AnthropicBase, region.Anthropic, preset.Anthropic)
+	responsesBase := firstNonEmpty(pc.ResponsesBase, region.Responses, preset.Responses)
 
 	r := Resolved{
 		ProviderName:      name,
 		SupportsAnthropic: anthropicBase != "",
+		AuthKind:          "apikey",
+	}
+	if pc.Auth == "oauth" {
+		r.AuthKind = "oauth"
 	}
 
 	if pc.DefaultModel != "" {
@@ -88,21 +121,30 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		r.Model = firstOf(preset.Models)
 	}
 
-	// 模型列表：档位的模型 + 用户启用的，都没有才退到预设全集。
+	// 模型列表：档位的模型 + 用户勾选的，都没有才退到预设全集。
 	// 档位优先是因为某区域的模型列表才是那把 key 真能调的。
 	base := region.Models
 	if len(base) == 0 {
 		base = preset.Models
 	}
-	seen := map[string]bool{}
-	for _, m := range append(append([]string{}, base...), pc.EnabledModels...) {
-		if m != "" && !seen[m] {
-			seen[m] = true
-			r.Models = append(r.Models, m)
-		}
-	}
+	r.Models = candidateModels(base, pc.DiscoveredModels, pc.EnabledModels)
 
 	switch {
+	case pc.Preset == "openai" && pc.Auth == "oauth":
+		// ChatGPT/Codex 订阅的令牌只对专属端点有效，不能走公开 API 地址。
+		r.Kind = OpenAIResponses
+		r.BaseURL = codexSubscriptionBase
+	case pc.Preset == "openai" && responsesBase != "":
+		r.Kind = OpenAIResponses
+		r.BaseURL = responsesBase
+	case pc.Preset == "gemini-cli" && pc.Auth == "oauth":
+		// Gemini CLI 的 OAuth 令牌只对 Code Assist 端点有效。
+		r.Kind = GeminiGenerate
+		r.GeminiBase = geminiCLIBase
+	case pc.Preset == "google":
+		// 预设的 Chat 就是官方 OpenAI 兼容层，保持走它。
+		r.Kind = OpenAICompatible
+		r.BaseURL = chatBase
 	case preferAnthropic && anthropicBase != "":
 		r.Kind = AnthropicMessages
 		r.BaseURL = anthropicBase
@@ -117,6 +159,9 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		return r, fmt.Errorf("%s: %w", name, ErrNoEndpoint)
 	}
 
+	if r.Model == "" && pc.Preset == "gemini-cli" {
+		r.Model = geminiCLIDefaultModel
+	}
 	if r.Model == "" {
 		return r, fmt.Errorf("%s: %w", name, ErrNoModel)
 	}
@@ -142,4 +187,43 @@ func firstOf(vals []string) string {
 		return vals[0]
 	}
 	return ""
+}
+
+// candidateModels 合并候选模型，去重并保序。发现清单把语义分成两种模式：
+//
+//   - 有发现清单：清单是这家真实的全集，EnabledModels 是用户的勾选。
+//     只收全集里被勾选的模型。取消勾选的预设模型也不进——勾选列表是
+//     用户唯一的表达，不能由预设把取消过的模型又顶回来。
+//   - 没有发现清单（旧配置或还没拉取过）：保持并集。空 EnabledModels
+//     表示「全用预设给的」，这是旧配置的约定，不能读成「一个都不用」。
+func candidateModels(base, discovered, enabled []string) []string {
+	enabledSet := make(map[string]bool, len(enabled))
+	for _, m := range enabled {
+		enabledSet[m] = true
+	}
+	managed := len(discovered) > 0
+	pool := base
+	if managed {
+		pool = append(append([]string{}, base...), discovered...)
+	}
+	seen := make(map[string]bool, len(pool)+len(enabled))
+	out := make([]string, 0, len(pool))
+	add := func(m string) {
+		if m != "" && !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	for _, m := range pool {
+		if managed && !enabledSet[m] {
+			continue
+		}
+		add(m)
+	}
+	if !managed {
+		for _, m := range enabled {
+			add(m)
+		}
+	}
+	return out
 }

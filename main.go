@@ -79,17 +79,22 @@ type app struct {
 	providerSearch  string
 	apiKeyDraft     string
 	baseURLDraft    string
+	responsesDraft  string
 	modelDraft      string
-	testing         bool
-	testModel       string
-	testLatency     int
-	testErr         error
-	testOK          bool
-	detected        []providers.Credential
-	detectDone      bool
-	detectStarted   bool
-	fetchingModels  bool
-	fetchMsg        string
+	// modelsAll 记录可用模型列表是否展开了全部条目。
+	modelsAll      bool
+	testing        bool
+	testModel      string
+	testLatency    int
+	testErr        error
+	testOK         bool
+	detected       []providers.Credential
+	detectDone     bool
+	detectStarted  bool
+	fetchingModels bool
+	fetchMsg       string
+	// fetchFor 是拉取结果所属的供应商；消息只显示在它的面板里。
+	fetchFor string
 
 	// ---- 摘要 ----
 	// 视图切换：0 = 时间轴，1 = 设置
