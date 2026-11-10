@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖供应商预设与用户配置。
- * [OUTPUT]: 验证协议选择、订阅端点写死与既有厂商的解析回归。
+ * [OUTPUT]: 验证协议选择、订阅端点写死、候选模型过滤与既有厂商的解析回归。
  * [POS]: resolve.go 的离线回归测试；不联网。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -8,9 +8,11 @@ package llm
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"konseki/internal/config"
+	"konseki/internal/providers"
 )
 
 func TestResolveCodexOAuthUsesSubscriptionResponses(t *testing.T) {
@@ -161,5 +163,55 @@ func TestResolveErrors(t *testing.T) {
 	// 订阅预设不走 API key 模式：没有公开端点可用。
 	if _, err := Resolve(config.ProviderConfig{Preset: "gemini-cli", DefaultModel: "gemini-2.5-pro"}, true); !errors.Is(err, ErrNoEndpoint) {
 		t.Errorf("gemini-cli/apikey 的 err = %v，期望 ErrNoEndpoint", err)
+	}
+}
+
+// 有发现清单时勾选是唯一依据：取消勾选的预设模型不进候选，
+// 只有拉取到的模型才能补进列表。
+func TestResolveDiscoveredModelsFiltersByEnabled(t *testing.T) {
+	preset, ok := providers.ByID("baidu-qianfan")
+	if !ok || len(preset.Models) < 2 {
+		t.Fatal("预设夹具失效：baidu-qianfan 需要至少两个模型")
+	}
+	kept, cancelled := preset.Models[0], preset.Models[1]
+	extra := "discovered-only"
+	pc := config.ProviderConfig{
+		Preset:           preset.ID,
+		EnabledModels:    []string{kept, extra},
+		DiscoveredModels: append(slices.Clone(preset.Models), extra),
+	}
+	r, err := Resolve(pc, false)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if want := []string{kept, extra}; !slices.Equal(r.Models, want) {
+		t.Fatalf("Models = %v，期望 %v", r.Models, want)
+	}
+	if slices.Contains(r.Models, cancelled) {
+		t.Fatalf("取消勾选的预设模型 %q 仍在候选里：%v", cancelled, r.Models)
+	}
+}
+
+// 没有发现清单时保持旧行为：EnabledModels 直接并入预设，空列表仍表示全用预设。
+func TestResolveWithoutDiscoveredKeepsUnion(t *testing.T) {
+	preset, ok := providers.ByID("baidu-qianfan")
+	if !ok || len(preset.Models) == 0 {
+		t.Fatal("预设夹具失效：baidu-qianfan 需要模型列表")
+	}
+	extra := "legacy-extra"
+	r, err := Resolve(config.ProviderConfig{Preset: preset.ID, EnabledModels: []string{extra}}, false)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	want := append(slices.Clone(preset.Models), extra)
+	if !slices.Equal(r.Models, want) {
+		t.Fatalf("Models = %v，期望 %v", r.Models, want)
+	}
+	empty, err := Resolve(config.ProviderConfig{Preset: preset.ID}, false)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !slices.Equal(empty.Models, preset.Models) {
+		t.Fatalf("空勾选的 Models = %v，期望预设全集 %v", empty.Models, preset.Models)
 	}
 }

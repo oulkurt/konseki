@@ -3,13 +3,15 @@
  * [OUTPUT]: 提供凭据扫描、连接测试与模型列表请求。
  * [POS]: 供应商设置的后台请求边界。结果经界面队列发布。
  * 连接测试保存模型与耗时，由设置页按当前语言显示。
- * fetchModels 由配置面板的「拉取模型列表」按钮触发，列表写回 EnabledModels。
+ * fetchModels 由配置面板的「拉取模型列表」按钮触发，列表写成发现清单并默认全选。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -98,7 +100,8 @@ func withGlass(el ui.Element, clarity float32) ui.Element {
 // 跟文档里写的 v4.1-flash 完全对不上），硬编码一份必然过期，
 // 而过期的表现是「配好了但请求 400」。
 //
-// 拿到的列表同时写回设置里的 EnabledModels，这样下次打开还是新的。
+// 拿到的列表写成发现清单（全量），并默认全选进 EnabledModels。
+// 分开存是为了让用户取消勾选：发现清单留着，界面上才能把取消的模型显示回来。
 func (a *app) fetchModels(idx int) {
 	if a.llmc == nil || idx < 0 || idx >= len(a.cfgNow.Providers) {
 		return
@@ -107,6 +110,11 @@ func (a *app) fetchModels(idx int) {
 	a.fetchingModels, a.fetchMsg, a.fetchFor = true, "", providerKey(pc)
 	go func() {
 		resolved, err := llm.Resolve(pc, false)
+		// 没选模型不是拉取的障碍：拉列表恰恰是选模型的第一步。
+		// Resolve 报 ErrNoModel 时协议和端点都已填好，照常去拉。
+		if err != nil && errors.Is(err, llm.ErrNoModel) {
+			err = nil
+		}
 		var ids []string
 		if err == nil {
 			key := pc.APIKey
@@ -143,6 +151,7 @@ func (a *app) fetchModels(idx int) {
 				for i := range c.Providers {
 					p := &c.Providers[i]
 					if p.Preset == pc.Preset && p.Label == pc.Label {
+						p.DiscoveredModels = slices.Clone(chat)
 						p.EnabledModels = chat
 						if p.DefaultModel == "" {
 							p.DefaultModel = chat[0]

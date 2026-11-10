@@ -1,6 +1,6 @@
 /*
  * [INPUT]: 依赖临时应用配置、供应商预设、语言目录、离屏渲染器和假模型端点。
- * [OUTPUT]: 验证拉取按钮、订阅面板、密钥提示与链接、可用模型选择、添加弹窗和导入标记。
+ * [OUTPUT]: 验证拉取按钮、订阅面板、密钥提示与链接、可用模型勾选、默认模型圆圈、添加弹窗和导入标记。
  * [POS]: 供应商配置界面的回归测试。网络请求全部指向 httptest，不联网。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
@@ -64,9 +64,13 @@ func TestProviderFetchModelsButtonWritesList(t *testing.T) {
 		t.Fatal("拉取模型超时")
 	}
 	tt.Frame()
-	// 嵌入模型不进聊天模型列表。
-	if got := a.cfg.Get().Providers[0].EnabledModels; !slices.Equal(got, []string{"alpha", "beta"}) {
-		t.Fatalf("EnabledModels = %v", got)
+	// 嵌入模型不进聊天模型列表。发现清单保留全量，勾选默认全选。
+	pc := a.cfg.Get().Providers[0]
+	if !slices.Equal(pc.EnabledModels, []string{"alpha", "beta"}) {
+		t.Fatalf("EnabledModels = %v", pc.EnabledModels)
+	}
+	if !slices.Equal(pc.DiscoveredModels, []string{"alpha", "beta"}) {
+		t.Fatalf("DiscoveredModels = %v", pc.DiscoveredModels)
 	}
 	if !tt.HasText(msg.ModelsFetchSuccess(2)) {
 		t.Fatalf("没有显示拉取结果：%q", tt.Texts())
@@ -152,11 +156,12 @@ func TestNoListProviderShowsPresetModels(t *testing.T) {
 	if !tt.HasText(msg.ModelsAvailable()) {
 		t.Fatalf("缺少预设模型列表：%q", tt.Texts())
 	}
-	if err := tt.Click("deepseek-v4-pro"); err != nil {
+	// 点行尾圆圈把模型设为默认；列表行本身只负责勾选。
+	if err := tt.Click(msg.ModelsDefault() + " deepseek-v4-pro"); err != nil {
 		t.Fatal(err)
 	}
 	if got := a.cfg.Get().Providers[0].DefaultModel; got != "deepseek-v4-pro" {
-		t.Fatalf("点选预设模型后默认模型是 %q", got)
+		t.Fatalf("点设为默认后默认模型是 %q", got)
 	}
 }
 
@@ -188,7 +193,9 @@ func TestProviderKeyHintAndKeyLink(t *testing.T) {
 	}
 }
 
-func TestEnabledModelClickSetsDefault(t *testing.T) {
+// 勾选列表：点行翻勾选，写入 EnabledModels；第一次勾选把当前列表固化成
+// 发现清单，取消的模型仍留在列表里，用户能再勾回来。
+func TestProviderModelCheckboxTogglesEnabled(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	configureProvider(t, a, config.ProviderConfig{
@@ -204,8 +211,116 @@ func TestEnabledModelClickSetsDefault(t *testing.T) {
 	if err := tt.Click("beta"); err != nil {
 		t.Fatal(err)
 	}
-	if got := a.cfg.Get().Providers[0].DefaultModel; got != "beta" {
-		t.Fatalf("点选模型后默认模型是 %q", got)
+	pc := a.cfg.Get().Providers[0]
+	if !slices.Equal(pc.EnabledModels, []string{"alpha"}) {
+		t.Fatalf("取消勾选后的 EnabledModels = %v", pc.EnabledModels)
+	}
+	if !slices.Equal(pc.DiscoveredModels, []string{"alpha", "beta"}) {
+		t.Fatalf("第一次勾选应固化发现清单，得到 %v", pc.DiscoveredModels)
+	}
+	if pc.DefaultModel != "alpha" {
+		t.Fatalf("取消非默认模型不该改默认，得到 %q", pc.DefaultModel)
+	}
+	if got := providerModelChoices(pc); !slices.Equal(got, []string{"alpha"}) {
+		t.Fatalf("取消勾选后候选是 %v，期望只剩 alpha", got)
+	}
+	// 取消的模型仍在列表里，再点一次勾回来，行不跳位。
+	if _, ok := tt.Find("beta"); !ok {
+		t.Fatalf("取消勾选的模型从列表里消失了：%q", tt.Texts())
+	}
+	if err := tt.Click("beta"); err != nil {
+		t.Fatal(err)
+	}
+	pc = a.cfg.Get().Providers[0]
+	if !slices.Equal(pc.EnabledModels, []string{"alpha", "beta"}) {
+		t.Fatalf("重新勾选后的 EnabledModels = %v", pc.EnabledModels)
+	}
+}
+
+// 行尾圆圈把勾选的模型设为默认，默认行显示徽标。
+func TestProviderModelDefaultBadgeAndCircle(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	configureProvider(t, a, config.ProviderConfig{
+		Preset: "custom", ChatBase: "https://example.test/v1",
+		DefaultModel: "alpha", EnabledModels: []string{"alpha", "beta"},
+	})
+	msg := locales.In("zh-Hans")
+	tt := ui.NewTester(a.view, 780, 3000)
+	tt.SetLocale("zh-Hans")
+	if _, ok := tt.Find(msg.ModelsDefaultBadge()); !ok {
+		t.Fatalf("默认模型没有徽标：%q", tt.Texts())
+	}
+	if err := tt.Click(msg.ModelsDefault() + " beta"); err != nil {
+		t.Fatal(err)
+	}
+	pc := a.cfg.Get().Providers[0]
+	if pc.DefaultModel != "beta" {
+		t.Fatalf("点圆圈后默认模型是 %q", pc.DefaultModel)
+	}
+	tt.Frame()
+	// 徽标跟着默认模型走，圆圈从 beta 换到 alpha。
+	if _, ok := tt.Find(msg.ModelsDefaultBadge()); !ok {
+		t.Fatalf("换默认后没有徽标：%q", tt.Texts())
+	}
+	if _, ok := tt.Find(msg.ModelsDefault() + " beta"); ok {
+		t.Fatalf("beta 已是默认，不该还有设为默认的圆圈：%q", tt.Texts())
+	}
+	if _, ok := tt.Find(msg.ModelsDefault() + " alpha"); !ok {
+		t.Fatalf("alpha 不再是默认，缺少设为默认的圆圈：%q", tt.Texts())
+	}
+}
+
+// 全选/全不选是一个按钮，按当前状态切换文案。
+// 全不选后摘要菜单的候选为空；列表行还在，用户能重新全选。
+func TestProviderModelsSelectAllToggle(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	configureProvider(t, a, config.ProviderConfig{
+		Preset: "custom", ChatBase: "https://example.test/v1",
+		DefaultModel: "alpha", EnabledModels: []string{"alpha", "beta"},
+	})
+	msg := locales.In("zh-Hans")
+	tt := ui.NewTester(a.view, 780, 3000)
+	tt.SetLocale("zh-Hans")
+	if !tt.HasText(msg.ModelsDeselectAll()) {
+		t.Fatalf("全选状态下缺少全不选按钮：%q", tt.Texts())
+	}
+	if err := tt.Click(msg.ModelsDeselectAll()); err != nil {
+		t.Fatal(err)
+	}
+	pc := a.cfg.Get().Providers[0]
+	if len(pc.EnabledModels) != 0 {
+		t.Fatalf("全不选后 EnabledModels = %v", pc.EnabledModels)
+	}
+	if !slices.Equal(pc.DiscoveredModels, []string{"alpha", "beta"}) {
+		t.Fatalf("全不选后发现清单 = %v", pc.DiscoveredModels)
+	}
+	if pc.DefaultModel != "" {
+		t.Fatalf("全不选后默认模型 = %q，期望清空", pc.DefaultModel)
+	}
+	if got := providerModelChoices(pc); len(got) != 0 {
+		t.Fatalf("全不选后摘要菜单候选 = %v，期望为空", got)
+	}
+	tt.Frame()
+	if !tt.HasText(msg.ModelsSelectAll()) {
+		t.Fatalf("全不选后缺少全选按钮：%q", tt.Texts())
+	}
+	if _, ok := tt.Find("beta"); !ok {
+		t.Fatalf("全不选后列表行不该消失：%q", tt.Texts())
+	}
+	if err := tt.Click(msg.ModelsSelectAll()); err != nil {
+		t.Fatal(err)
+	}
+	pc = a.cfg.Get().Providers[0]
+	if !slices.Equal(pc.EnabledModels, []string{"alpha", "beta"}) {
+		t.Fatalf("全选后 EnabledModels = %v", pc.EnabledModels)
+	}
+	if pc.DefaultModel != "alpha" {
+		t.Fatalf("全选后默认模型 = %q，期望回到第一个", pc.DefaultModel)
+	}
+	if got := providerModelChoices(pc); !slices.Equal(got, []string{"alpha", "beta"}) {
+		t.Fatalf("全选后摘要菜单候选 = %v", got)
 	}
 }
 
@@ -320,6 +435,9 @@ func TestProviderPanelStringsBothLanguages(t *testing.T) {
 			"modelsFetching":             msg.ModelsFetching(),
 			"modelsAvailable":            msg.ModelsAvailable(),
 			"modelsAvailableHint":        msg.ModelsAvailableHint(),
+			"modelsSelectAll":            msg.ModelsSelectAll(),
+			"modelsDeselectAll":          msg.ModelsDeselectAll(),
+			"modelsDefaultBadge":         msg.ModelsDefaultBadge(),
 			"modelsMore":                 msg.ModelsMore(2),
 			"modelsResponsesURL":         msg.ModelsResponsesURL(),
 			"modelsKindVendor":           msg.ModelsKindVendor(),
@@ -336,5 +454,51 @@ func TestProviderPanelStringsBothLanguages(t *testing.T) {
 				t.Errorf("%s 的 %s 混入中文：%q", lang, key, value)
 			}
 		}
+	}
+}
+
+// 拉模型列表不需要先有模型：新配的按量供应商往往还没有默认模型，
+// 拉取恰恰是选模型的第一步。Resolve 报「尚未选择模型」时 Kind 和端点都已备好，
+// 照常去拉（真机 DeepSeek 实测暴露的死锁）。
+func TestProviderFetchWithoutModel(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{
+			{"id": "deepseek-chat"}, {"id": "deepseek-reasoner"},
+		}})
+	}))
+	defer server.Close()
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	a.llmc.HTTP = server.Client()
+	msg := locales.In("zh-Hans")
+	// 复刻 DeepSeek 实测形态：有端点、无预设模型、未选默认模型。
+	configureProvider(t, a, config.ProviderConfig{Preset: "custom", ChatBase: server.URL + "/v1"})
+	jobs := make(chan func(), 1)
+	a.post = func(f func()) { jobs <- f }
+	tt := ui.NewTester(a.view, 780, 3000)
+	tt.SetLocale("zh-Hans")
+	if err := tt.Click(msg.ModelsFetch()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-jobs:
+		f()
+	case <-time.After(10 * time.Second):
+		t.Fatal("拉取模型超时")
+	}
+	tt.Frame()
+	pc := a.cfg.Get().Providers[0]
+	if !slices.Equal(pc.EnabledModels, []string{"deepseek-chat", "deepseek-reasoner"}) {
+		t.Fatalf("EnabledModels = %v", pc.EnabledModels)
+	}
+	if !slices.Equal(pc.DiscoveredModels, []string{"deepseek-chat", "deepseek-reasoner"}) {
+		t.Fatalf("DiscoveredModels = %v", pc.DiscoveredModels)
+	}
+	if pc.DefaultModel != "deepseek-chat" {
+		t.Fatalf("拉取后默认模型 = %q", pc.DefaultModel)
+	}
+	if !tt.HasText(msg.ModelsFetchSuccess(2)) {
+		t.Fatalf("没有显示拉取结果：%q", tt.Texts())
 	}
 }

@@ -58,7 +58,7 @@ type Resolved struct {
 	// SupportsAnthropic 说这个供应商有没有原生 Messages 端点。
 	// UI 用它决定要不要显示「用原生协议」的开关。
 	SupportsAnthropic bool
-	// Models 是候选模型列表（预设 + 用户启用 + 已拉取的）。
+	// Models 是候选模型列表（预设/档位模型，有发现清单时按用户勾选过滤）。
 	Models []string
 }
 
@@ -121,19 +121,13 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		r.Model = firstOf(preset.Models)
 	}
 
-	// 模型列表：档位的模型 + 用户启用的，都没有才退到预设全集。
+	// 模型列表：档位的模型 + 用户勾选的，都没有才退到预设全集。
 	// 档位优先是因为某区域的模型列表才是那把 key 真能调的。
 	base := region.Models
 	if len(base) == 0 {
 		base = preset.Models
 	}
-	seen := map[string]bool{}
-	for _, m := range append(append([]string{}, base...), pc.EnabledModels...) {
-		if m != "" && !seen[m] {
-			seen[m] = true
-			r.Models = append(r.Models, m)
-		}
-	}
+	r.Models = candidateModels(base, pc.DiscoveredModels, pc.EnabledModels)
 
 	switch {
 	case pc.Preset == "openai" && pc.Auth == "oauth":
@@ -193,4 +187,43 @@ func firstOf(vals []string) string {
 		return vals[0]
 	}
 	return ""
+}
+
+// candidateModels 合并候选模型，去重并保序。发现清单把语义分成两种模式：
+//
+//   - 有发现清单：清单是这家真实的全集，EnabledModels 是用户的勾选。
+//     只收全集里被勾选的模型。取消勾选的预设模型也不进——勾选列表是
+//     用户唯一的表达，不能由预设把取消过的模型又顶回来。
+//   - 没有发现清单（旧配置或还没拉取过）：保持并集。空 EnabledModels
+//     表示「全用预设给的」，这是旧配置的约定，不能读成「一个都不用」。
+func candidateModels(base, discovered, enabled []string) []string {
+	enabledSet := make(map[string]bool, len(enabled))
+	for _, m := range enabled {
+		enabledSet[m] = true
+	}
+	managed := len(discovered) > 0
+	pool := base
+	if managed {
+		pool = append(append([]string{}, base...), discovered...)
+	}
+	seen := make(map[string]bool, len(pool)+len(enabled))
+	out := make([]string, 0, len(pool))
+	add := func(m string) {
+		if m != "" && !seen[m] {
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	for _, m := range pool {
+		if managed && !enabledSet[m] {
+			continue
+		}
+		add(m)
+	}
+	if !managed {
+		for _, m := range enabled {
+			add(m)
+		}
+	}
+	return out
 }

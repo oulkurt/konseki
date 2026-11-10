@@ -652,18 +652,60 @@ func (msgs Messages) ModelsAvailable() string {
 	return Catalog.Format(msgs.locale, "modelsAvailable", nil)
 }
 
-// ModelsAvailableHint says "点选模型即设为默认。"
+// ModelsAvailableHint says "勾选决定可用的模型；点右侧圆圈设为默认。"
 // in the language the app shows.
 //
-// 可用模型列表下说明点选即设为默认模型。
+// 可用模型列表下说明勾选用途和默认模型的设置方式。
 func ModelsAvailableHint() string { return In(i18n.Locale()).ModelsAvailableHint() }
 
-// ModelsAvailableHint says "点选模型即设为默认。"
+// ModelsAvailableHint says "勾选决定可用的模型；点右侧圆圈设为默认。"
 // in the language of msgs.
 //
-// 可用模型列表下说明点选即设为默认模型。
+// 可用模型列表下说明勾选用途和默认模型的设置方式。
 func (msgs Messages) ModelsAvailableHint() string {
 	return Catalog.Format(msgs.locale, "modelsAvailableHint", nil)
+}
+
+// ModelsSelectAll says "全选"
+// in the language the app shows.
+//
+// 可用模型列表全部勾选的按钮。
+func ModelsSelectAll() string { return In(i18n.Locale()).ModelsSelectAll() }
+
+// ModelsSelectAll says "全选"
+// in the language of msgs.
+//
+// 可用模型列表全部勾选的按钮。
+func (msgs Messages) ModelsSelectAll() string {
+	return Catalog.Format(msgs.locale, "modelsSelectAll", nil)
+}
+
+// ModelsDeselectAll says "全不选"
+// in the language the app shows.
+//
+// 可用模型列表全部取消勾选的按钮。
+func ModelsDeselectAll() string { return In(i18n.Locale()).ModelsDeselectAll() }
+
+// ModelsDeselectAll says "全不选"
+// in the language of msgs.
+//
+// 可用模型列表全部取消勾选的按钮。
+func (msgs Messages) ModelsDeselectAll() string {
+	return Catalog.Format(msgs.locale, "modelsDeselectAll", nil)
+}
+
+// ModelsDefaultBadge says "默认"
+// in the language the app shows.
+//
+// 可用模型列表中当前默认模型的行尾标记。
+func ModelsDefaultBadge() string { return In(i18n.Locale()).ModelsDefaultBadge() }
+
+// ModelsDefaultBadge says "默认"
+// in the language of msgs.
+//
+// 可用模型列表中当前默认模型的行尾标记。
+func (msgs Messages) ModelsDefaultBadge() string {
+	return Catalog.Format(msgs.locale, "modelsDefaultBadge", nil)
 }
 
 // ModelsMore says "+{count}个"

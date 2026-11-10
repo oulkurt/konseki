@@ -1,9 +1,10 @@
 /*
  * [INPUT]: 依赖供应商配置、预设、模型解析、摘要生成器、凭据扫描和语言目录。
- * [OUTPUT]: 提供模型和推理档位选择、供应商分节配置、可用模型选择、自动摘要开关行和隐私设置。
+ * [OUTPUT]: 提供模型和推理档位选择、供应商分节配置、可用模型勾选、自动摘要开关行和隐私设置。
  * [POS]: 模型设置页的组合边界。网络操作由 provider_requests.go 执行。
  * 配置面板按鉴权、端点、模型、操作分节。订阅凭据不显示密钥输入框。
  * 候选模型取自 llm.Resolve，菜单里能选的就是请求能用的。
+ * 勾选列表决定候选；摘要菜单只列勾选的模型。
  * 连接结果和拉取结果按当前语言显示。用户输入时才写供应商配置。
  * 未输入时，供应商输入框跟随配置。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
@@ -273,11 +274,60 @@ func sortedPresets() []providers.Preset {
 	return out
 }
 
-// providerModelChoices 返回界面可选的模型。直接用 llm.Resolve 的候选列表，
-// 保证摘要菜单里能选的模型就是请求实际能用的。
+// providerModelChoices 返回摘要菜单可选的模型。直接用 llm.Resolve 的候选列表，
+// 保证菜单里能选的模型就是请求实际能用的。
 func providerModelChoices(pc config.ProviderConfig) []string {
 	resolved, _ := llm.Resolve(pc, false)
 	return resolved.Models
+}
+
+// providerModelList 返回勾选列表要显示的全部模型。
+// 发现清单在前：它的顺序稳定，取消勾选不会让行在列表里跳位。
+// 解析候选补上清单之外的预设模型，用户仍能勾选它们。
+func providerModelList(pc config.ProviderConfig) []string {
+	resolved := providerModelChoices(pc)
+	out := make([]string, 0, len(pc.DiscoveredModels)+len(resolved))
+	seen := make(map[string]bool, len(pc.DiscoveredModels)+len(resolved))
+	for _, list := range [][]string{pc.DiscoveredModels, resolved} {
+		for _, id := range list {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
+}
+
+// hasModelSelection 报告配置是否已经进入勾选模式（有发现清单）。
+// 没有发现清单的旧配置按预设全集解析，勾选态就是全选。
+func hasModelSelection(pc config.ProviderConfig) bool {
+	return len(pc.DiscoveredModels) > 0
+}
+
+// providerModelChecked 报告一枚模型在勾选列表里是否打勾。
+func providerModelChecked(pc config.ProviderConfig, id string) bool {
+	return !hasModelSelection(pc) || slices.Contains(pc.EnabledModels, id)
+}
+
+// providerEnabledModels 把勾选状态展开成完整列表，顺序跟随 choices。
+// 旧配置没有发现清单时全部勾选：列表本身就是 llm.Resolve 的候选，
+// 摘要菜单里能选的正是这些，勾选态必须和菜单一致。
+func providerEnabledModels(pc config.ProviderConfig, choices []string) []string {
+	if !hasModelSelection(pc) {
+		return slices.Clone(choices)
+	}
+	enabled := make(map[string]bool, len(pc.EnabledModels))
+	for _, id := range pc.EnabledModels {
+		enabled[id] = true
+	}
+	out := make([]string, 0, len(choices))
+	for _, id := range choices {
+		if enabled[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // providerKeysURL 优先用当前档位的密钥页面，没填就落回预设。
@@ -451,8 +501,8 @@ func (a *app) renderProviderEndpoint(c *ui.Context, pal palette, idx int, pc con
 	})
 }
 
-// renderProviderModels 绘制默认模型、拉取按钮和已拉取的模型列表。
-// 拉取把结果写回 EnabledModels；摘要模型菜单直接读这份列表。
+// renderProviderModels 绘制默认模型、拉取按钮和可用模型勾选列表。
+// 拉取写回发现清单并默认全选；勾选列表决定摘要菜单的候选。
 func (a *app) renderProviderModels(c *ui.Context, pal palette, idx int, pc config.ProviderConfig, preset providers.Preset, msg locales.Messages, oauth bool) {
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
 		providerSectionTitle(c, msg.ModelsSectionModel(), pal)
@@ -481,52 +531,175 @@ func (a *app) renderProviderModels(c *ui.Context, pal palette, idx int, pc confi
 		}
 		// 没有 /models 可拉的家（NoList）靠预设和档位的列表，
 		// 有列表就显示，用户不必手打模型 id。
-		if choices := providerModelChoices(pc); len(choices) > 0 {
+		if choices := providerModelList(pc); len(choices) > 0 {
 			a.renderModelChoices(c, pal, idx, pc, msg, choices)
 		}
 	})
 }
 
-// renderModelChoices 绘制可用模型。点一枚模型即设为默认，
-// 默认模型输入框随之更新。
+// renderModelChoices 绘制可用模型勾选列表。
+// 勾选决定哪些模型进入摘要菜单；行尾圆圈把勾选的某个模型设为默认。
+// 旧的「点一枚即默认」做不到只选一部分：勾选和默认是两件事，
+// 模型多时用户先圈定范围，再在范围里挑一个当默认。
 func (a *app) renderModelChoices(c *ui.Context, pal palette, idx int, pc config.ProviderConfig, msg locales.Messages, choices []string) {
+	enabled := providerEnabledModels(pc, choices)
+	allChecked := len(choices) > 0 && len(enabled) == len(choices)
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {
 		headingText(c, msg.ModelsAvailable()).FontSize(11.5).TextColor(pal.textSecondary).SingleLine()
 		ui.Spacer(c)
 		if !a.modelsAll && len(choices) > providerModelPreview {
-			label := msg.ModelsMore(len(choices) - providerModelPreview)
-			if ui.Button(c.Key("provider-more-"+pc.Preset), label).Clicked() {
+			if ui.Button(c.Key("provider-more-"+pc.Preset), msg.ModelsMore(len(choices)-providerModelPreview)).Clicked() {
 				a.modelsAll = true
 			}
+		}
+		label := msg.ModelsSelectAll()
+		if allChecked {
+			label = msg.ModelsDeselectAll()
+		}
+		if ui.Button(c.Key("provider-select-all-"+pc.Preset), label).Clicked() {
+			a.selectProviderModels(idx, pc, choices, !allChecked)
 		}
 	})
 	shown := choices
 	if !a.modelsAll && len(shown) > providerModelPreview {
 		shown = shown[:providerModelPreview]
 	}
-	ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
+	ui.Column(c).FillWidth().Gap(2).Children(func() {
 		for _, id := range shown {
-			selected := id == pc.DefaultModel
-			btn := ui.ButtonBase(c.Key("provider-model-"+pc.Preset+"-"+id)).Padding(3, 8).Radius(6).
-				Border(1, pal.controlBorder).Background(pal.cardBg)
-			textColor := pal.textPrimary
-			if selected {
-				btn.Background(pal.switchOn).BorderColor(pal.switchOn)
-				textColor = ui.Hex("#FFFFFF")
-			} else if btn.Hovered() {
-				btn.Background(pal.rowHoverBg)
-			}
-			btn.Children(func() {
-				ui.Text(c, id).FontSize(11).TextColor(textColor).SingleLine().Tooltip(id)
-			})
-			if btn.Clicked() {
-				a.saveProviderField(idx, func(p *config.ProviderConfig) { p.DefaultModel = id })
-				a.modelDraft = id
-				a.rebuildGenerator()
-			}
+			a.renderModelChoice(c, pal, idx, pc, msg, choices, id)
 		}
 	})
 	ui.Text(c, msg.ModelsAvailableHint()).FontSize(11).TextColor(pal.textSecondary)
+}
+
+// renderModelChoice 绘制一枚模型：复选框管勾选，行尾圆圈管默认。
+// mygo 的 Checkbox 整行（含模型名）点击即翻勾选，所以「设为默认」
+// 不能挂在文字上，只能另给一个目标。
+func (a *app) renderModelChoice(c *ui.Context, pal palette, idx int, pc config.ProviderConfig, msg locales.Messages, choices []string, id string) {
+	checked := providerModelChecked(pc, id)
+	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(3, 6).Radius(6)
+	row.Children(func() {
+		cb := ui.CheckboxBase(c.Key("provider-model-"+pc.Preset+"-"+id), &checked).Gap(7)
+		cb.Label(id)
+		cb.Children(func() {
+			box := ui.Box(c).Size(15, 15).Radius(4).Shrink(0)
+			if checked {
+				box.Background(pal.switchOn)
+			} else {
+				box.Background(pal.cardBg).Border(1.5, pal.controlBorder)
+			}
+			box.DrawOver(func(p *ui.Painter, r ui.Rect) {
+				if checked {
+					p.StrokePath(modelCheckPath(r), 1.6, ui.Hex("#FFFFFF"))
+				}
+			})
+			ui.Text(c, id).FontSize(11.5).TextColor(pal.textPrimary).SingleLine().Tooltip(id)
+		})
+		if cb.Hovered() {
+			row.Background(pal.rowHoverBg)
+		}
+		ui.Spacer(c)
+		if !checked {
+			// 未勾选的模型不参与摘要，设成默认没有意义。
+		} else if id == pc.DefaultModel {
+			providerTag(c, msg.ModelsDefaultBadge(), pal)
+		} else if renderDefaultChoice(c, "provider-model-default-"+pc.Preset+"-"+id, msg.ModelsDefault()+" "+id, pal) {
+			a.saveProviderField(idx, func(p *config.ProviderConfig) { p.DefaultModel = id })
+			a.modelDraft = id
+			a.rebuildGenerator()
+		}
+		if cb.Changed() {
+			a.toggleProviderModel(idx, pc, choices, id, checked)
+		}
+	})
+}
+
+// modelCheckPath 是勾选框里的对勾，坐标按框内尺寸取比例。
+func modelCheckPath(r ui.Rect) *ui.Path {
+	var p ui.Path
+	return p.MoveTo(r.X+r.W*0.24, r.Y+r.H*0.52).
+		LineTo(r.X+r.W*0.43, r.Y+r.H*0.71).
+		LineTo(r.X+r.W*0.77, r.Y+r.H*0.32)
+}
+
+// renderDefaultChoice 绘制「设为默认」的空心圆圈，返回 true 表示这一帧点了它。
+// 用圆圈而不是每行一个文字按钮：列表可能很长，八行「设为默认」会把右侧塞满。
+func renderDefaultChoice(c *ui.Context, key, label string, pal palette) bool {
+	btn := ui.ButtonBase(c.Key(key)).Size(16, 16).Radius(8).Cursor(ui.CursorPointer)
+	btn.Label(label)
+	hovered := btn.Hovered()
+	btn.Draw(func(p *ui.Painter, r ui.Rect) {
+		color := pal.controlBorder
+		if hovered {
+			color = pal.switchOn
+		}
+		p.Stroke(r, color, 8, 1.5)
+	})
+	return btn.Clicked()
+}
+
+// toggleProviderModel 翻一枚模型的勾选并写回配置。
+func (a *app) toggleProviderModel(idx int, pc config.ProviderConfig, choices []string, id string, checked bool) {
+	keep := make(map[string]bool, len(choices))
+	for _, m := range providerEnabledModels(pc, choices) {
+		keep[m] = true
+	}
+	if checked {
+		keep[id] = true
+	} else {
+		delete(keep, id)
+	}
+	enabled := make([]string, 0, len(choices))
+	for _, m := range choices {
+		if keep[m] {
+			enabled = append(enabled, m)
+		}
+	}
+	a.saveProviderModels(idx, choices, enabled, id)
+}
+
+// selectProviderModels 全选或全不选。
+func (a *app) selectProviderModels(idx int, pc config.ProviderConfig, choices []string, all bool) {
+	var enabled []string
+	if all {
+		enabled = slices.Clone(choices)
+	}
+	a.saveProviderModels(idx, choices, enabled, "")
+}
+
+// saveProviderModels 写回勾选列表。
+// 第一次勾选时把当前列表固化成发现清单：「空 = 全用预设」只属于没动过的
+// 旧配置；用户一动手，勾选就是唯一依据，否则取消勾选的预设模型会被并集顶回来。
+// 默认模型只从勾选的模型里选：取消当前默认时换到仍勾选的第一个，全取消就清空；
+// 用户手打的默认模型不在本列表里时不动它。
+func (a *app) saveProviderModels(idx int, choices, enabled []string, preferred string) {
+	if idx < 0 || idx >= len(a.cfgNow.Providers) {
+		return
+	}
+	pc := a.cfgNow.Providers[idx]
+	next := pc.DefaultModel
+	if next == "" && len(enabled) > 0 {
+		next = enabled[0]
+		if slices.Contains(enabled, preferred) {
+			next = preferred
+		}
+	} else if next != "" && slices.Contains(choices, next) && !slices.Contains(enabled, next) {
+		next = ""
+		if len(enabled) > 0 {
+			next = enabled[0]
+		}
+	}
+	a.saveProviderField(idx, func(p *config.ProviderConfig) {
+		if len(p.DiscoveredModels) == 0 {
+			p.DiscoveredModels = slices.Clone(choices)
+		}
+		p.EnabledModels = slices.Clone(enabled)
+		p.DefaultModel = next
+	})
+	if next != pc.DefaultModel {
+		a.modelDraft = next
+		a.rebuildGenerator()
+	}
 }
 
 // renderProviderTestResult 按当前语言显示最近一次连接测试的结果。

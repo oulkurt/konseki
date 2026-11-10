@@ -53,8 +53,14 @@ type ProviderConfig struct {
 	// 每档有自己的 host 和 key 适用范围。空表示用预设的默认档。
 	Region string `json:"region,omitempty"`
 
-	// 用户启用/禁用了哪些模型。空表示全用预设给的。
+	// 用户勾选了哪些模型。空表示全用预设给的。
 	EnabledModels []string `json:"enabledModels,omitempty"`
+	// DiscoveredModels 是拉取或首次勾选时固化的可选模型全集，含未勾选的。
+	//
+	// 和 EnabledModels 分开存：发现是「这家有什么」，勾选是「我要用哪些」。
+	// 混在一个字段里，取消勾选就没有依据，用户也无法在界面上恢复显示。
+	// 为空表示还没进入勾选模式，此时按预设与 EnabledModels 的并集解析。
+	DiscoveredModels []string `json:"discoveredModels,omitempty"`
 	// DefaultModel 是这个供应商下的默认模型 id。
 	DefaultModel string `json:"defaultModel,omitempty"`
 }
@@ -236,17 +242,18 @@ type wireOCR struct {
 }
 
 type wireProvider struct {
-	Preset        *string    `json:"preset,omitempty"`
-	Label         *string    `json:"label,omitempty"`
-	ChatBase      *string    `json:"chatBase,omitempty"`
-	AnthropicBase *string    `json:"anthropicBase,omitempty"`
-	ResponsesBase *string    `json:"responsesBase,omitempty"`
-	Auth          *string    `json:"auth,omitempty"`
-	AccountID     *string    `json:"accountId,omitempty"`
-	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
-	Region        *string    `json:"region,omitempty"`
-	EnabledModels *[]string  `json:"enabledModels,omitempty"`
-	DefaultModel  *string    `json:"defaultModel,omitempty"`
+	Preset           *string    `json:"preset,omitempty"`
+	Label            *string    `json:"label,omitempty"`
+	ChatBase         *string    `json:"chatBase,omitempty"`
+	AnthropicBase    *string    `json:"anthropicBase,omitempty"`
+	ResponsesBase    *string    `json:"responsesBase,omitempty"`
+	Auth             *string    `json:"auth,omitempty"`
+	AccountID        *string    `json:"accountId,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	Region           *string    `json:"region,omitempty"`
+	EnabledModels    *[]string  `json:"enabledModels,omitempty"`
+	DiscoveredModels *[]string  `json:"discoveredModels,omitempty"`
+	DefaultModel     *string    `json:"defaultModel,omitempty"`
 }
 
 type wireRedact struct {
