@@ -30,6 +30,8 @@ type ProviderConfig struct {
 	// 覆盖预设里的端点。用户接中转站或者自建网关时要填。
 	ChatBase      string `json:"chatBase,omitempty"`
 	AnthropicBase string `json:"anthropicBase,omitempty"`
+	// ResponsesBase 覆盖 OpenAI Responses 端点，和 ChatBase 并列。
+	ResponsesBase string `json:"responsesBase,omitempty"`
 
 	// APIKey 只在内存里以明文出现；落盘时由 Store 拆出去单独存。
 	APIKey string `json:"-"`
@@ -238,6 +240,7 @@ type wireProvider struct {
 	Label         *string    `json:"label,omitempty"`
 	ChatBase      *string    `json:"chatBase,omitempty"`
 	AnthropicBase *string    `json:"anthropicBase,omitempty"`
+	ResponsesBase *string    `json:"responsesBase,omitempty"`
 	Auth          *string    `json:"auth,omitempty"`
 	AccountID     *string    `json:"accountId,omitempty"`
 	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`

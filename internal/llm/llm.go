@@ -6,13 +6,15 @@
  */
 // Package llm 是和模型供应商说话的唯一出口。
 //
-// 只支持两种线上协议：
+// 支持四种线上协议：
 //   - OpenAI 兼容的 /chat/completions —— 覆盖了绝大多数供应商
+//   - OpenAI 的 /responses —— OpenAI 新版端点与 ChatGPT/Codex 订阅
 //   - Anthropic 的 /messages —— Claude 自己的格式
+//   - Gemini 的 :generateContent —— 只有 Code Assist 订阅走这条
 //
-// 其他格式（Gemini 原生、Bedrock SigV4、Vertex 的 OAuth）不进这一层。
-// 那些供应商基本都提供了 OpenAI 兼容端点，用它比在这里重写四套签名
-// 逻辑划算得多。
+// 开源模型供应商大多提供 OpenAI 兼容端点，走第一条最省事。
+// Gemini 的订阅端点没有兼容层，只能在这里实现原生格式。
+// Bedrock SigV4 这类还要签名的协议不进这一层。
 //
 // 另一个不在这里做的事：脱敏。调用方（internal/summary）负责在把文本
 // 递进来之前遮好，在这里还原。理由是一层只干一件事 —— 这里只管网络和
@@ -36,8 +38,14 @@ import (
 type Kind string
 
 const (
-	OpenAICompatible  Kind = "openai"
+	// OpenAICompatible 是 /chat/completions，覆盖面最广。
+	OpenAICompatible Kind = "openai"
+	// OpenAIResponses 是 /responses。ChatGPT 订阅只认这个协议。
+	OpenAIResponses Kind = "openai-responses"
+	// AnthropicMessages 是 /messages。
 	AnthropicMessages Kind = "anthropic"
+	// GeminiGenerate 是 Gemini 原生的 :generateContent。
+	GeminiGenerate Kind = "gemini"
 )
 
 // Request 是一次模型调用。
@@ -49,6 +57,9 @@ type Request struct {
 	APIKey  string
 	// Header 是额外请求头，Azure 的 api-key、OpenRouter 的 attribution 走这里。
 	Header map[string]string
+	// AuthKind 说明凭据类型："oauth" 表示订阅令牌，走 Authorization: Bearer；
+	// 空或 "apikey" 走各家常规鉴权。APIKey 字段装的是令牌本身。
+	AuthKind string
 
 	Model  string
 	System string
@@ -153,6 +164,10 @@ func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
 	switch req.Kind {
 	case AnthropicMessages:
 		return c.completeAnthropic(ctx, req)
+	case OpenAIResponses:
+		return c.completeResponses(ctx, req)
+	case GeminiGenerate:
+		return c.completeGemini(ctx, req)
 	default:
 		return c.completeOpenAI(ctx, req)
 	}
@@ -226,7 +241,7 @@ func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, er
 		body.ResponseFormat = &responseFormat{Type: "json_object"}
 	}
 
-	raw, err := c.post(ctx, endpoint(req.BaseURL, "chat/completions"), req, body, false)
+	raw, err := c.post(ctx, endpoint(req.BaseURL, "chat/completions"), req, body)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +335,7 @@ func (c *Client) completeAnthropic(ctx context.Context, req Request) (*Response,
 		}
 	}
 
-	raw, err := c.post(ctx, endpoint(req.BaseURL, "messages"), req, body, true)
+	raw, err := c.post(ctx, endpoint(req.BaseURL, "messages"), req, body)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +394,7 @@ func endpoint(base, path string) string {
 	return base + "/" + path
 }
 
-func (c *Client) post(ctx context.Context, url string, req Request, body any, anthropic bool) ([]byte, error) {
+func (c *Client) post(ctx context.Context, url string, req Request, body any) ([]byte, error) {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -389,14 +404,7 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any, an
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if req.APIKey != "" {
-		if anthropic {
-			httpReq.Header.Set("x-api-key", req.APIKey)
-			httpReq.Header.Set("anthropic-version", "2023-06-01")
-		} else {
-			httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
-		}
-	}
+	setAuth(httpReq.Header, req)
 	for k, v := range req.Header {
 		httpReq.Header.Set(k, v)
 	}
@@ -420,14 +428,37 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any, an
 	return raw, nil
 }
 
+// setAuth 按凭据类型写鉴权头。
+// OAuth 订阅令牌只认 Authorization: Bearer；Anthropic 还要求 beta 头，
+// 缺了会被官方端点当成不支持的鉴权方式拒绝。
+func setAuth(h http.Header, req Request) {
+	if req.APIKey == "" {
+		return
+	}
+	if req.AuthKind == "oauth" {
+		h.Set("Authorization", "Bearer "+req.APIKey)
+		if req.Kind == AnthropicMessages {
+			h.Set("anthropic-version", "2023-06-01")
+			h.Set("anthropic-beta", "oauth-2025-04-20")
+		}
+		return
+	}
+	if req.Kind == AnthropicMessages {
+		h.Set("x-api-key", req.APIKey)
+		h.Set("anthropic-version", "2023-06-01")
+		return
+	}
+	h.Set("Authorization", "Bearer "+req.APIKey)
+}
+
 // Stream 边收边给回调。onDelta 拿到的是增量文本。
 //
-// 只在 OpenAI 兼容协议上实现。Anthropic 的 SSE 事件格式不同，
-// 而摘要场景本来就不需要流式 —— 用户要的是最后那段文字，
+// 只在 OpenAI 兼容协议上实现。其他协议直接退回非流式 ——
+// 摘要场景本来就不需要流式，用户要的是最后那段文字，
 // 中间过程显示「思考中」就够了。留着这个函数是为了以后做
 // 「边生成边显示摘要」时不用改结构。
 func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) (*Response, error) {
-	if req.Kind == AnthropicMessages {
+	if req.Kind != "" && req.Kind != OpenAICompatible {
 		return c.Complete(ctx, req)
 	}
 	if strings.TrimSpace(req.BaseURL) == "" {
@@ -452,9 +483,7 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if req.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
-	}
+	setAuth(httpReq.Header, req)
 	for k, v := range req.Header {
 		httpReq.Header.Set(k, v)
 	}
@@ -525,8 +554,11 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 
 // ListModels 向供应商要模型列表。失败不算错 —— 很多中转不支持，
 // 预设里已经有兜底列表了。
-func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map[string]string) ([]string, error) {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
+//
+// 传整个 Request 而不是散参数：鉴权方式和协议都要参与，散开容易漏。
+// Gemini 与 OpenAI 的列表格式不同，按 Kind 分派。
+func (c *Client) ListModels(ctx context.Context, req Request) ([]string, error) {
+	base := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 	if base == "" {
 		return nil, ErrNoEndpoint
 	}
@@ -534,10 +566,8 @@ func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map
 	if err != nil {
 		return nil, err
 	}
-	if apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	for k, v := range header {
+	setAuth(httpReq.Header, req)
+	for k, v := range req.Header {
 		httpReq.Header.Set(k, v)
 	}
 	resp, err := c.HTTP.Do(httpReq)
@@ -551,6 +581,9 @@ func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &APIError{Status: resp.StatusCode, Body: string(raw)}
+	}
+	if req.Kind == GeminiGenerate {
+		return parseGeminiModels(raw)
 	}
 	var out struct {
 		Data []struct {

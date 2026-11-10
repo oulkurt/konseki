@@ -49,7 +49,7 @@ func (a *app) testConnection(idx int) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
-			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "Reply with OK.", MaxTokens: 32})
+			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.CallBase(), APIKey: key, Header: headersFor(pc, r), AuthKind: r.AuthKind, Model: r.Model, Prompt: "Reply with OK.", MaxTokens: 32})
 			err = e
 			if err == nil {
 				model = resp.Model
@@ -114,7 +114,8 @@ func (a *app) fetchModels(idx int) {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			ids, err = client.ListModels(ctx, resolved.BaseURL, key, headersFor(pc, resolved))
+			// 传整个 Request：Gemini 与 OpenAI 的列表格式、鉴权方式都不同。
+			ids, err = client.ListModels(ctx, llm.Request{Kind: resolved.Kind, BaseURL: resolved.CallBase(), APIKey: key, Header: headersFor(pc, resolved), AuthKind: resolved.AuthKind})
 		}
 		var chat []string
 		for _, id := range ids {

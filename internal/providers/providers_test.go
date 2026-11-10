@@ -58,6 +58,10 @@ func TestByID(t *testing.T) {
 // 每一家至少要有一个能用的端点，否则进了 UI 也配不起来。
 func TestEveryPresetHasEndpoint(t *testing.T) {
 	for _, p := range All() {
+		// gemini-cli 的订阅端点在 llm.Resolve 里写死，预设只提供目录条目。
+		if p.ID == "gemini-cli" {
+			continue
+		}
 		eps := Endpoints(p)
 		if len(eps) == 0 {
 			t.Errorf("%s 没有可用端点", p.ID)
