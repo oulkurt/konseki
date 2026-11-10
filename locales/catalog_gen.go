@@ -90,13 +90,13 @@ func (msgs Messages) RecorderResume() string {
 	return Catalog.Format(msgs.locale, "recorderResume", nil)
 }
 
-// RecorderPauseMinutes says "{count, plural, other {暂停 # 分钟}}"
+// RecorderPauseMinutes says "{count, plural, other {暂停#分钟}}"
 // in the language the app shows.
 //
 // 暂停记录菜单中的分钟数选项。
 func RecorderPauseMinutes(count int) string { return In(i18n.Locale()).RecorderPauseMinutes(count) }
 
-// RecorderPauseMinutes says "{count, plural, other {暂停 # 分钟}}"
+// RecorderPauseMinutes says "{count, plural, other {暂停#分钟}}"
 // in the language of msgs.
 //
 // 暂停记录菜单中的分钟数选项。
@@ -426,32 +426,314 @@ func (msgs Messages) ModelsKey() string {
 	return Catalog.Format(msgs.locale, "modelsKey", nil)
 }
 
-// ModelsURL says "接口地址"
+// ModelsURL says "OpenAI兼容地址"
 // in the language the app shows.
 //
-// 供应商编辑区的接口地址输入框。
+// 供应商编辑区的 OpenAI 兼容接口地址输入框。
 func ModelsURL() string { return In(i18n.Locale()).ModelsURL() }
 
-// ModelsURL says "接口地址"
+// ModelsURL says "OpenAI兼容地址"
 // in the language of msgs.
 //
-// 供应商编辑区的接口地址输入框。
+// 供应商编辑区的 OpenAI 兼容接口地址输入框。
 func (msgs Messages) ModelsURL() string {
 	return Catalog.Format(msgs.locale, "modelsURL", nil)
 }
 
-// ModelsModel says "模型"
+// ModelsResponsesURL says "Responses地址"
+// in the language the app shows.
+//
+// 供应商编辑区的 Responses
+// 接口地址输入框，只对支持的供应商显示。
+func ModelsResponsesURL() string { return In(i18n.Locale()).ModelsResponsesURL() }
+
+// ModelsResponsesURL says "Responses地址"
+// in the language of msgs.
+//
+// 供应商编辑区的 Responses
+// 接口地址输入框，只对支持的供应商显示。
+func (msgs Messages) ModelsResponsesURL() string {
+	return Catalog.Format(msgs.locale, "modelsResponsesURL", nil)
+}
+
+// ModelsModel says "默认模型"
 // in the language the app shows.
 //
 // 供应商编辑区的默认模型输入框。
 func ModelsModel() string { return In(i18n.Locale()).ModelsModel() }
 
-// ModelsModel says "模型"
+// ModelsModel says "默认模型"
 // in the language of msgs.
 //
 // 供应商编辑区的默认模型输入框。
 func (msgs Messages) ModelsModel() string {
 	return Catalog.Format(msgs.locale, "modelsModel", nil)
+}
+
+// ModelsSectionAuth says "鉴权"
+// in the language the app shows.
+//
+// 供应商配置区的鉴权小节标题。
+func ModelsSectionAuth() string { return In(i18n.Locale()).ModelsSectionAuth() }
+
+// ModelsSectionAuth says "鉴权"
+// in the language of msgs.
+//
+// 供应商配置区的鉴权小节标题。
+func (msgs Messages) ModelsSectionAuth() string {
+	return Catalog.Format(msgs.locale, "modelsSectionAuth", nil)
+}
+
+// ModelsSectionEndpoint says "端点"
+// in the language the app shows.
+//
+// 供应商配置区的端点小节标题。
+func ModelsSectionEndpoint() string { return In(i18n.Locale()).ModelsSectionEndpoint() }
+
+// ModelsSectionEndpoint says "端点"
+// in the language of msgs.
+//
+// 供应商配置区的端点小节标题。
+func (msgs Messages) ModelsSectionEndpoint() string {
+	return Catalog.Format(msgs.locale, "modelsSectionEndpoint", nil)
+}
+
+// ModelsSectionModel says "模型"
+// in the language the app shows.
+//
+// 供应商配置区的模型小节标题。
+func ModelsSectionModel() string { return In(i18n.Locale()).ModelsSectionModel() }
+
+// ModelsSectionModel says "模型"
+// in the language of msgs.
+//
+// 供应商配置区的模型小节标题。
+func (msgs Messages) ModelsSectionModel() string {
+	return Catalog.Format(msgs.locale, "modelsSectionModel", nil)
+}
+
+// ModelsSectionActions says "操作"
+// in the language the app shows.
+//
+// 供应商配置区的操作小节标题。
+func ModelsSectionActions() string { return In(i18n.Locale()).ModelsSectionActions() }
+
+// ModelsSectionActions says "操作"
+// in the language of msgs.
+//
+// 供应商配置区的操作小节标题。
+func (msgs Messages) ModelsSectionActions() string {
+	return Catalog.Format(msgs.locale, "modelsSectionActions", nil)
+}
+
+// ModelsAuthSubscription says "订阅"
+// in the language the app shows.
+//
+// 订阅导入的供应商和凭据上的标记。
+func ModelsAuthSubscription() string { return In(i18n.Locale()).ModelsAuthSubscription() }
+
+// ModelsAuthSubscription says "订阅"
+// in the language of msgs.
+//
+// 订阅导入的供应商和凭据上的标记。
+func (msgs Messages) ModelsAuthSubscription() string {
+	return Catalog.Format(msgs.locale, "modelsAuthSubscription", nil)
+}
+
+// ModelsCredentialAPIKey says "API key"
+// in the language the app shows.
+//
+// 按量 API key 凭据上的标记。
+func ModelsCredentialAPIKey() string { return In(i18n.Locale()).ModelsCredentialAPIKey() }
+
+// ModelsCredentialAPIKey says "API key"
+// in the language of msgs.
+//
+// 按量 API key 凭据上的标记。
+func (msgs Messages) ModelsCredentialAPIKey() string {
+	return Catalog.Format(msgs.locale, "modelsCredentialAPIKey", nil)
+}
+
+// ModelsAuthExpires says "到期{date}"
+// in the language the app shows.
+//
+// 订阅凭据的到期日期。
+func ModelsAuthExpires(date string) string { return In(i18n.Locale()).ModelsAuthExpires(date) }
+
+// ModelsAuthExpires says "到期{date}"
+// in the language of msgs.
+//
+// 订阅凭据的到期日期。
+func (msgs Messages) ModelsAuthExpires(date string) string {
+	return Catalog.Format(msgs.locale, "modelsAuthExpires", map[string]any{"date": date})
+}
+
+// ModelsAuthExpired says "已过期"
+// in the language the app shows.
+//
+// 订阅凭据已过期时的标记。
+func ModelsAuthExpired() string { return In(i18n.Locale()).ModelsAuthExpired() }
+
+// ModelsAuthExpired says "已过期"
+// in the language of msgs.
+//
+// 订阅凭据已过期时的标记。
+func (msgs Messages) ModelsAuthExpired() string {
+	return Catalog.Format(msgs.locale, "modelsAuthExpired", nil)
+}
+
+// ModelsEndpointSubscription says "端点由订阅类型决定，不可修改。"
+// in the language the app shows.
+//
+// 订阅凭据的只读端点说明。
+func ModelsEndpointSubscription() string { return In(i18n.Locale()).ModelsEndpointSubscription() }
+
+// ModelsEndpointSubscription says "端点由订阅类型决定，不可修改。"
+// in the language of msgs.
+//
+// 订阅凭据的只读端点说明。
+func (msgs Messages) ModelsEndpointSubscription() string {
+	return Catalog.Format(msgs.locale, "modelsEndpointSubscription", nil)
+}
+
+// ModelsGetKey says "获取API key"
+// in the language the app shows.
+//
+// 打开供应商密钥页面的链接按钮。
+func ModelsGetKey() string { return In(i18n.Locale()).ModelsGetKey() }
+
+// ModelsGetKey says "获取API key"
+// in the language of msgs.
+//
+// 打开供应商密钥页面的链接按钮。
+func (msgs Messages) ModelsGetKey() string {
+	return Catalog.Format(msgs.locale, "modelsGetKey", nil)
+}
+
+// ModelsFetch says "拉取模型列表"
+// in the language the app shows.
+//
+// 向供应商请求模型列表的按钮。
+func ModelsFetch() string { return In(i18n.Locale()).ModelsFetch() }
+
+// ModelsFetch says "拉取模型列表"
+// in the language of msgs.
+//
+// 向供应商请求模型列表的按钮。
+func (msgs Messages) ModelsFetch() string {
+	return Catalog.Format(msgs.locale, "modelsFetch", nil)
+}
+
+// ModelsFetching says "拉取中…"
+// in the language the app shows.
+//
+// 模型列表请求进行中的按钮。
+func ModelsFetching() string { return In(i18n.Locale()).ModelsFetching() }
+
+// ModelsFetching says "拉取中…"
+// in the language of msgs.
+//
+// 模型列表请求进行中的按钮。
+func (msgs Messages) ModelsFetching() string {
+	return Catalog.Format(msgs.locale, "modelsFetching", nil)
+}
+
+// ModelsAvailable says "可用模型"
+// in the language the app shows.
+//
+// 供应商配置区已拉取的模型列表标题。
+func ModelsAvailable() string { return In(i18n.Locale()).ModelsAvailable() }
+
+// ModelsAvailable says "可用模型"
+// in the language of msgs.
+//
+// 供应商配置区已拉取的模型列表标题。
+func (msgs Messages) ModelsAvailable() string {
+	return Catalog.Format(msgs.locale, "modelsAvailable", nil)
+}
+
+// ModelsAvailableHint says "点选模型即设为默认。"
+// in the language the app shows.
+//
+// 可用模型列表下说明点选即设为默认模型。
+func ModelsAvailableHint() string { return In(i18n.Locale()).ModelsAvailableHint() }
+
+// ModelsAvailableHint says "点选模型即设为默认。"
+// in the language of msgs.
+//
+// 可用模型列表下说明点选即设为默认模型。
+func (msgs Messages) ModelsAvailableHint() string {
+	return Catalog.Format(msgs.locale, "modelsAvailableHint", nil)
+}
+
+// ModelsMore says "+{count}个"
+// in the language the app shows.
+//
+// 可用模型列表折叠其余模型的按钮。
+func ModelsMore(count int) string { return In(i18n.Locale()).ModelsMore(count) }
+
+// ModelsMore says "+{count}个"
+// in the language of msgs.
+//
+// 可用模型列表折叠其余模型的按钮。
+func (msgs Messages) ModelsMore(count int) string {
+	return Catalog.Format(msgs.locale, "modelsMore", map[string]any{"count": count})
+}
+
+// ModelsKindVendor says "官方"
+// in the language the app shows.
+//
+// 官方直连供应商的标记。
+func ModelsKindVendor() string { return In(i18n.Locale()).ModelsKindVendor() }
+
+// ModelsKindVendor says "官方"
+// in the language of msgs.
+//
+// 官方直连供应商的标记。
+func (msgs Messages) ModelsKindVendor() string {
+	return Catalog.Format(msgs.locale, "modelsKindVendor", nil)
+}
+
+// ModelsKindRelay says "中转"
+// in the language the app shows.
+//
+// 中转或聚合供应商的标记。
+func ModelsKindRelay() string { return In(i18n.Locale()).ModelsKindRelay() }
+
+// ModelsKindRelay says "中转"
+// in the language of msgs.
+//
+// 中转或聚合供应商的标记。
+func (msgs Messages) ModelsKindRelay() string {
+	return Catalog.Format(msgs.locale, "modelsKindRelay", nil)
+}
+
+// ModelsKindLocal says "本地"
+// in the language the app shows.
+//
+// 本机推理服务的标记。
+func ModelsKindLocal() string { return In(i18n.Locale()).ModelsKindLocal() }
+
+// ModelsKindLocal says "本地"
+// in the language of msgs.
+//
+// 本机推理服务的标记。
+func (msgs Messages) ModelsKindLocal() string {
+	return Catalog.Format(msgs.locale, "modelsKindLocal", nil)
+}
+
+// ModelsKindRemote says "远程"
+// in the language the app shows.
+//
+// 另一台机器上的服务的标记。
+func ModelsKindRemote() string { return In(i18n.Locale()).ModelsKindRemote() }
+
+// ModelsKindRemote says "远程"
+// in the language of msgs.
+//
+// 另一台机器上的服务的标记。
+func (msgs Messages) ModelsKindRemote() string {
+	return Catalog.Format(msgs.locale, "modelsKindRemote", nil)
 }
 
 // ModelsTest says "测试连接"
@@ -566,13 +848,13 @@ func (msgs Messages) ModelsAuto() string {
 	return Catalog.Format(msgs.locale, "modelsAuto", nil)
 }
 
-// ModelsAutoHelp says "记录期间，最多每 {minutes} 分钟把新活动发给所选模型一次，生成摘要。"
+// ModelsAutoHelp says "记录期间，最多每{minutes}分钟把新活动发给所选模型一次，生成摘要。"
 // in the language the app shows.
 //
 // 自动摘要开关下的说明，写出实际间隔。
 func ModelsAutoHelp(minutes int) string { return In(i18n.Locale()).ModelsAutoHelp(minutes) }
 
-// ModelsAutoHelp says "记录期间，最多每 {minutes} 分钟把新活动发给所选模型一次，生成摘要。"
+// ModelsAutoHelp says "记录期间，最多每{minutes}分钟把新活动发给所选模型一次，生成摘要。"
 // in the language of msgs.
 //
 // 自动摘要开关下的说明，写出实际间隔。
@@ -608,7 +890,7 @@ func (msgs Messages) ModelsRedactHelp() string {
 	return Catalog.Format(msgs.locale, "modelsRedactHelp", nil)
 }
 
-// ModelsTestSuccess says "连接成功 · {model} · {elapsed} 毫秒"
+// ModelsTestSuccess says "连接成功 · {model} · {elapsed}毫秒"
 // in the language the app shows.
 //
 // 模型连接测试成功时显示实际模型和耗时。
@@ -616,7 +898,7 @@ func ModelsTestSuccess(model string, elapsed int) string {
 	return In(i18n.Locale()).ModelsTestSuccess(model, elapsed)
 }
 
-// ModelsTestSuccess says "连接成功 · {model} · {elapsed} 毫秒"
+// ModelsTestSuccess says "连接成功 · {model} · {elapsed}毫秒"
 // in the language of msgs.
 //
 // 模型连接测试成功时显示实际模型和耗时。
@@ -624,13 +906,13 @@ func (msgs Messages) ModelsTestSuccess(model string, elapsed int) string {
 	return Catalog.Format(msgs.locale, "modelsTestSuccess", map[string]any{"model": model, "elapsed": elapsed})
 }
 
-// GeneralAgent says "Agent 技能"
+// GeneralAgent says "Agent技能"
 // in the language the app shows.
 //
 // 通用设置页的 Agent 技能卡片标题。
 func GeneralAgent() string { return In(i18n.Locale()).GeneralAgent() }
 
-// GeneralAgent says "Agent 技能"
+// GeneralAgent says "Agent技能"
 // in the language of msgs.
 //
 // 通用设置页的 Agent 技能卡片标题。
@@ -638,13 +920,13 @@ func (msgs Messages) GeneralAgent() string {
 	return Catalog.Format(msgs.locale, "generalAgent", nil)
 }
 
-// GeneralAgentDescription says "装上这个技能后，Claude Code、Codex 等 Agent 可以查询这台 Mac …"
+// GeneralAgentDescription says "装上这个技能后，Claude Code、Codex等Agent可以查询这台Mac…"
 // in the language the app shows.
 //
 // Agent 技能卡片中说明技能能读到什么、不能做什么。
 func GeneralAgentDescription() string { return In(i18n.Locale()).GeneralAgentDescription() }
 
-// GeneralAgentDescription says "装上这个技能后，Claude Code、Codex 等 Agent 可以查询这台 Mac …"
+// GeneralAgentDescription says "装上这个技能后，Claude Code、Codex等Agent可以查询这台Mac…"
 // in the language of msgs.
 //
 // Agent 技能卡片中说明技能能读到什么、不能做什么。
@@ -652,13 +934,13 @@ func (msgs Messages) GeneralAgentDescription() string {
 	return Catalog.Format(msgs.locale, "generalAgentDescription", nil)
 }
 
-// GeneralAgentPrompt says "发给 Agent 的话"
+// GeneralAgentPrompt says "发给Agent的话"
 // in the language the app shows.
 //
 // Agent 技能卡片中话术框的标题。
 func GeneralAgentPrompt() string { return In(i18n.Locale()).GeneralAgentPrompt() }
 
-// GeneralAgentPrompt says "发给 Agent 的话"
+// GeneralAgentPrompt says "发给Agent的话"
 // in the language of msgs.
 //
 // Agent 技能卡片中话术框的标题。
@@ -666,13 +948,13 @@ func (msgs Messages) GeneralAgentPrompt() string {
 	return Catalog.Format(msgs.locale, "generalAgentPrompt", nil)
 }
 
-// GeneralAgentPromptHelp says "粘贴到 Agent 的对话框里。它会自己安装技能，再试查一次。"
+// GeneralAgentPromptHelp says "粘贴到Agent的对话框里。它会自己安装技能，再试查一次。"
 // in the language the app shows.
 //
 // 话术框标题下的说明，告诉用户粘贴到哪里。
 func GeneralAgentPromptHelp() string { return In(i18n.Locale()).GeneralAgentPromptHelp() }
 
-// GeneralAgentPromptHelp says "粘贴到 Agent 的对话框里。它会自己安装技能，再试查一次。"
+// GeneralAgentPromptHelp says "粘贴到Agent的对话框里。它会自己安装技能，再试查一次。"
 // in the language of msgs.
 //
 // 话术框标题下的说明，告诉用户粘贴到哪里。
@@ -680,7 +962,7 @@ func (msgs Messages) GeneralAgentPromptHelp() string {
 	return Catalog.Format(msgs.locale, "generalAgentPromptHelp", nil)
 }
 
-// GeneralAgentPromptText says "请安装 Konseki 技能。Konseki 在我的 Mac 上记录活动，这个技能让你查询我做过的事。\n1. …"
+// GeneralAgentPromptText says "请安装Konseki技能。Konseki在我的Mac上记录活动，这个技能让你查询我做过的事。\n1. 运行{in…"
 // in the language the app shows.
 //
 // 给 Agent 的完整话术，含安装命令和查询命令。
@@ -688,7 +970,7 @@ func GeneralAgentPromptText(install string, status string) string {
 	return In(i18n.Locale()).GeneralAgentPromptText(install, status)
 }
 
-// GeneralAgentPromptText says "请安装 Konseki 技能。Konseki 在我的 Mac 上记录活动，这个技能让你查询我做过的事。\n1. …"
+// GeneralAgentPromptText says "请安装Konseki技能。Konseki在我的Mac上记录活动，这个技能让你查询我做过的事。\n1. 运行{in…"
 // in the language of msgs.
 //
 // 给 Agent 的完整话术，含安装命令和查询命令。
@@ -710,13 +992,13 @@ func (msgs Messages) GeneralAgentInstall() string {
 	return Catalog.Format(msgs.locale, "generalAgentInstall", nil)
 }
 
-// GeneralAgentInstallHelp says "在终端里运行，技能会装给本机已安装的 Agent。"
+// GeneralAgentInstallHelp says "在终端里运行，技能会装给本机已安装的Agent。"
 // in the language the app shows.
 //
 // 安装命令框的说明，写清在终端里运行时装给谁。
 func GeneralAgentInstallHelp() string { return In(i18n.Locale()).GeneralAgentInstallHelp() }
 
-// GeneralAgentInstallHelp says "在终端里运行，技能会装给本机已安装的 Agent。"
+// GeneralAgentInstallHelp says "在终端里运行，技能会装给本机已安装的Agent。"
 // in the language of msgs.
 //
 // 安装命令框的说明，写清在终端里运行时装给谁。
@@ -780,13 +1062,13 @@ func (msgs Messages) GeneralAgentOpen() string {
 	return Catalog.Format(msgs.locale, "generalAgentOpen", nil)
 }
 
-// GeneralAgentRedact says "Agent 读到的文字按模型页的脱敏设置遮蔽。截图不遮蔽。"
+// GeneralAgentRedact says "Agent读到的文字按模型页的脱敏设置遮蔽。截图不遮蔽。"
 // in the language the app shows.
 //
 // Agent 技能卡片底部的脱敏说明。
 func GeneralAgentRedact() string { return In(i18n.Locale()).GeneralAgentRedact() }
 
-// GeneralAgentRedact says "Agent 读到的文字按模型页的脱敏设置遮蔽。截图不遮蔽。"
+// GeneralAgentRedact says "Agent读到的文字按模型页的脱敏设置遮蔽。截图不遮蔽。"
 // in the language of msgs.
 //
 // Agent 技能卡片底部的脱敏说明。
@@ -824,7 +1106,7 @@ func (msgs Messages) GeneralAgentLegacy() string {
 	return Catalog.Format(msgs.locale, "generalAgentLegacy", nil)
 }
 
-// GeneralAgentLegacyHelp says "{dir} 里有 {count} 个旧版导出的文件。它们不再更新，还占着新技能的安装位置。"
+// GeneralAgentLegacyHelp says "{dir}里有{count}个旧版导出的文件。它们不再更新，还占着新技能的安装位置。"
 // in the language the app shows.
 //
 // 旧版导出行的说明，写出目录和文件数。
@@ -832,7 +1114,7 @@ func GeneralAgentLegacyHelp(count int, dir string) string {
 	return In(i18n.Locale()).GeneralAgentLegacyHelp(count, dir)
 }
 
-// GeneralAgentLegacyHelp says "{dir} 里有 {count} 个旧版导出的文件。它们不再更新，还占着新技能的安装位置。"
+// GeneralAgentLegacyHelp says "{dir}里有{count}个旧版导出的文件。它们不再更新，还占着新技能的安装位置。"
 // in the language of msgs.
 //
 // 旧版导出行的说明，写出目录和文件数。
@@ -898,13 +1180,13 @@ func (msgs Messages) RecorderStorageLimit() string {
 	return Catalog.Format(msgs.locale, "recorderStorageLimit", nil)
 }
 
-// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。旧截图会自动缩小尺寸、降低质量，同样的空间能存更久。"
+// RecorderStorageHelp says "单位为MB，范围为100到200000。旧截图会自动缩小尺寸、降低质量，同样的空间能存更久。"
 // in the language the app shows.
 //
 // 存储上限字段的单位和范围，并说明旧截图分层重编码。
 func RecorderStorageHelp() string { return In(i18n.Locale()).RecorderStorageHelp() }
 
-// RecorderStorageHelp says "单位为 MB，范围为 100 到 200000。旧截图会自动缩小尺寸、降低质量，同样的空间能存更久。"
+// RecorderStorageHelp says "单位为MB，范围为100到200000。旧截图会自动缩小尺寸、降低质量，同样的空间能存更久。"
 // in the language of msgs.
 //
 // 存储上限字段的单位和范围，并说明旧截图分层重编码。
@@ -1038,13 +1320,13 @@ func (msgs Messages) RecorderPermissionSettings() string {
 	return Catalog.Format(msgs.locale, "recorderPermissionSettings", nil)
 }
 
-// RecorderPermissionRestart says "屏幕录制授权后，请重启 Konseki。"
+// RecorderPermissionRestart says "屏幕录制授权后，请重启Konseki。"
 // in the language the app shows.
 //
 // 系统权限卡片中屏幕录制授权后的重启提示。
 func RecorderPermissionRestart() string { return In(i18n.Locale()).RecorderPermissionRestart() }
 
-// RecorderPermissionRestart says "屏幕录制授权后，请重启 Konseki。"
+// RecorderPermissionRestart says "屏幕录制授权后，请重启Konseki。"
 // in the language of msgs.
 //
 // 系统权限卡片中屏幕录制授权后的重启提示。
@@ -1122,13 +1404,13 @@ func (msgs Messages) RecorderOCREvery() string {
 	return Catalog.Format(msgs.locale, "recorderOCREvery", nil)
 }
 
-// RecorderOCREveryHelp says "每 N 张快照识别一次，范围为 1 到 20。"
+// RecorderOCREveryHelp says "每N张快照识别一次，范围为1到20。"
 // in the language the app shows.
 //
 // 屏幕文字识别频率字段的范围。
 func RecorderOCREveryHelp() string { return In(i18n.Locale()).RecorderOCREveryHelp() }
 
-// RecorderOCREveryHelp says "每 N 张快照识别一次，范围为 1 到 20。"
+// RecorderOCREveryHelp says "每N张快照识别一次，范围为1到20。"
 // in the language of msgs.
 //
 // 屏幕文字识别频率字段的范围。
@@ -1180,13 +1462,13 @@ func (msgs Messages) RecorderSensitive() string {
 	return Catalog.Format(msgs.locale, "recorderSensitive", nil)
 }
 
-// RecorderSensitiveHelp says "这些应用在前台时不采集。每行一个 bundle ID。"
+// RecorderSensitiveHelp says "这些应用在前台时不采集。每行一个bundle ID。"
 // in the language the app shows.
 //
 // 敏感应用列表的作用和输入格式。
 func RecorderSensitiveHelp() string { return In(i18n.Locale()).RecorderSensitiveHelp() }
 
-// RecorderSensitiveHelp says "这些应用在前台时不采集。每行一个 bundle ID。"
+// RecorderSensitiveHelp says "这些应用在前台时不采集。每行一个bundle ID。"
 // in the language of msgs.
 //
 // 敏感应用列表的作用和输入格式。
@@ -1250,7 +1532,7 @@ func (msgs Messages) RecorderSessionFallback() string {
 	return Catalog.Format(msgs.locale, "recorderSessionFallback", nil)
 }
 
-// RecorderSessionDetails says "{minutes} 分钟 · {count, plural, other {# 张快照}}"
+// RecorderSessionDetails says "{minutes}分钟 · {count, plural, other {#张快照}}"
 // in the language the app shows.
 //
 // 最近会话每行显示会话时长和快照数量。
@@ -1258,7 +1540,7 @@ func RecorderSessionDetails(minutes int, count int) string {
 	return In(i18n.Locale()).RecorderSessionDetails(minutes, count)
 }
 
-// RecorderSessionDetails says "{minutes} 分钟 · {count, plural, other {# 张快照}}"
+// RecorderSessionDetails says "{minutes}分钟 · {count, plural, other {#张快照}}"
 // in the language of msgs.
 //
 // 最近会话每行显示会话时长和快照数量。
@@ -1392,7 +1674,7 @@ func (msgs Messages) RecorderIdleState() string {
 	return Catalog.Format(msgs.locale, "recorderIdleState", nil)
 }
 
-// RecorderStorageUsed says "已用 {used} / {limit} MB（{percent}%）"
+// RecorderStorageUsed says "已用{used} / {limit} MB（{percent}%）"
 // in the language the app shows.
 //
 // 活动记录器卡片中的存储用量和上限。
@@ -1400,7 +1682,7 @@ func RecorderStorageUsed(used string, limit int, percent int) string {
 	return In(i18n.Locale()).RecorderStorageUsed(used, limit, percent)
 }
 
-// RecorderStorageUsed says "已用 {used} / {limit} MB（{percent}%）"
+// RecorderStorageUsed says "已用{used} / {limit} MB（{percent}%）"
 // in the language of msgs.
 //
 // 活动记录器卡片中的存储用量和上限。
@@ -1436,13 +1718,13 @@ func (msgs Messages) RecorderRetentionDescription() string {
 	return Catalog.Format(msgs.locale, "recorderRetentionDescription", nil)
 }
 
-// RecorderDays says "{count, plural, other {# 天}}"
+// RecorderDays says "{count, plural, other {#天}}"
 // in the language the app shows.
 //
 // 记录设置页保留期限菜单中的天数。
 func RecorderDays(count int) string { return In(i18n.Locale()).RecorderDays(count) }
 
-// RecorderDays says "{count, plural, other {# 天}}"
+// RecorderDays says "{count, plural, other {#天}}"
 // in the language of msgs.
 //
 // 记录设置页保留期限菜单中的天数。
@@ -1618,13 +1900,13 @@ func (msgs Messages) RecorderTypingHelp() string {
 	return Catalog.Format(msgs.locale, "recorderTypingHelp", nil)
 }
 
-// RecorderPollHelp says "没有输入时按这个间隔检查画面变化，0 表示关闭。"
+// RecorderPollHelp says "没有输入时按这个间隔检查画面变化，0表示关闭。"
 // in the language the app shows.
 //
 // 采集参数卡片画面轮询字段的说明。
 func RecorderPollHelp() string { return In(i18n.Locale()).RecorderPollHelp() }
 
-// RecorderPollHelp says "没有输入时按这个间隔检查画面变化，0 表示关闭。"
+// RecorderPollHelp says "没有输入时按这个间隔检查画面变化，0表示关闭。"
 // in the language of msgs.
 //
 // 采集参数卡片画面轮询字段的说明。
@@ -1646,13 +1928,13 @@ func (msgs Messages) RecorderQualityHelp() string {
 	return Catalog.Format(msgs.locale, "recorderQualityHelp", nil)
 }
 
-// RecorderStorageEvict says "超出上限时，从最旧的截图和记录删起，删到上限的 90%。"
+// RecorderStorageEvict says "超出上限时，从最旧的截图和记录删起，删到上限的90%。"
 // in the language the app shows.
 //
 // 活动记录器卡片存储条右侧的淘汰规则提示。
 func RecorderStorageEvict() string { return In(i18n.Locale()).RecorderStorageEvict() }
 
-// RecorderStorageEvict says "超出上限时，从最旧的截图和记录删起，删到上限的 90%。"
+// RecorderStorageEvict says "超出上限时，从最旧的截图和记录删起，删到上限的90%。"
 // in the language of msgs.
 //
 // 活动记录器卡片存储条右侧的淘汰规则提示。
@@ -1814,13 +2096,13 @@ func (msgs Messages) GeneralTab() string {
 	return Catalog.Format(msgs.locale, "generalTab", nil)
 }
 
-// RecorderDeleteFailed says "{count, plural, other {# 个文件无法删除}}"
+// RecorderDeleteFailed says "{count, plural, other {#个文件无法删除}}"
 // in the language the app shows.
 //
 // 危险区清除活动数据时，显示无法删除的文件数量。
 func RecorderDeleteFailed(count int) string { return In(i18n.Locale()).RecorderDeleteFailed(count) }
 
-// RecorderDeleteFailed says "{count, plural, other {# 个文件无法删除}}"
+// RecorderDeleteFailed says "{count, plural, other {#个文件无法删除}}"
 // in the language of msgs.
 //
 // 危险区清除活动数据时，显示无法删除的文件数量。
@@ -2178,13 +2460,13 @@ func (msgs Messages) ReceiptPending() string {
 	return Catalog.Format(msgs.locale, "receiptPending", nil)
 }
 
-// ReceiptUntil says "截至 {time} 累计"
+// ReceiptUntil says "截至{time}累计"
 // in the language the app shows.
 //
 // 小票：receiptUntil
 func ReceiptUntil(time_ string) string { return In(i18n.Locale()).ReceiptUntil(time_) }
 
-// ReceiptUntil says "截至 {time} 累计"
+// ReceiptUntil says "截至{time}累计"
 // in the language of msgs.
 //
 // 小票：receiptUntil
@@ -2192,13 +2474,13 @@ func (msgs Messages) ReceiptUntil(time_ string) string {
 	return Catalog.Format(msgs.locale, "receiptUntil", map[string]any{"time": time_})
 }
 
-// ReceiptSegments says "{count, plural, other {# 段}}"
+// ReceiptSegments says "{count, plural, other {#段}}"
 // in the language the app shows.
 //
 // 小票顶部累计行里的会话数，紧跟在时长后面。
 func ReceiptSegments(count int) string { return In(i18n.Locale()).ReceiptSegments(count) }
 
-// ReceiptSegments says "{count, plural, other {# 段}}"
+// ReceiptSegments says "{count, plural, other {#段}}"
 // in the language of msgs.
 //
 // 小票顶部累计行里的会话数，紧跟在时长后面。
@@ -2206,13 +2488,13 @@ func (msgs Messages) ReceiptSegments(count int) string {
 	return Catalog.Format(msgs.locale, "receiptSegments", map[string]any{"count": count})
 }
 
-// ReceiptEntries says "{count, plural, other {# 条}}"
+// ReceiptEntries says "{count, plural, other {#条}}"
 // in the language the app shows.
 //
 // 小票顶部累计行。只剩摘要、没有采集记录的日子不知道时长和会话数，改印条目数。
 func ReceiptEntries(count int) string { return In(i18n.Locale()).ReceiptEntries(count) }
 
-// ReceiptEntries says "{count, plural, other {# 条}}"
+// ReceiptEntries says "{count, plural, other {#条}}"
 // in the language of msgs.
 //
 // 小票顶部累计行。只剩摘要、没有采集记录的日子不知道时长和会话数，改印条目数。
@@ -2432,13 +2714,13 @@ func (msgs Messages) ReceiptDetailPeriod() string {
 	return Catalog.Format(msgs.locale, "receiptDetailPeriod", nil)
 }
 
-// ReceiptSerial says "单号 {serial}"
+// ReceiptSerial says "单号{serial}"
 // in the language the app shows.
 //
 // 小票：receiptSerial
 func ReceiptSerial(serial string) string { return In(i18n.Locale()).ReceiptSerial(serial) }
 
-// ReceiptSerial says "单号 {serial}"
+// ReceiptSerial says "单号{serial}"
 // in the language of msgs.
 //
 // 小票：receiptSerial
@@ -2474,13 +2756,13 @@ func (msgs Messages) ModelsFetchEmpty() string {
 	return Catalog.Format(msgs.locale, "modelsFetchEmpty", nil)
 }
 
-// ModelsFetchSuccess says "拉到 {count} 个模型"
+// ModelsFetchSuccess says "拉到{count}个模型"
 // in the language the app shows.
 //
 // 模型列表请求的结果提示。
 func ModelsFetchSuccess(count int) string { return In(i18n.Locale()).ModelsFetchSuccess(count) }
 
-// ModelsFetchSuccess says "拉到 {count} 个模型"
+// ModelsFetchSuccess says "拉到{count}个模型"
 // in the language of msgs.
 //
 // 模型列表请求的结果提示。

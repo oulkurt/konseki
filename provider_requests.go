@@ -3,6 +3,7 @@
  * [OUTPUT]: 提供凭据扫描、连接测试与模型列表请求。
  * [POS]: 供应商设置的后台请求边界。结果经界面队列发布。
  * 连接测试保存模型与耗时，由设置页按当前语言显示。
+ * fetchModels 由配置面板的「拉取模型列表」按钮触发，列表写回 EnabledModels。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package main
@@ -103,7 +104,7 @@ func (a *app) fetchModels(idx int) {
 		return
 	}
 	pc, client := a.cfgNow.Providers[idx], a.llmc
-	a.fetchingModels, a.fetchMsg = true, ""
+	a.fetchingModels, a.fetchMsg, a.fetchFor = true, "", providerKey(pc)
 	go func() {
 		resolved, err := llm.Resolve(pc, false)
 		var ids []string
@@ -151,6 +152,8 @@ func (a *app) fetchModels(idx int) {
 				}
 			})
 			a.cfgNow = a.cfg.Get()
+			// 拉取顺手补了空的默认模型，生成器要跟着换。
+			a.rebuildGenerator()
 			a.fetchMsg = locales.In(a.cfgNow.Language).ModelsFetchSuccess(len(chat))
 		})
 	}()

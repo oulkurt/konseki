@@ -158,12 +158,17 @@ func TestProviderEditorFollowsOutsideChanges(t *testing.T) {
 	if got := a.cfg.Get().Providers[0]; got.APIKey != "sk-new" || got.DefaultModel != "glm-4.6" {
 		t.Fatalf("编辑框把旧草稿写回了配置：key=%q model=%q", got.APIKey, got.DefaultModel)
 	}
-	// 「模型」两个字先匹配到子页签，所以从模型输入框正下方的「测试连接」往上点。
-	test, ok := tt.Find(locales.In("zh-Hans").ModelsTest())
+	// 「模型」两个字先匹配到子页签，所以从模型输入框的说明文字定位输入框：
+	// 说明文字只有一行，输入框在它下面。
+	model, ok := tt.Find(locales.In("zh-Hans").ModelsModel())
 	if !ok {
-		t.Fatal("缺少测试连接按钮")
+		t.Fatal("缺少默认模型输入框")
 	}
-	tt.ClickAt(test.X+60, test.Y-28)
+	if model.H < 22 {
+		tt.ClickAt(model.X+80, model.Y+model.H+16)
+	} else {
+		tt.ClickAt(model.X+80, model.Y+model.H/2)
+	}
 	if !tt.Focused(locales.In("zh-Hans").ModelsModel()) {
 		t.Fatal("模型输入框没有拿到焦点")
 	}

@@ -53,7 +53,7 @@ func TestRecorderStateLanguages(t *testing.T) {
 
 func TestDynamicSettingsLanguages(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, state := range []string{"confirmation", "clearing", "permission-granted", "permission-missing", "sessions", "agent-legacy", "agent-errors", "provider-edit", "provider-search", "import", "scanning", "read-error", "clear-error", "provider-result"} {
+		for _, state := range []string{"confirmation", "clearing", "permission-granted", "permission-missing", "sessions", "agent-legacy", "agent-errors", "provider-edit", "provider-oauth", "provider-search", "import", "scanning", "read-error", "clear-error", "provider-result"} {
 			t.Run(lang+"/"+state, func(t *testing.T) {
 				a, cleanup := newTestApp(t)
 				defer cleanup()
@@ -101,7 +101,7 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 						a.legacyErr = errors.New(user[0])
 						want = msg.GeneralAgentLinkError(errorText(lang, a.linkErr))
 					}
-				case "provider-edit", "provider-search", "import", "scanning", "provider-result":
+				case "provider-edit", "provider-oauth", "provider-search", "import", "scanning", "provider-result":
 					a.settingsTab = 1
 					a.detectStarted, a.detectDone = true, true
 					switch state {
@@ -117,12 +117,28 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 							a.testModel, a.testLatency = user[4], 12
 							want = msg.ModelsTestSuccess(a.testModel, a.testLatency)
 						}
+					case "provider-oauth":
+						pc := config.ProviderConfig{
+							Preset:       "openai",
+							Label:        user[3],
+							Auth:         "oauth",
+							AccessToken:  "token",
+							DefaultModel: user[4],
+							ExpiresAt:    time.Now().Add(24 * time.Hour),
+						}
+						if err := a.cfg.Update(func(c *config.Config) { c.Providers = []config.ProviderConfig{pc} }); err != nil {
+							t.Fatal(err)
+						}
+						a.cfgNow = a.cfg.Get()
+						a.openProvider = providerKey(pc)
+						want = msg.ModelsAuthSubscription()
 					case "provider-search":
 						a.addProviderOpen = true
 						a.providerSearch = "openai"
 						want = msg.ModelsSearch()
 						for _, p := range providers.All() {
-							user = append(user, p.Name)
+							// 预设名字和说明都是目录数据，不是界面文案。
+							user = append(user, p.Name, p.Note)
 						}
 					case "import":
 						a.detected = []providers.Credential{{Source: "test", Label: user[2]}}

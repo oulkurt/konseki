@@ -110,7 +110,9 @@ func (a *app) addProvider(p providers.Preset) {
 	a.openProvider = providerKey(pc)
 	a.apiKeyDraft = ""
 	a.baseURLDraft = pc.ChatBase
+	a.responsesDraft = pc.ResponsesBase
 	a.modelDraft = model
+	a.modelsAll = false
 }
 
 func (a *app) removeProvider(idx int) {
