@@ -209,7 +209,7 @@ func TestPermissionRestartHintOnlyBeforeGrant(t *testing.T) {
 	defer cleanup()
 	a.tab = 1
 	a.lastLoad = time.Now().Add(time.Hour)
-	hint := "屏幕录制授权后，请重启 Konseki。"
+	hint := "屏幕录制授权后，请重启Konseki。"
 	a.status.Perms.Screen = capture.PermDenied
 	tt := ui.NewTester(a.view, 760, 2600)
 	if !tt.HasText(hint) {

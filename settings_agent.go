@@ -48,8 +48,8 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 	prompt := msg.GeneralAgentPromptText(agentSkillInstall, statusCmd(a.appDir))
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Children(func() {
-			ui.Text(c, msg.GeneralAgent()).Padding(14, 18, 4, 18).Bold().TextColor(pal.textPrimary)
-			ui.Text(c, msg.GeneralAgentDescription()).Padding(0, 18, 0, 18).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.4)
+			headingText(c, msg.GeneralAgent()).SingleLine().Padding(14, 18, 4, 18).TextColor(pal.textPrimary)
+			bodyText(c, msg.GeneralAgentDescription()).Padding(0, 18, 0, 18).FontSize(12).TextColor(pal.textSecondary)
 
 			a.settingsRow(c, msg.GeneralAgentPrompt(), msg.GeneralAgentPromptHelp(), pal, func() {
 				a.copyButton(c, msg, "btn-agent-copy-prompt", prompt)
@@ -74,7 +74,7 @@ func (a *app) renderAgentSection(c *ui.Context, pal palette) {
 				})
 			})
 
-			ui.Text(c, msg.GeneralAgentRedact()).Padding(0, 18, 14, 18).FontSize(12).TextColor(pal.textSecondary)
+			bodyText(c, msg.GeneralAgentRedact()).Padding(0, 18, 14, 18).FontSize(12).TextColor(pal.textSecondary)
 			if a.linkErr != nil {
 				ui.Text(c, msg.GeneralAgentLinkError(errorText(c.Locale(), a.linkErr))).FontSize(12).TextColor(c.Theme().Danger)
 			}

@@ -125,7 +125,7 @@ func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-				ui.Text(c, msg.ModelsProviders()).Grow(1).Bold().TextColor(pal.textPrimary)
+				headingText(c, msg.ModelsProviders()).Grow(1).SingleLine().TextColor(pal.textPrimary)
 				if ui.Button(c.Key("provider-add"), msg.ModelsAdd()).Clicked() {
 					a.addProviderOpen = true
 				}
@@ -142,7 +142,7 @@ func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 	})
 	ui.Modal(c, &a.addProviderOpen, func() {
 		ui.Column(c).Width(500).MaxWidth(700).Padding(18).Gap(10).Children(func() {
-			ui.Text(c, msg.ModelsAdd()).Bold()
+			headingText(c, msg.ModelsAdd()).SingleLine()
 			ui.TextInput(c.Key("provider-search"), &a.providerSearch).FillWidth().Placeholder(msg.ModelsSearch()).Label(msg.ModelsSearch())
 			ui.Scroll(c).Height(350).FillWidth().Children(func() {
 				ui.Column(c).FillWidth().Children(func() {
@@ -182,7 +182,7 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 	name := providerDisplayName(pc)
 	ui.Column(c).FillWidth().Gap(6).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, name).Grow(1).Bold().TextColor(pal.textPrimary)
+			headingText(c, name).Grow(1).SingleLine().Tooltip(name).TextColor(pal.textPrimary)
 			if ui.Button(c.Key("provider-default-"+pc.Preset), msg.ModelsDefault()).Disabled(a.cfgNow.Summary.ProviderID == pc.Preset).Clicked() {
 				a.setDefaultProvider(pc)
 			}
@@ -250,7 +250,7 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 		if a.testErr != nil {
 			ui.Text(c, errorText(c.Locale(), a.testErr)).FontSize(12).TextColor(pal.textSecondary)
 		} else if a.testModel != "" {
-			ui.Text(c, msg.ModelsTestSuccess(a.testModel, a.testLatency)).FontSize(12).TextColor(pal.textSecondary)
+			numText(c, msg.ModelsTestSuccess(a.testModel, a.testLatency)).FontSize(12).TextColor(pal.textSecondary)
 		}
 	})
 }
@@ -276,7 +276,7 @@ func (a *app) renderModelsImport(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(8).Children(func() {
-			ui.Text(c, msg.ModelsImport()).Bold().TextColor(pal.textPrimary)
+			headingText(c, msg.ModelsImport()).SingleLine().TextColor(pal.textPrimary)
 			if !a.detectDone {
 				ui.Text(c, msg.ModelsScanning()).FontSize(12).TextColor(pal.textSecondary)
 				return

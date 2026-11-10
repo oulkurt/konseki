@@ -117,7 +117,7 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(7).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).Gap(3).Children(func() {
-					ui.Text(c, msg.RecorderSensitive()).Bold().TextColor(pal.textPrimary)
+					headingText(c, msg.RecorderSensitive()).SingleLine().TextColor(pal.textPrimary)
 					ui.Text(c, msg.RecorderSensitiveHelp()).FontSize(12).TextColor(pal.textSecondary)
 				})
 				renderSelectPill(c, "recorder-sensitive-add", msg.RecorderSensitiveAdd(), 145, pal.textPrimary, pal, func(m *ui.Menu) {

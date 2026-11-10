@@ -100,9 +100,9 @@ func (a *app) settingsRow(c *ui.Context, title, subtitle string, pal palette, ri
 		Gap(16).
 		Children(func() {
 			ui.Column(c).Grow(1).Gap(3).Children(func() {
-				ui.Text(c, title).
+				headingText(c, title).
 					FontSize(13.5).
-					Bold().
+					SingleLine().
 					TextColor(pal.textPrimary)
 				// 空文字也占一行高，标题会被顶到右侧控件的上方。
 				if subtitle != "" {
@@ -165,7 +165,8 @@ func renderSelectPill(c *ui.Context, key, label string, minW float32, textColor 
 			Bold().
 			TextColor(textColor).
 			Grow(1).
-			SingleLine()
+			SingleLine().
+			Tooltip(label)
 		ui.Icon(c, chevronsUpDownSVG).FontSize(12.5).TextColor(pal.textSecondary)
 	})
 }

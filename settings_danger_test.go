@@ -49,7 +49,7 @@ func TestClearRunningDisablesRecorderControls(t *testing.T) {
 	if err := tt.Click("暂停记录"); err != nil {
 		t.Fatal(err)
 	}
-	if tt.HasText("暂停 15 分钟") {
+	if tt.HasText("暂停15分钟") {
 		t.Fatal("清除期间打开了暂停菜单")
 	}
 	rect, ok := tt.Find("活动记录器")
@@ -187,7 +187,7 @@ func TestClearFailureMessagePlural(t *testing.T) {
 		lang string
 		n    int
 		want string
-	}{{"zh-Hans", 2, "2 个文件无法删除"}, {"en", 1, "1 file could not be deleted"}, {"en", 2, "2 files could not be deleted"}} {
+	}{{"zh-Hans", 2, "2个文件无法删除"}, {"en", 1, "1 file could not be deleted"}, {"en", 2, "2 files could not be deleted"}} {
 		got := locales.Catalog.Format(tc.lang, "recorderDeleteFailed", map[string]any{"count": tc.n})
 		if got != tc.want {
 			t.Errorf("%s/%d: %q", tc.lang, tc.n, got)

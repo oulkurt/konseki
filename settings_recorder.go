@@ -54,7 +54,7 @@ func (a *app) renderRecorderFields(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Gap(4).Children(func() {
-			ui.Text(c, msg.RecorderCapture()).Bold().Padding(14, 18, 0, 18).TextColor(pal.textPrimary)
+			headingText(c, msg.RecorderCapture()).SingleLine().Padding(14, 18, 0, 18).TextColor(pal.textPrimary)
 			for i, field := range recorderFields {
 				unit := ""
 				if field.timed {
