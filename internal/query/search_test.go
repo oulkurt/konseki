@@ -8,6 +8,7 @@ package query
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -159,5 +160,36 @@ func TestSummaryHeadlineIdentity(t *testing.T) {
 	got := decode[searchOutput](t, out)
 	if code != 0 || got.Total != 2 {
 		t.Fatal(out)
+	}
+}
+
+func TestSearchRingBufferEvictionAndHitKind(t *testing.T) {
+	f := newFixture(t, defaultConfig())
+	base := time.Date(2026, 11, 5, 9, 0, 0, 0, time.Local)
+	for i := range 80 {
+		id := fmt.Sprintf("20261105-%02d%02d00.000-%04d", 9+i/60, i%60, i+1)
+		ocr := fmt.Sprintf("needle unique-ocr-%03d", i)
+		f.addSnapshot(base.Add(time.Duration(i)*time.Second), id, "Editor", "com.example.editor", fmt.Sprintf("title-%03d", i), ocr, false)
+	}
+	f.addSnapshot(base.Add(200*time.Second), "20261105-090320.000-0081", "Editor", "com.example.editor", "title-000", "needle unique-ocr-000", false)
+	f.addSnapshot(base.Add(201*time.Second), "20261105-090321.000-0082", "Editor", "com.example.editor", "title-079", "needle unique-ocr-079", false)
+	f.addEntry(summary.Entry{
+		ID: "2026-11-05-sum", Day: "2026-11-05", Start: base.Add(202 * time.Second), End: base.Add(203 * time.Second),
+		Headline: "needle summary", Summary: "body",
+	})
+
+	out, stderr, code := runQuery(t, f.env, "search", "needle", "--limit", "100")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	got := decode[searchOutput](t, out)
+	if got.Total != 81 || got.Returned != 81 {
+		t.Fatalf("total=%d returned=%d", got.Total, got.Returned)
+	}
+	if got.Matches[0].Source != "summary" || got.Matches[0].ID != "2026-11-05-sum" {
+		t.Fatalf("first = %+v", got.Matches[0])
+	}
+	if got.Matches[1].Source != "snapshot" || got.Matches[1].Count != 2 {
+		t.Fatalf("second = %+v", got.Matches[1])
 	}
 }

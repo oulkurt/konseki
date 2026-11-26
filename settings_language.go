@@ -15,12 +15,17 @@ import (
 )
 
 func (a *app) setLanguage(lang string) {
+	if a.cfg == nil {
+		return
+	}
 	if err := a.cfg.Update(func(c *config.Config) { c.Language = lang }); err != nil {
 		a.err = err
 		return
 	}
 	a.cfgNow = a.cfg.Get()
-	a.setLocale(lang)
+	if a.setLocale != nil {
+		a.setLocale(lang)
+	}
 	a.rebuildGenerator()
 }
 

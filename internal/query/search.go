@@ -7,6 +7,7 @@
 package query
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"sort"
@@ -15,9 +16,16 @@ import (
 	"unicode/utf8"
 )
 
+type hitKind uint8
+
+const (
+	hitSummary hitKind = iota + 1
+	hitSnapshot
+)
+
 // hit 是一条命中的内部形状，summary 和 snapshot 共用排序与合并逻辑。
 type hit struct {
-	source   string
+	kind     hitKind
 	day      string
 	id       string
 	app      string
@@ -33,10 +41,14 @@ type hit struct {
 }
 
 func (h *hit) when() time.Time {
-	if h.source == "snapshot" {
+	switch h.kind {
+	case hitSummary:
+		return h.end
+	case hitSnapshot:
 		return h.ts
+	default:
+		panic(fmt.Sprintf("query: unknown hitKind %d", h.kind))
 	}
-	return h.end
 }
 
 func (r *runner) search(w io.Writer, o options) error {
@@ -58,23 +70,30 @@ func (r *runner) search(w io.Writer, o options) error {
 	from := now.AddDate(0, 0, -(days - 1)).Format("2006-01-02")
 	to := now.Format("2006-01-02")
 
-	// 本次命令只复用最近的字段，固定容量避免随历史增长。
 	type cached struct {
 		text, snippet string
 		ok            bool
 	}
-	cache := make([]cached, 0, 64)
+	var cache [64]cached
+	head, count := 0, 0
 	match := func(text string) (string, bool) {
-		for _, c := range cache {
+		if text == "" {
+			return "", false
+		}
+		for i := range count {
+			c := cache[(head+i)%len(cache)]
 			if c.text == text {
 				return c.snippet, c.ok
 			}
 		}
 		s, ok := r.matchField(text, lower)
-		if len(cache) == 64 {
-			cache = cache[1:]
+		idx := (head + count) % len(cache)
+		cache[idx] = cached{text: text, snippet: s, ok: ok}
+		if count < len(cache) {
+			count++
+		} else {
+			head = (head + 1) % len(cache)
 		}
-		cache = append(cache, cached{text, s, ok})
 		return s, ok
 	}
 	hits := make([]*hit, 0)
@@ -102,7 +121,7 @@ func (r *runner) search(w io.Writer, o options) error {
 					continue
 				}
 				hits = append(hits, &hit{
-					source: "summary", day: day, id: e.ID,
+					kind: hitSummary, day: day, id: e.ID,
 					field: field.name, snippet: snippet,
 					headline: r.maskText(e.Headline),
 					start:    e.Start, end: e.End, count: 1,
@@ -138,7 +157,7 @@ func (r *runner) search(w io.Writer, o options) error {
 				continue
 			}
 			h := &hit{
-				source: "snapshot", day: day, id: sn.ID,
+				kind: hitSnapshot, day: day, id: sn.ID,
 				app: r.maskText(sn.App), title: r.maskText(sn.Title),
 				field: field, snippet: snippet, ts: ts, count: 1,
 			}
@@ -155,12 +174,13 @@ func (r *runner) search(w io.Writer, o options) error {
 	// 后来的只加计数，id、时间与截图保留最新的那份。
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].when().After(hits[j].when()) })
 	type mergeKey struct {
-		source, day, app, title, field, snippet, headline string
+		kind                                      hitKind
+		day, app, title, field, snippet, headline string
 	}
 	merged := make([]*hit, 0, len(hits))
 	index := map[mergeKey]int{}
 	for _, h := range hits {
-		key := mergeKey{h.source, h.day, h.app, h.title, h.field, h.snippet, h.headline}
+		key := mergeKey{h.kind, h.day, h.app, h.title, h.field, h.snippet, h.headline}
 		if i, ok := index[key]; ok {
 			merged[i].count++
 			continue
@@ -175,7 +195,8 @@ func (r *runner) search(w io.Writer, o options) error {
 
 	matches := make([]any, 0, len(merged))
 	for _, h := range merged {
-		if h.source == "summary" {
+		switch h.kind {
+		case hitSummary:
 			matches = append(matches, struct {
 				Source   string `json:"source"`
 				Day      string `json:"day"`
@@ -187,20 +208,22 @@ func (r *runner) search(w io.Writer, o options) error {
 				Snippet  string `json:"snippet"`
 				Count    int    `json:"count"`
 			}{"summary", h.day, h.id, stamp(h.start), stamp(h.end), h.headline, h.field, h.snippet, h.count})
-			continue
+		case hitSnapshot:
+			matches = append(matches, struct {
+				Source  string `json:"source"`
+				Day     string `json:"day"`
+				ID      string `json:"id"`
+				TS      string `json:"ts"`
+				App     string `json:"app"`
+				Title   string `json:"title"`
+				Field   string `json:"field"`
+				Snippet string `json:"snippet"`
+				Shot    string `json:"shot,omitempty"`
+				Count   int    `json:"count"`
+			}{"snapshot", h.day, h.id, stamp(h.ts), h.app, h.title, h.field, h.snippet, h.shot, h.count})
+		default:
+			return fmt.Errorf("unknown hitKind %d", h.kind)
 		}
-		matches = append(matches, struct {
-			Source  string `json:"source"`
-			Day     string `json:"day"`
-			ID      string `json:"id"`
-			TS      string `json:"ts"`
-			App     string `json:"app"`
-			Title   string `json:"title"`
-			Field   string `json:"field"`
-			Snippet string `json:"snippet"`
-			Shot    string `json:"shot,omitempty"`
-			Count   int    `json:"count"`
-		}{"snapshot", h.day, h.id, stamp(h.ts), h.app, h.title, h.field, h.snippet, h.shot, h.count})
 	}
 
 	out := struct {

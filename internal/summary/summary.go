@@ -24,8 +24,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -61,172 +61,27 @@ type Entry struct {
 	Files []string `json:"files,omitempty"`
 
 	// 元信息：用了哪个模型、花了多少 token、遮了多少东西。
-	Model      string    `json:"model,omitempty"`
-	Usage      llm.Usage `json:"usage,omitempty"`
-	Redactions int       `json:"redactions,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
-}
-
-// Store 把摘要按天存成 JSONL，和原始采样同构。
-//
-// 为什么复用 JSONL：时间轴 UI 已经会读 JSONL，摘要和采样放一起，
-// 「这一天」就是两个文件，备份和删除都不用跨格式协调。
-type Store struct {
-	dir string
-	mu  sync.Mutex
-}
-
-// NewStore 打开摘要目录，目录不存在时创建。
-func NewStore(root string) (*Store, error) {
-	dir := filepath.Join(root, "summaries")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, err
-	}
-	return &Store{dir: dir}, nil
-}
-
-// OpenStore 只读打开摘要目录，不建目录、不写文件。目录不存在时读出来是空的。
-func OpenStore(root string) *Store {
-	return &Store{dir: filepath.Join(root, "summaries")}
-}
-
-func (s *Store) dayPath(day string) string {
-	return filepath.Join(s.dir, day+".jsonl")
-}
-
-// Load 读回某天的全部摘要。同一 ID 以后写的为准。
-func (s *Store) Load(day string) ([]Entry, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.loadLocked(day)
-}
-
-func (s *Store) loadLocked(day string) ([]Entry, error) {
-	b, err := os.ReadFile(s.dayPath(day))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	byID := map[string]Entry{}
-	var order []string
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		var e Entry
-		if json.Unmarshal([]byte(line), &e) != nil || e.ID == "" {
-			continue
-		}
-		if _, seen := byID[e.ID]; !seen {
-			order = append(order, e.ID)
-		}
-		byID[e.ID] = e
-	}
-	out := make([]Entry, 0, len(order))
-	for _, id := range order {
-		out = append(out, byID[id])
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
-	return out, nil
-}
-
-// Upsert 写入一条摘要。同 ID 会替换。
-func (s *Store) Upsert(e Entry) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	existing, _ := s.loadLocked(e.Day)
-	replaced := false
-	for i := range existing {
-		if existing[i].ID == e.ID {
-			existing[i] = e
-			replaced = true
-			break
-		}
-	}
-	if !replaced {
-		existing = append(existing, e)
-	}
-	sort.Slice(existing, func(i, j int) bool { return existing[i].Start.Before(existing[j].Start) })
-
-	var sb strings.Builder
-	for _, x := range existing {
-		b, err := json.Marshal(x)
-		if err != nil {
-			return err
-		}
-		sb.Write(b)
-		sb.WriteByte('\n')
-	}
-	tmp := s.dayPath(e.Day) + ".tmp"
-	if err := os.WriteFile(tmp, []byte(sb.String()), 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.dayPath(e.Day))
-}
-
-// Days 列出已有摘要的日期，最近的在前。
-func (s *Store) Days() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ents, err := os.ReadDir(s.dir)
-	if err != nil {
-		return nil
-	}
-	var out []string
-	for _, e := range ents {
-		n := e.Name()
-		if strings.HasSuffix(n, ".jsonl") {
-			out = append(out, strings.TrimSuffix(n, ".jsonl"))
-		}
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(out)))
-	return out
-}
-
-// Clear 删除摘要日期文件，并保留目录中的其他文件。
-func (s *Store) Clear() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() {
-			continue
-		}
-		base := strings.TrimSuffix(name, ".tmp")
-		if !strings.HasSuffix(base, ".jsonl") {
-			continue
-		}
-		day := strings.TrimSuffix(base, ".jsonl")
-		if _, err := time.Parse("2006-01-02", day); err != nil {
-			continue
-		}
-		if err := os.Remove(filepath.Join(s.dir, name)); err != nil {
-			return err
-		}
-	}
-	return nil
+	Model        string    `json:"model,omitempty"`
+	Usage        llm.Usage `json:"usage,omitempty"`
+	Redactions   int       `json:"redactions,omitempty"`
+	CoveredUntil time.Time `json:"coveredUntil,omitzero"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // ---------- 生成 ----------
 
 // Generator 负责把采样喂给模型。
 type Generator struct {
-	store   *Store
-	client  *llm.Client
-	cfg     LLMConfig
-	mu      sync.Mutex
-	masker  *redact.Masker
-	running bool
-	lastErr error
-	lastAt  time.Time
-	onEntry func(Entry)
+	store      *Store
+	client     *llm.Client
+	cfg        LLMConfig
+	mu         sync.Mutex
+	masker     *redact.Masker
+	cfgSeq     uint64
+	activeRuns int
+	lastErr    error
+	lastAt     time.Time
+	onEntry    func(Entry)
 }
 
 // LLMConfig 是调用模型需要的一切。
@@ -244,6 +99,14 @@ type LLMConfig struct {
 	Redact redact.Options
 }
 
+func cloneLLMConfig(cfg LLMConfig) LLMConfig {
+	cfg.Header = maps.Clone(cfg.Header)
+	cfg.Redact.Kinds = maps.Clone(cfg.Redact.Kinds)
+	cfg.Redact.Allow = slices.Clone(cfg.Redact.Allow)
+	cfg.Redact.Words = slices.Clone(cfg.Redact.Words)
+	return cfg
+}
+
 // New 建一个生成器。onEntry 在每条摘要落盘后回调，用来刷新 UI。
 // New 建一个生成器。
 //
@@ -252,18 +115,21 @@ type LLMConfig struct {
 // 之前漏了这一步，结果是配置里写着要脱敏、实际什么都没遮 ——
 // 这种「以为遮了其实没遮」是这一层最不能出的错。
 func New(store *Store, client *llm.Client, cfg LLMConfig, onEntry func(Entry)) *Generator {
-	g := &Generator{store: store, client: client, cfg: cfg, onEntry: onEntry}
+	cloned := cloneLLMConfig(cfg)
+	g := &Generator{store: store, client: client, cfg: cloned, onEntry: onEntry}
 	// Redact 全关（用户明确不要遮）时也建一个空 masker：Mask/Restore
 	// 都是恒等变换，调用方不用到处判 nil。
-	g.masker = redact.New(cfg.Redact)
+	g.masker = redact.New(cloned.Redact)
 	return g
 }
 
 // SetConfig 让用户在设置页改完模型后立刻生效。
 func (g *Generator) SetConfig(cfg LLMConfig) {
+	cloned := cloneLLMConfig(cfg)
 	g.mu.Lock()
-	g.cfg = cfg
-	g.masker = redact.New(cfg.Redact)
+	g.cfg = cloned
+	g.cfgSeq++
+	g.masker = redact.New(cloned.Redact)
 	g.mu.Unlock()
 }
 
@@ -284,7 +150,7 @@ type Status struct {
 func (g *Generator) Status() Status {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	st := Status{Running: g.running, LastAt: g.lastAt}
+	st := Status{Running: g.activeRuns > 0, LastAt: g.lastAt}
 	if g.lastErr != nil {
 		st.LastErr = g.lastErr.Error()
 	}
@@ -308,14 +174,23 @@ func (g *Generator) GenerateDay(ctx context.Context, blocks []capture.Block, ocr
 	if window <= 0 {
 		window = time.Hour
 	}
-	g.setRunning(true)
-	defer g.setRunning(false)
+	g.beginRun()
+	var runErr error
+	defer func() {
+		g.endRun(runErr)
+	}()
 
-	existing, _ := g.store.Load(day)
-	done := map[string]bool{}
+	startGen := g.store.Generation()
+	startCfgSeq := g.currentCfgSeq()
+	existing, err := g.store.Load(day)
+	if err != nil && !force {
+		runErr = err
+		return nil, err
+	}
+	existingByID := map[string]Entry{}
 	if !force {
 		for _, e := range existing {
-			done[e.ID] = true
+			existingByID[e.ID] = e
 		}
 	}
 
@@ -324,21 +199,36 @@ func (g *Generator) GenerateDay(ctx context.Context, blocks []capture.Block, ocr
 	var firstErr error
 	for _, w := range windows {
 		id := EntryID(day, w.start)
-		if done[id] {
+		if prev, ok := existingByID[id]; ok && !windowLatestEnd(w.blocks).After(entryCoveredUntil(prev)) {
 			continue
 		}
 		if ctx.Err() != nil {
-			return out, ctx.Err()
+			runErr = ctx.Err()
+			return out, runErr
 		}
 		e, err := g.generateOne(ctx, w, ocr, day, id)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
-			// 单段失败不影响其它段。用户在 UI 上能看到哪段是空的。
 			continue
 		}
-		if err := g.store.Upsert(e); err != nil {
+		err = g.store.upsertGuarded(e, startGen, func(commit func() error) error {
+			g.mu.Lock()
+			defer g.mu.Unlock()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if g.cfgSeq != startCfgSeq {
+				return ErrStaleWrite
+			}
+			return commit()
+		})
+		if err != nil {
+			if errors.Is(err, ErrStaleWrite) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				runErr = err
+				return out, runErr
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -349,18 +239,30 @@ func (g *Generator) GenerateDay(ctx context.Context, blocks []capture.Block, ocr
 			g.onEntry(e)
 		}
 	}
-	g.setDone(firstErr)
+	runErr = firstErr
 	return out, firstErr
 }
 
-func (g *Generator) setRunning(v bool) {
+func (g *Generator) currentCfgSeq() uint64 {
 	g.mu.Lock()
-	g.running = v
+	defer g.mu.Unlock()
+	return g.cfgSeq
+}
+
+func (g *Generator) beginRun() {
+	g.mu.Lock()
+	if g.activeRuns == 0 {
+		g.lastErr = nil
+	}
+	g.activeRuns++
 	g.mu.Unlock()
 }
 
-func (g *Generator) setDone(err error) {
+func (g *Generator) endRun(err error) {
 	g.mu.Lock()
+	if g.activeRuns > 0 {
+		g.activeRuns--
+	}
 	g.lastErr = err
 	g.lastAt = time.Now()
 	g.mu.Unlock()
@@ -381,28 +283,28 @@ func splitWindows(blocks []capture.Block, size time.Duration) []window {
 	if len(blocks) == 0 {
 		return nil
 	}
-	byStart := map[time.Time]*window{}
-	var keys []time.Time
+	if size <= 0 {
+		size = time.Hour
+	}
+	byStart := map[int64]*window{}
+	var keys []int64
 	for _, b := range blocks {
-		st := b.Start.Truncate(size)
-		if b.Start.In(time.Local) != b.Start {
-			// Truncate 是相对 UTC 的绝对时间；本地时区有 30/45 分钟偏移
-			// 的地方会切到半点。重新按本地时区的零点对齐。
-			lt := b.Start.In(time.Local)
-			st = time.Date(lt.Year(), lt.Month(), lt.Day(), lt.Hour(), 0, 0, 0, time.Local)
-		}
-		w, ok := byStart[st]
+		lt := b.Start.In(time.Local)
+		dayStart := time.Date(lt.Year(), lt.Month(), lt.Day(), 0, 0, 0, 0, time.Local)
+		ws := dayStart.Add((lt.Sub(dayStart) / size) * size)
+		key := ws.Unix()
+		w, ok := byStart[key]
 		if !ok {
-			w = &window{start: st, end: st.Add(size)}
-			byStart[st] = w
-			keys = append(keys, st)
+			w = &window{start: ws, end: ws.Add(size)}
+			byStart[key] = w
+			keys = append(keys, key)
 		}
 		w.blocks = append(w.blocks, b)
-		if b.End.After(w.end) {
-			w.end = b.End
+		if bEnd := b.End.In(time.Local); bEnd.After(w.end) {
+			w.end = bEnd
 		}
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 	out := make([]window, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, *byStart[k])
@@ -410,22 +312,78 @@ func splitWindows(blocks []capture.Block, size time.Duration) []window {
 	return out
 }
 
-// generateOne 调一次模型，拿回一个结构化摘要。
+func windowLatestEnd(blocks []capture.Block) time.Time {
+	var latest time.Time
+	for _, b := range blocks {
+		end := b.End
+		if end.IsZero() {
+			end = b.Start
+		}
+		if end.After(latest) {
+			latest = end
+		}
+	}
+	return latest
+}
+
+func entryCoveredUntil(e Entry) time.Time {
+	if !e.CoveredUntil.IsZero() {
+		return e.CoveredUntil
+	}
+	if !e.CreatedAt.IsZero() && e.CreatedAt.Before(e.End) {
+		return e.CreatedAt
+	}
+	return e.End
+}
+
+func windowAlreadyCovered(w window, existing []Entry, day string) bool {
+	wantID := ""
+	if day != "" {
+		wantID = EntryID(day, w.start)
+	}
+	latest := windowLatestEnd(w.blocks)
+	wUnix := w.start.In(time.Local).Unix()
+	for _, e := range existing {
+		if (wantID != "" && e.ID == wantID) || e.Start.In(time.Local).Unix() == wUnix {
+			if !latest.After(entryCoveredUntil(e)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func HasPendingWindows(day string, blocks []capture.Block, existing []Entry, size time.Duration) bool {
+	if len(blocks) == 0 {
+		return false
+	}
+	if len(existing) == 0 {
+		return true
+	}
+	for _, w := range splitWindows(blocks, size) {
+		if !windowAlreadyCovered(w, existing, day) {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Generator) generateOne(ctx context.Context, w window, ocr map[string]string, day, id string) (Entry, error) {
 	g.mu.Lock()
-	cfg := g.cfg
+	cfg := cloneLLMConfig(g.cfg)
+	_ = g.masker
+	seq := g.cfgSeq
 	g.mu.Unlock()
 
+	winMasker := redact.New(cfg.Redact)
 	prompt, _ := buildPrompt(w, ocr, cfg.Language)
+	prompt = winMasker.Mask(prompt)
 
-	// 先遮再发。遮完的 prompt 才是真正出门的东西，
-	// 原始 prompt 只在内存里存在一瞬间。
 	g.mu.Lock()
-	masker := g.masker
-	g.mu.Unlock()
-	if masker != nil {
-		prompt = masker.Mask(prompt)
+	if g.cfgSeq == seq {
+		g.masker = winMasker
 	}
+	g.mu.Unlock()
 
 	resp, err := g.client.Complete(ctx, llm.Request{
 		Kind:      cfg.Kind,
@@ -443,11 +401,8 @@ func (g *Generator) generateOne(ctx context.Context, w window, ocr map[string]st
 		return Entry{}, err
 	}
 
-	text := resp.Text
-	if masker != nil {
-		text = masker.Restore(text)
-	}
-	parsed := parseStructured(text)
+	parsed := parseStructured(resp.Text)
+	restoreStructured(&parsed, winMasker)
 	apps := appsOf(w)
 	return Entry{
 		ID:         id,
@@ -462,11 +417,31 @@ func (g *Generator) generateOne(ctx context.Context, w window, ocr map[string]st
 		Decisions:  parsed.Decisions,
 		People:     parsed.People,
 		Files:      parsed.Files,
-		Model:      firstNonEmpty(resp.Model, cfg.Model),
-		Usage:      resp.Usage,
-		Redactions: len(hitsOf(masker)),
-		CreatedAt:  time.Now(),
+		Model:        firstNonEmpty(resp.Model, cfg.Model),
+		Usage:        resp.Usage,
+		Redactions:   len(hitsOf(winMasker)),
+		CoveredUntil: windowLatestEnd(w.blocks),
+		CreatedAt:    time.Now(),
 	}, nil
+}
+
+func restoreStructured(s *structured, m *redact.Masker) {
+	if m == nil {
+		return
+	}
+	s.Headline = m.Restore(s.Headline)
+	s.Summary = m.Restore(s.Summary)
+	restoreSlice(s.Topics, m)
+	restoreSlice(s.Open, m)
+	restoreSlice(s.Decisions, m)
+	restoreSlice(s.People, m)
+	restoreSlice(s.Files, m)
+}
+
+func restoreSlice(xs []string, m *redact.Masker) {
+	for i, x := range xs {
+		xs[i] = m.Restore(x)
+	}
 }
 
 // structured 是让模型输出的 JSON 形状。
@@ -597,7 +572,7 @@ func buildPrompt(w window, ocr map[string]string, lang string) (string, int) {
 				break
 			}
 		}
-		fmt.Fprintf(&sb, "- %s–%s %s", b.Start.Format("15:04"), b.End.Format("15:04"), b.App)
+		fmt.Fprintf(&sb, "- %s–%s %s", b.Start.In(time.Local).Format("15:04"), b.End.In(time.Local).Format("15:04"), b.App)
 		if len(titles) > 0 {
 			fmt.Fprintf(&sb, "：%s", strings.Join(titles, " ｜ "))
 		}
@@ -624,10 +599,14 @@ func buildPrompt(w window, ocr map[string]string, lang string) (string, int) {
 	return sb.String(), 0
 }
 
-func trimTo(s string, n int) string {
+func trimTo(s string, maxRunes int) string {
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) <= n {
+	if maxRunes <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= maxRunes {
 		return s
 	}
-	return s[:n] + "…"
+	return string(r[:maxRunes]) + "…"
 }

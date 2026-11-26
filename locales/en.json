@@ -173,6 +173,8 @@
   "receiptDetailFile": "+ File",
   "receiptDetailPeriod": "+ Period",
   "receiptSerial": "No. {serial}",
+  "modelsFetch": "Fetch models",
+  "modelsFetching": "Fetching…",
   "modelsFetchFailed": "Could not fetch models: ",
   "modelsFetchEmpty": "The provider returned an empty list",
   "modelsFetchSuccess": "{count, plural, one {Fetched # model} other {Fetched # models}}",

@@ -361,3 +361,110 @@ func TestMachineSystemFrontDoesNotCountOrCapture(t *testing.T) {
 		}
 	}
 }
+
+func TestMachineStopOnExitReset(t *testing.T) {
+	x := newMachineScenario()
+	x.s.Debounce = time.Second
+	x.click = x.o.Now.Add(250 * time.Millisecond)
+	requireAction(t, x.step(250*time.Millisecond), ActionCapture, TriggerClick)
+	x.key = x.o.Now.Add(100 * time.Millisecond)
+	x.step(100 * time.Millisecond)
+	x.m.failures = 3
+	x.m.retryAt = x.o.Now.Add(time.Second)
+	x.m.probeFactor = 4
+	x.m.locked = true
+	x.m.pending = TriggerClick
+	x.o.Stop = true
+	acts := x.step(time.Second)
+	requireAction(t, acts, ActionCloseSession, "")
+	if x.m.Phase != PhaseOff || x.m.Block != BlockNone || x.m.active || x.m.job != jobIdle || x.m.flying != "" || x.m.pending != "" || x.m.typing || x.m.failures != 0 || !x.m.retryAt.IsZero() || x.m.probeFactor != 1 || x.m.locked || x.m.initialized || x.m.front != "" || !x.m.lastInput.IsZero() || !x.m.lastKey.IsZero() || !x.m.lastClick.IsZero() || !x.m.lastScroll.IsZero() || !x.m.lastAttempt.IsZero() || !x.m.lastSaved.IsZero() || !x.m.lastProbe.IsZero() {
+		t.Fatalf("Stop 未完全复位状态机: %+v", x.m)
+	}
+}
+
+func TestMachinePauseAndSensitivePreservesFocus(t *testing.T) {
+	x := newMachineScenario()
+	x.o.PausedUntil = x.o.Now.Add(2 * time.Second)
+	x.o.Front.Bundle = "b"
+	acts := x.step(250 * time.Millisecond)
+	if hasAction(acts, ActionResetBaseline, "") || x.m.front != "a" {
+		t.Fatalf("暂停期间覆盖了前台: front=%q acts=%+v", x.m.front, acts)
+	}
+	x.o.PausedUntil = time.Time{}
+	acts = x.step(time.Second)
+	requireAction(t, acts, ActionResetBaseline, "")
+	requireAction(t, acts, ActionOpenSession, "")
+	requireAction(t, acts, ActionCapture, TriggerAppFocus)
+	x.o.CaptureDone = true
+	x.o.CaptureSaved = true
+	x.step(0)
+
+	x.s.SensitiveApps = []string{"secret"}
+	x.o.Front.Bundle = "secret"
+	acts = x.step(time.Second)
+	if hasAction(acts, ActionResetBaseline, "") || x.m.front != "b" {
+		t.Fatalf("敏感应用覆盖了前台: front=%q acts=%+v", x.m.front, acts)
+	}
+	x.o.Front.Bundle = "c"
+	acts = x.step(time.Second)
+	requireAction(t, acts, ActionResetBaseline, "")
+	requireAction(t, acts, ActionCapture, TriggerAppFocus)
+
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	var m Machine
+	s := Settings{Idle: time.Minute, Debounce: time.Second, Heartbeat: time.Hour}
+	acts = m.Step(Observation{Now: now, SinceKey: time.Hour, SinceClick: time.Hour, SinceScroll: time.Hour, Front: Front{Bundle: "com.apple.loginwindow"}, ScreenPermission: PermGranted}, s)
+	if m.front != "" || len(acts) != 0 {
+		t.Fatalf("系统界面初始化了前台: front=%q acts=%+v", m.front, acts)
+	}
+	acts = m.Step(Observation{Now: now.Add(time.Second), SinceKey: time.Hour + time.Second, SinceClick: time.Hour + time.Second, SinceScroll: time.Hour + time.Second, Front: Front{Bundle: "first"}, ScreenPermission: PermGranted}, s)
+	if m.front != "first" || hasAction(acts, ActionResetBaseline, "") || hasAction(acts, ActionOpenSession, "") || hasAction(acts, ActionCapture, "") {
+		t.Fatalf("首个真实应用误触发切焦: front=%q acts=%+v", m.front, acts)
+	}
+	acts = m.Step(Observation{Now: now.Add(2 * time.Second), SinceKey: time.Hour + 2*time.Second, SinceClick: time.Hour + 2*time.Second, SinceScroll: time.Hour + 2*time.Second, Front: Front{Bundle: "second"}, ScreenPermission: PermGranted}, s)
+	requireAction(t, acts, ActionResetBaseline, "")
+	requireAction(t, acts, ActionCapture, TriggerAppFocus)
+}
+
+func TestMachineEffectivePhase(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	future := now.Add(time.Minute)
+	past := now.Add(-time.Second)
+
+	m := Machine{Phase: PhaseBlocked, Block: BlockScreenLocked}
+	if p, b := m.EffectivePhase(false, future, now); p != PhaseOff || b != BlockNone {
+		t.Fatalf("stopped: %v %v", p, b)
+	}
+	if p, b := m.EffectivePhase(true, future, now); p != PhaseBlocked || b != BlockScreenLocked {
+		t.Fatalf("locked > paused: %v %v", p, b)
+	}
+	m = Machine{Phase: PhaseBlocked, Block: BlockSensitiveApp}
+	if p, b := m.EffectivePhase(true, future, now); p != PhasePaused || b != BlockNone {
+		t.Fatalf("paused > sensitive: %v %v", p, b)
+	}
+	if p, b := m.EffectivePhase(true, past, now); p != PhaseBlocked || b != BlockSensitiveApp {
+		t.Fatalf("expired pause: %v %v", p, b)
+	}
+}
+
+func TestMachineProbeFactorNormalized(t *testing.T) {
+	for _, tc := range []struct {
+		in   int
+		want int
+	}{{0, 1}, {-3, 1}, {1, 1}, {2, 2}, {3, 2}, {4, 4}, {5, 4}, {8, 8}, {16, 8}} {
+		m := Machine{probeFactor: tc.in}
+		m.normalizeProbeFactor()
+		if m.probeFactor != tc.want {
+			t.Fatalf("in=%d got=%d want=%d", tc.in, m.probeFactor, tc.want)
+		}
+	}
+	m := Machine{probeFactor: 5}
+	m.backoffProbe()
+	if m.probeFactor != 8 {
+		t.Fatalf("backoff from 5 got %d", m.probeFactor)
+	}
+	m.backoffProbe()
+	if m.probeFactor != 8 {
+		t.Fatalf("backoff cap got %d", m.probeFactor)
+	}
+}

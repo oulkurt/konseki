@@ -13,6 +13,7 @@ package capture
 // 这条路已经实测跑通，细节和踩的坑见 docs/findings.md。
 
 import (
+	"context"
 	"errors"
 
 	"github.com/ebitengine/purego"
@@ -33,11 +34,12 @@ var (
 )
 
 func initScreenPerm() {
-	purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_GLOBAL|purego.RTLD_NOW)
-	// 这两个符号在高版本 SDK 才导出，取不到就退化成「未知」
-	lib := uintptr(0)
-	if l, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW); err == nil {
-		lib = l
+	if _, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_GLOBAL|purego.RTLD_NOW); err != nil {
+		return
+	}
+	lib, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
+	if err != nil || lib == 0 {
+		return
 	}
 	if sym, err := purego.Dlsym(lib, "CGPreflightScreenCaptureAccess"); err == nil {
 		purego.RegisterFunc(&preflightScreen, sym)
@@ -113,6 +115,11 @@ type darwinOCR struct{}
 func newOCR() OCREngine { return darwinOCR{} }
 
 func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int, err error) {
+	return (darwinOCR{}).RecognizeContext(context.Background(), f, languages)
+}
+
+func (darwinOCR) RecognizeContext(ctx context.Context, f *Frame, languages []string) (text string, lines int, err error) {
+	initPlatform()
 	withPool(func() {
 		img := frameImage(f)
 		if img != 0 {
@@ -122,27 +129,25 @@ func (darwinOCR) Recognize(f *Frame, languages []string) (text string, lines int
 			err = errors.New("OCR 图像无效")
 			return
 		}
-		text, lines, err = ocrImage(img, languages)
+		text, lines, err = ocrImageContext(ctx, img, languages)
 	})
 	return
 }
 
 func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
+	initPlatform()
 	withPool(func() {
 		img := frameImage(f)
-		if img != 0 {
-			defer cfRelease(img)
-		}
 		if img == 0 {
 			return
 		}
-		small := downscaleTo(img, screenshotMaxDimension)
-		if small != 0 && small != img {
-			defer cfRelease(small)
-		}
-		img = small
-		if img == 0 {
+		defer cfRelease(img)
+		target, owned := downscaleTo(img, screenshotMaxDimension)
+		if target == 0 {
 			return
+		}
+		if owned {
+			defer cfRelease(target)
 		}
 		if quality < 1 {
 			quality = 1
@@ -150,15 +155,24 @@ func platformSaveJPEG(f *Frame, path string, quality int) (ok bool) {
 		if quality > 100 {
 			quality = 100
 		}
-		data := writeJPEGData(img, float64(quality)/100)
+		data := writeJPEGData(target, float64(quality)/100)
 		ok = data != 0 && objcBool(O(data, "writeToFile:atomically:", nsstr(path), 0))
 	})
 	return
 }
 
 func frameImage(f *Frame) uintptr {
-	if f != nil && f.native != 0 {
-		return cfRetain(f.native)
+	if f == nil {
+		return 0
+	}
+	f.nativeMu.Lock()
+	n := f.native
+	if n != 0 {
+		cfRetain(n)
+	}
+	f.nativeMu.Unlock()
+	if n != 0 {
+		return n
 	}
 	return rgbaToImage(f)
 }
@@ -166,23 +180,44 @@ func retainFrame(f *Frame) *Frame {
 	if f == nil {
 		return nil
 	}
-	copy := *f
-	if copy.native != 0 {
-		cfRetain(copy.native)
+	initPlatform()
+	f.nativeMu.Lock()
+	n := f.native
+	if n != 0 {
+		cfRetain(n)
 	}
-	return &copy
+	f.nativeMu.Unlock()
+	return &Frame{W: f.W, H: f.H, RGBA: f.RGBA, Blank: f.Blank, native: n}
 }
 func releaseFrame(f *Frame) {
-	if f != nil && f.native != 0 {
-		cfRelease(f.native)
-		f.native = 0
+	if f == nil {
+		return
+	}
+	initPlatform()
+	f.nativeMu.Lock()
+	n := f.native
+	f.native = 0
+	f.nativeMu.Unlock()
+	if n != 0 {
+		cfRelease(n)
 	}
 }
 func nativePixels(f *Frame) []byte {
-	if f == nil || f.native == 0 {
+	if f == nil {
 		return nil
 	}
+	initPlatform()
+	f.nativeMu.Lock()
+	n := f.native
+	if n != 0 {
+		cfRetain(n)
+	}
+	f.nativeMu.Unlock()
+	if n == 0 {
+		return nil
+	}
+	defer cfRelease(n)
 	var pix []byte
-	withPool(func() { pix, _ = bitmap(f.native, dedupWidth, dedupHeight, false) })
+	withPool(func() { pix, _ = bitmap(n, dedupWidth, dedupHeight, false) })
 	return pix
 }

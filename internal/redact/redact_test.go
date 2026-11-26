@@ -281,3 +281,100 @@ func fakeSlackToken() string {
 func fakeGoogleKey() string     { return "AIza" + strings.Repeat("Sy", 17) + "x" }
 func fakeGenericSecret() string { return strings.Repeat("k9Lm", 5) }
 func fakeJWT() string           { return "eyJhbGciOi" + "." + "eyJzdWIiOi" + "." + strings.Repeat("Zx9", 20) }
+
+func TestCategoryOverridesAndWordKindToggle(t *testing.T) {
+	netOn := New(Options{Kinds: map[string]bool{"network": true}})
+	if got := netOn.Mask("public ip 8.8.8.8"); !strings.Contains(got, "{{IP_") {
+		t.Fatalf("category network=true did not enable IP: %q", got)
+	}
+
+	secOff := New(Options{Secrets: true, Personal: true, Kinds: map[string]bool{"secrets": false}})
+	key := "sk-abcdefghijklmnopqrstuvwxyz123456"
+	if got := secOff.Mask(key + " user@example.com"); !strings.Contains(got, key) || strings.Contains(got, "user@example.com") {
+		t.Fatalf("category secrets=false failed: %q", got)
+	}
+
+	wordOff := New(Options{Words: []string{"SecretCodename"}, Kinds: map[string]bool{"word": false}})
+	if got := wordOff.Mask("SecretCodename"); got != "SecretCodename" {
+		t.Fatalf("Kinds[word]=false failed: %q", got)
+	}
+
+	first := New(Options{Kinds: map[string]bool{"ip": true, "IP": false}}).Mask("8.8.8.8")
+	if !strings.Contains(first, "{{IP_") {
+		t.Fatalf("sorted key folding should deterministically pick lowercase ip=true, got %q", first)
+	}
+	for i := 0; i < 20; i++ {
+		if got := New(Options{Kinds: map[string]bool{"ip": true, "IP": false}}).Mask("8.8.8.8"); got != first {
+			t.Fatalf("non-deterministic Kinds folding on iter %d: %q vs %q", i, got, first)
+		}
+	}
+}
+
+func TestMaskerIsolationAndDisabledRestore(t *testing.T) {
+	m1 := New(full())
+	masked := m1.Mask("mail secret@example.com")
+	if masked == "mail secret@example.com" {
+		t.Fatal("expected masking")
+	}
+
+	disabled := New(Options{})
+	if got := disabled.Restore(masked); got != masked {
+		t.Fatalf("disabled masker leaked secret: %q", got)
+	}
+
+	m2 := New(full())
+	if got := m2.Restore(masked); got != masked {
+		t.Fatalf("separate masker leaked secret from m1: %q", got)
+	}
+}
+
+func TestWordsAndAllowClonedInNew(t *testing.T) {
+	words := []string{"Alpha"}
+	allow := []string{"keep@example.com"}
+	m := New(Options{Personal: true, Words: words, Allow: allow})
+	words[0] = "Beta"
+	allow[0] = "other@example.com"
+
+	out := m.Mask("Alpha Beta keep@example.com other@example.com")
+	if !strings.Contains(out, "{{WORD_") || strings.Contains(out, "Alpha") {
+		t.Fatalf("Words slice was not cloned: %q", out)
+	}
+	if !strings.Contains(out, "Beta") {
+		t.Fatalf("mutated caller Words slice affected masker: %q", out)
+	}
+	if !strings.Contains(out, "keep@example.com") {
+		t.Fatalf("Allow slice was not cloned: %q", out)
+	}
+	if strings.Contains(out, "other@example.com") {
+		t.Fatalf("mutated caller Allow slice affected masker: %q", out)
+	}
+}
+
+func TestOverlappingWordMatcher(t *testing.T) {
+	m := New(Options{Words: []string{"ab-ab"}})
+	out := m.Mask("xab-ab-ab")
+	if !strings.Contains(out, "xab-{{WORD_") {
+		t.Fatalf("overlapping wordMatcher missed valid boundary match: %q", out)
+	}
+	if got := m.Restore(out); got != "xab-ab-ab" {
+		t.Fatalf("Restore mismatch: %q", got)
+	}
+}
+
+func TestTableCapEvictsOldest(t *testing.T) {
+	m := New(Options{Personal: true})
+	firstEmail := "user00000@example.com"
+	firstMasked := m.Mask(firstEmail)
+	for i := 1; i <= maxTable+5; i++ {
+		m.Mask(fmt.Sprintf("user%05d@example.com", i))
+	}
+	m.mu.RLock()
+	size := len(m.table)
+	m.mu.RUnlock()
+	if size != maxTable {
+		t.Fatalf("table size = %d, want %d", size, maxTable)
+	}
+	if got := m.Restore(firstMasked); got != firstMasked {
+		t.Fatalf("expected oldest entry to be evicted, got %q", got)
+	}
+}

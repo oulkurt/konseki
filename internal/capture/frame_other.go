@@ -12,8 +12,14 @@ func retainFrame(f *Frame) *Frame {
 	if f == nil {
 		return nil
 	}
-	c := *f
-	return &c
+	return &Frame{W: f.W, H: f.H, RGBA: f.RGBA, Blank: f.Blank}
 }
-func releaseFrame(*Frame)        {}
+func releaseFrame(f *Frame) {
+	if f == nil {
+		return
+	}
+	f.nativeMu.Lock()
+	f.native = 0
+	f.nativeMu.Unlock()
+}
 func nativePixels(*Frame) []byte { return nil }

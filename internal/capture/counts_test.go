@@ -21,10 +21,17 @@ func TestCountsPrivacySecureAndReset(t *testing.T) {
 	tick(32, 14, true, false)
 	tick(34, 15, false, false)
 	tick(35, 16, false, false)
-	tick(1, 1, false, false)
-	tick(3, 2, false, false)
-	if c.session.keys != 5 || c.session.clicks != 5 {
+	if c.session.keys != 3 || c.session.clicks != 4 || !c.session.valid {
 		t.Fatalf("计数错误: %+v", c.session)
+	}
+	tick(1, 1, false, false)
+	if c.session.valid || c.session.keys != 0 || c.session.clicks != 0 || c.snapshot.valid || c.snapshot.keys != 0 || c.snapshot.clicks != 0 {
+		t.Fatalf("回绕未清空区间: session=%+v snapshot=%+v", c.session, c.snapshot)
+	}
+	c.takeSnapshot(true)
+	tick(3, 2, false, false)
+	if !c.snapshot.valid || c.snapshot.keys != 2 || c.snapshot.clicks != 1 {
+		t.Fatalf("回绕后新区间未恢复: %+v", c.snapshot)
 	}
 }
 

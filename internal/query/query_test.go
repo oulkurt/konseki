@@ -11,12 +11,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"konseki/internal/capture"
 	"konseki/internal/config"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -525,5 +528,221 @@ func TestInputCountsOutputPresence(t *testing.T) {
 		if strings.Count(out, `"keys"`) != 1 || strings.Count(out, `"clicks"`) != 1 || !strings.Contains(out, `"keys": 0`) || !strings.Contains(out, `"clicks": 0`) {
 			t.Fatalf("%s: %s", cmd, out)
 		}
+	}
+}
+
+func TestDataDirIsRegularFile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := Env{Dir: file, Now: func() time.Time { return fixtureNow }}
+	out, stderr, code := runQuery(t, env, "status")
+	if code != 1 || out != "" {
+		t.Fatalf("code=%d out=%q stderr=%q", code, out, stderr)
+	}
+	if !strings.Contains(stderr, "not a directory") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestBoolFlagValues(t *testing.T) {
+	f := standardFixture(t)
+	out, stderr, code := runQuery(t, f.env, "snapshots", "--ocr=true", "--limit=1")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	gotTrue := decode[struct {
+		Snapshots []snapshotOutput `json:"snapshots"`
+	}](t, out)
+	if len(gotTrue.Snapshots) != 1 || gotTrue.Snapshots[0].OCR == "" {
+		t.Fatalf("expected ocr with --ocr=true: %+v", gotTrue.Snapshots)
+	}
+
+	out, stderr, code = runQuery(t, f.env, "snapshots", "--ocr", "--ocr=false", "--limit=1")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	gotFalse := decode[struct {
+		Snapshots []snapshotOutput `json:"snapshots"`
+	}](t, out)
+	if len(gotFalse.Snapshots) != 1 || gotFalse.Snapshots[0].OCR != "" {
+		t.Fatalf("expected empty ocr with --ocr=false: %+v", gotFalse.Snapshots)
+	}
+
+	for _, args := range [][]string{
+		{"snapshots", "--ocr=maybe"},
+		{"snapshots", "--ocr="},
+		{"status", "--ocr=false"},
+		{"snapshots", "--unknown=true"},
+	} {
+		out, stderr, code := runQuery(t, f.env, args...)
+		if code != 2 || out != "" || !strings.Contains(stderr, "usage: konseki query") {
+			t.Fatalf("%v: code=%d out=%q stderr=%q", args, code, out, stderr)
+		}
+	}
+}
+
+func TestDispatchDefaultGuard(t *testing.T) {
+	if _, _, err := parseArgs([]string{"unknown"}); err == nil {
+		t.Fatal("expected unknown command error")
+	}
+	if err := (&runner{}).dispatch("unknown", options{}, io.Discard); err == nil {
+		t.Fatal("expected dispatch default error")
+	}
+}
+
+func TestStatusPausedUntilRespectsEnabledAndSingleNow(t *testing.T) {
+	cfgDisabled := config.Default()
+	cfgDisabled.Recorder.Enabled = false
+	cfgDisabled.Recorder.PausedUntil = fixtureNow.Add(time.Hour)
+	f1 := newFixture(t, cfgDisabled)
+	var calls atomic.Int32
+	f1.env.Now = func() time.Time {
+		calls.Add(1)
+		return fixtureNow
+	}
+	out, stderr, code := runQuery(t, f1.env, "status")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("now called %d times, want 1", calls.Load())
+	}
+	if strings.Contains(out, "pausedUntil") {
+		t.Fatalf("pausedUntil emitted when disabled: %s", out)
+	}
+
+	cfgEnabled := config.Default()
+	cfgEnabled.Recorder.Enabled = true
+	cfgEnabled.Recorder.PausedUntil = fixtureNow.Add(time.Hour)
+	f2 := newFixture(t, cfgEnabled)
+	out, stderr, code = runQuery(t, f2.env, "status")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(out, `"pausedUntil"`) {
+		t.Fatalf("pausedUntil missing when enabled and paused: %s", out)
+	}
+}
+
+func TestSnapshotsToMidnightWithoutFrom(t *testing.T) {
+	f := standardFixture(t)
+	out, stderr, code := runQuery(t, f.env, "snapshots", "--to", "00:00")
+	if code != 2 || out != "" {
+		t.Fatalf("code=%d out=%q stderr=%q", code, out, stderr)
+	}
+	if !strings.Contains(stderr, "--to") || strings.Contains(stderr, "--from must precede --to") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+}
+
+func TestSnapshotsLeadingEmptyOCROnRepeat(t *testing.T) {
+	f := newFixture(t, defaultConfig())
+	at := time.Date(2026, 11, 5, 9, 0, 0, 0, time.Local)
+	f.addSnapshot(at, "s1", "Editor", "com.example.editor", "t1", "", false)
+	f.addSnapshot(at.Add(time.Minute), "s2", "Editor", "com.example.editor", "t2", "hello", false)
+	f.addSnapshot(at.Add(2*time.Minute), "s3", "Editor", "com.example.editor", "t3", "hello", false)
+	out, stderr, code := runQuery(t, f.env, "snapshots", "--ocr")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, stderr)
+	}
+	got := decode[struct {
+		Snapshots []snapshotOutput `json:"snapshots"`
+	}](t, out)
+	if len(got.Snapshots) != 3 {
+		t.Fatalf("len=%d", len(got.Snapshots))
+	}
+	if got.Snapshots[0].OCR != "" || got.Snapshots[0].OCRRepeat {
+		t.Fatalf("s1 = %+v", got.Snapshots[0])
+	}
+	if got.Snapshots[1].OCR != "hello" || got.Snapshots[1].OCRRepeat {
+		t.Fatalf("s2 = %+v", got.Snapshots[1])
+	}
+	if got.Snapshots[2].OCR != "" || !got.Snapshots[2].OCRRepeat {
+		t.Fatalf("s3 = %+v", got.Snapshots[2])
+	}
+}
+
+func TestLinkRelativeDirAndConcurrentRaces(t *testing.T) {
+	root := t.TempDir()
+	binDir := filepath.Join(root, "bin")
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(binDir, "Konseki")
+	if err := os.WriteFile(exe, []byte("bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../bin/Konseki", filepath.Join(dataDir, LinkName)); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dataDir)
+	before, err := os.Lstat(LinkName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Link(".", exe); err != nil {
+		t.Fatalf("Link relative dir failed: %v", err)
+	}
+	after, err := os.Lstat(LinkName)
+	if err != nil || !os.SameFile(before, after) || !reflect.DeepEqual(before, after) {
+		t.Fatalf("relative symlink unexpectedly rewritten: %v", err)
+	}
+
+	staleDir := filepath.Join(dataDir, ".konseki-link-stale")
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(staleDir, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	freshDir := filepath.Join(dataDir, ".konseki-link-fresh")
+	if err := os.MkdirAll(freshDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	otherExe := filepath.Join(binDir, "Other")
+	if err := os.WriteFile(otherExe, []byte("bin2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Link(dataDir, otherExe); err != nil {
+		t.Fatalf("replace failed: %v", err)
+	}
+	if _, err := os.Stat(staleDir); !os.IsNotExist(err) {
+		t.Fatalf("stale temp dir not removed: %v", err)
+	}
+	if _, err := os.Stat(freshDir); err != nil {
+		t.Fatalf("fresh temp dir should be preserved: %v", err)
+	}
+
+	raceDir := filepath.Join(root, "race")
+	if err := os.MkdirAll(raceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const workers = 16
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- Link(raceDir, exe)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Link failed: %v", err)
+		}
+	}
+	target, err := os.Readlink(filepath.Join(raceDir, LinkName))
+	if err != nil || target != exe {
+		t.Fatalf("concurrent target = %q, err = %v", target, err)
 	}
 }

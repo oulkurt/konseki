@@ -21,7 +21,6 @@ var receiptInk = ui.Hex("#1D1C1A")
 var receiptFaded = ui.Hex("#76716A")
 var receiptRule = ui.Hex("#BDB7AC")
 
-// receiptDetailLabel 是展开详情左列的宽度。按英文最长的「+ Decision」留余量，两种语言共用一列，值才能对齐。
 const receiptDetailLabel = 70
 
 func receiptDuration(msg locales.Messages, d time.Duration) string {
@@ -37,8 +36,6 @@ func receiptDuration(msg locales.Messages, d time.Duration) string {
 	return msg.ReceiptHoursMinutes(strconv.Itoa(minutes/60), strconv.Itoa(minutes%60))
 }
 
-// receiptHeadline 只印有数据撑腰的累计。原始采集被保留期清掉、只剩摘要的日子，
-// 时长和会话数都无从知道，改印条目数；印「0分 · 0 段」会让人以为那天什么都没做。
 func receiptHeadline(msg locales.Messages, day ReceiptDay) string {
 	var parts []string
 	if day.Totals.HasActive {
@@ -126,7 +123,11 @@ func (a *app) renderReceiptDayContents(c *ui.Context, day ReceiptDay, interactiv
 	msg := locales.In(c.Locale())
 	if len(day.Lines) == 0 {
 		label := msg.ReceiptEmptyPast()
-		if a.dayKey() == a.currentTime().Format("2006-01-02") {
+		dayKey := day.Day.Format("2006-01-02")
+		if day.Day.IsZero() {
+			dayKey = a.dayKey()
+		}
+		if dayKey == a.todayKey() {
 			label = msg.ReceiptEmptyToday()
 		}
 		ui.Text(c, label).FontSize(13).TextColor(receiptFaded).Margin(12, 0, 12, 0)
@@ -137,13 +138,12 @@ func (a *app) renderReceiptDayContents(c *ui.Context, day ReceiptDay, interactiv
 	var reveal float32
 	printing := false
 	if interactive {
-		reveal, printing = a.printReveal(c)
+		reveal, printing = a.printRevealBounds(c)
 	}
-	// 条目列不用父级的 Gap，间距写在每一块里：正在印出的第一块高度为 0 时，下面的旧条目才不会多出一道间距。
 	ui.Column(c).FillWidth().Children(func() {
 		for i, line := range day.Lines {
 			block := func() {
-				a.renderReceiptLine(c, line, interactive)
+				a.renderReceiptLine(c, line, interactive && !(i == 0 && printing))
 				if i < len(day.Lines)-1 {
 					ui.Box(c).Height(9)
 					receiptDashed(c)
@@ -152,7 +152,7 @@ func (a *app) renderReceiptDayContents(c *ui.Context, day ReceiptDay, interactiv
 			}
 			if i == 0 && printing {
 				ui.Column(c).FillWidth().Height(reveal).Clip().Children(func() {
-					ui.Column(c).FillWidth().Shrink(0).Bind(&a.printHandle).Translate(0, min(0, reveal-a.printHeight)).Children(block)
+					ui.Column(c).FillWidth().Shrink(0).Bind(&a.printReveal.handle).Translate(0, min(0, reveal-a.printReveal.height)).Children(block)
 				})
 				continue
 			}
@@ -160,7 +160,6 @@ func (a *app) renderReceiptDayContents(c *ui.Context, day ReceiptDay, interactiv
 		}
 	})
 	receiptDouble(c)
-	// 合计那一节可能整节不印。虚线跟着节走，双线下面才不会紧接一条虚线。
 	printed := false
 	section := func() {
 		if printed {
@@ -207,8 +206,6 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, interactive boo
 	title, body, meta := line.Headline, line.Summary, line.Apps
 	bold := true
 	if line.Pending {
-		// 待摘要行用窗口标题当标题，几行之间才分得出来；常规字重加「未摘要」标记，
-		// 和模型写的粗体结论区分开。
 		title, body = msg.ReceiptPending(), ""
 		if len(line.Titles) > 0 {
 			title, body, bold = line.Titles[0], strings.Join(line.Titles[1:], " · "), false
@@ -219,7 +216,7 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, interactive boo
 	if !interactive {
 		row.PassThrough()
 	}
-	if a.receiptTarget == line.ID && a.receiptTarget != "" {
+	if interactive && a.paperFeed.phase == animIdle && a.receiptTarget == line.ID && a.receiptTarget != "" {
 		row.ScrollIntoView()
 		a.receiptTarget = ""
 	}
@@ -246,12 +243,11 @@ func (a *app) renderReceiptLine(c *ui.Context, line ReceiptLine, interactive boo
 			})
 		})
 	})
-	if row.Clicked() {
+	if interactive && row.Clicked() {
 		a.expanded[line.ID] = !a.expanded[line.ID]
 	}
 }
 
-// renderReceiptDetails 印两列：标签一列、值一列。同一组有多个值时只在第一行印标签。
 func renderReceiptDetails(c *ui.Context, msg locales.Messages, line ReceiptLine) {
 	period := line.Start.Format("15:04") + "–" + line.End.Format("15:04")
 	for _, g := range []struct {

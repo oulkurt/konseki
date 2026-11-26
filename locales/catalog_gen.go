@@ -2460,6 +2460,34 @@ func (msgs Messages) ModelsFetchFailed() string {
 	return Catalog.Format(msgs.locale, "modelsFetchFailed", nil)
 }
 
+// ModelsFetch says "拉取模型"
+// in the language the app shows.
+//
+// 模型设置页拉取模型列表的按钮标签。
+func ModelsFetch() string { return In(i18n.Locale()).ModelsFetch() }
+
+// ModelsFetch says "拉取模型"
+// in the language of msgs.
+//
+// 模型设置页拉取模型列表的按钮标签。
+func (msgs Messages) ModelsFetch() string {
+	return Catalog.Format(msgs.locale, "modelsFetch", nil)
+}
+
+// ModelsFetching says "拉取中…"
+// in the language the app shows.
+//
+// 正在拉取模型列表时的按钮标签。
+func ModelsFetching() string { return In(i18n.Locale()).ModelsFetching() }
+
+// ModelsFetching says "拉取中…"
+// in the language of msgs.
+//
+// 正在拉取模型列表时的按钮标签。
+func (msgs Messages) ModelsFetching() string {
+	return Catalog.Format(msgs.locale, "modelsFetching", nil)
+}
+
 // ModelsFetchEmpty says "接口返回了空列表"
 // in the language the app shows.
 //

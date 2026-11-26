@@ -20,7 +20,10 @@
 // 适用范围。用户要选的是「哪一档」，不是「哪一家」。
 package providers
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // Kind 描述预设属于哪一类服务。
 type Kind string
@@ -88,7 +91,7 @@ type Plan struct {
 }
 
 // All 返回全部预设。
-func All() []Preset { return presets }
+func All() []Preset { return slices.Clone(presets) }
 
 // ByID 按 id 查预设。
 func ByID(id string) (Preset, bool) {

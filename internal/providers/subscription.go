@@ -71,8 +71,7 @@ func claudeUsage() (Quota, bool) {
 		return Quota{}, false
 	}
 
-	// Claude 的窗口是 5 小时滚动。要算「当前窗口内用了多少」，
-	// 得找到最近一条记录，再从它往前推 5 小时。
+	now := time.Now()
 	type rec struct {
 		ts    time.Time
 		input int
@@ -80,14 +79,11 @@ func claudeUsage() (Quota, bool) {
 	}
 	var recs []rec
 
-	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	walkErr := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(path) != ".jsonl" {
 			return nil
 		}
-		// 只看最近改过的文件。一个装了很久的机器上可能有几百个
-		// session 文件，全读一遍要好几秒，而当前窗口的数据
-		// 一定在最近修改的文件里。
-		if time.Since(info.ModTime()) > 24*time.Hour {
+		if now.Sub(info.ModTime()) > 24*time.Hour {
 			return nil
 		}
 		f, err := os.Open(path)
@@ -121,30 +117,41 @@ func claudeUsage() (Quota, bool) {
 			}
 			recs = append(recs, rec{ts, line.Message.Usage.InputTokens, line.Message.Usage.OutputTokens})
 		}
+		if err := sc.Err(); err != nil {
+			return err
+		}
 		return nil
 	})
 
-	if len(recs) == 0 {
+	if walkErr != nil || len(recs) == 0 {
 		return Quota{}, false
 	}
 	sort.Slice(recs, func(i, j int) bool { return recs[i].ts.Before(recs[j].ts) })
 
-	// 5 小时窗口：以最后一条记录为终点往前推。不用「当前时刻」
-	// 作终点，因为用户可能已经离开电脑几小时了，那时真实窗口
-	// 早就重置，报一个空的窗口没有意义。
 	last := recs[len(recs)-1].ts
-	start := last.Add(-5 * time.Hour)
+	if now.Sub(last) >= 5*time.Hour {
+		return Quota{}, false
+	}
+	start := now.Add(-5 * time.Hour)
 	used := 0
+	var firstInWindow time.Time
 	for _, r := range recs {
-		if r.ts.After(start) || r.ts.Equal(start) {
-			used += r.input + r.out
+		if r.ts.Before(start) || r.ts.After(now) {
+			continue
 		}
+		if firstInWindow.IsZero() {
+			firstInWindow = r.ts
+		}
+		used += r.input + r.out
+	}
+	if firstInWindow.IsZero() {
+		return Quota{}, false
 	}
 	return Quota{
 		PresetID:   "claude-code",
 		Window:     5 * time.Hour,
 		Used:       used,
-		ResetAt:    last.Add(5 * time.Hour),
+		ResetAt:    firstInWindow.Add(5 * time.Hour),
 		Confidence: "measured",
 		Notes:      "从本机 Claude Code 的会话记录里数出来的 token 数。上限不公开，只能看趋势。",
 		ConsoleURL: "https://claude.ai/settings/usage",

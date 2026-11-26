@@ -81,8 +81,8 @@ func TestReceiptFeed(t *testing.T) {
 	if start == end {
 		t.Fatalf("首帧与停稳帧相同：%v", start)
 	}
-	if a.feedDistance <= 0 {
-		t.Fatalf("纸高未测量: %v", a.feedDistance)
+	if a.paperFeed.distance <= 0 {
+		t.Fatalf("纸高未测量: %v", a.paperFeed.distance)
 	}
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
 	a.dayFilter = "2026-11-03"
@@ -98,13 +98,13 @@ func TestReceiptFeed(t *testing.T) {
 func TestReceiptFeedMeasuresNewPaper(t *testing.T) {
 	a, tt := receiptTestApp(t)
 	tt.Advance(time.Second)
-	long := a.feedDistance
+	long := a.paperFeed.distance
 	a.receipt = ReceiptDay{}
 	a.stopShred()
 	tt.Frame()
 	tt.Advance(time.Second / 60)
-	if a.feedDistance <= 0 || a.feedDistance >= long/2 {
-		t.Fatalf("送纸距离 = %.1f，应该是空白小票的高度，不是旧纸的 %.1f", a.feedDistance, long)
+	if a.paperFeed.distance <= 0 || a.paperFeed.distance >= long/2 {
+		t.Fatalf("送纸距离 = %.1f，应该是空白小票的高度，不是旧纸的 %.1f", a.paperFeed.distance, long)
 	}
 }
 

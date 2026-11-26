@@ -159,8 +159,9 @@ func TestRunnerScript(t *testing.T) {
 	if _, err := os.Stat(r.st.ShotFile(rows[0].ID)); err != nil {
 		t.Fatal(err)
 	}
-	sessions := r.RecentSessions(5)
-	if len(sessions) != 1 || sessions[0].EndReason != EndIdle || sessions[0].Snapshots != 1 {
+	var sessions []Session
+	eventually(t, func() bool { sessions = r.RecentSessions(5); return len(sessions) == 1 })
+	if sessions[0].EndReason != EndIdle || sessions[0].Snapshots != 1 {
 		t.Fatal(sessions)
 	}
 	sys.mu.Lock()
@@ -178,8 +179,8 @@ func TestRunnerScript(t *testing.T) {
 	sys.mu.Unlock()
 	c.advance(time.Second)
 	eventually(t, func() bool { return r.Status().Block == BlockScreenLocked })
-	sessions = r.RecentSessions(5)
-	if len(sessions) != 2 || sessions[0].EndReason != EndLock || sessions[0].Snapshots != 1 {
+	eventually(t, func() bool { sessions = r.RecentSessions(5); return len(sessions) == 2 })
+	if sessions[0].EndReason != EndLock || sessions[0].Snapshots != 1 {
 		t.Fatal(sessions)
 	}
 
@@ -354,7 +355,7 @@ func TestRunnerBlankBackoff(t *testing.T) {
 	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
 	for i, interval := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
 		c.advance(interval)
-		eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.blankFrames == i+1 && !r.machine.probing })
+		eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.blankFrames == i+1 && r.machine.job != jobProbe })
 	}
 	if got := screen.count(); got != 3 {
 		t.Fatalf("grabs=%d", got)
@@ -467,7 +468,7 @@ func TestRunnerUsesObservationTimeAfterInput(t *testing.T) {
 	c.ticks <- stale
 	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.lastClick.Equal(event) })
 	c.advance(250 * time.Millisecond)
-	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.machine.inFlight })
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.job != jobCapture })
 	r.mu.Lock()
 	got := r.machine.lastClick
 	r.mu.Unlock()
@@ -494,7 +495,7 @@ func TestRunnerRejectsLiveSensitiveWindow(t *testing.T) {
 	eventually(t, func() bool {
 		r.mu.Lock()
 		defer r.mu.Unlock()
-		return r.machine.initialized && !r.machine.inFlight && r.machine.Block == BlockSensitiveApp
+		return r.machine.initialized && r.machine.job != jobCapture && r.machine.Block == BlockSensitiveApp
 	})
 	rows, err := r.Snapshots(c.Now().Format("2006-01-02"))
 	if err != nil || len(rows) != 0 {
@@ -537,5 +538,74 @@ func TestApplyStoragePolicyWhileStopped(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("未执行容量限制")
+	}
+}
+
+func TestRunnerCloseWaitsMaintenanceAndRejectsStaleRunError(t *testing.T) {
+	d, _, _ := fakeDependencies()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ops := defaultMaintenanceOps()
+	ops.enforce = func(*Storage, int64) (int64, error) {
+		close(started)
+		<-release
+		return 0, errors.New("stale enforce error")
+	}
+	d.maintenanceOps = &ops
+	r, err := newRunner(Settings{Root: t.TempDir(), MaxStorage: 100}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	r.lifecycle.Lock()
+	run1Done := r.maintenanceDone[len(r.maintenanceDone)-1]
+	r.lifecycle.Unlock()
+	r.mu.Lock()
+	r.requestEnforce()
+	r.mu.Unlock()
+	<-started
+	r.Stop()
+	r.Start()
+	close(release)
+	<-run1Done
+	if got := r.Status().LastErr; got != nil {
+		t.Fatalf("stale run-1 maintenance error polluted run-2: %v", got)
+	}
+	r.Close()
+
+	d2, _, _ := fakeDependencies()
+	bgStarted := make(chan struct{})
+	bgRelease := make(chan struct{})
+	ops2 := defaultMaintenanceOps()
+	ops2.prune = func(*Storage, int, time.Time) (int, error) {
+		close(bgStarted)
+		<-bgRelease
+		return 0, nil
+	}
+	d2.maintenanceOps = &ops2
+	cfg := Settings{Root: t.TempDir(), RetentionDays: 30}
+	r2, err := newRunner(cfg, d2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RetentionDays = 7
+	r2.Apply(cfg)
+	<-bgStarted
+	closed := make(chan struct{})
+	go func() {
+		r2.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+		close(bgRelease)
+		t.Fatal("Close returned before background maintenance exited")
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(bgRelease)
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close timed out waiting for background maintenance")
 	}
 }

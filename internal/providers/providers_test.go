@@ -7,11 +7,13 @@
 package providers
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 预设表必须能支撑 UI 的三种画法：一个网格、一个详情面板、一个档位选择。
@@ -171,5 +173,119 @@ func TestDetectLocalEmptyHome(t *testing.T) {
 	readClaudeKeychain = func() ([]byte, error) { return nil, os.ErrNotExist }
 	if creds := DetectLocal(); len(creds) != 0 {
 		t.Fatalf("没有任何 CLI 时应返回空，得到 %d 条", len(creds))
+	}
+}
+
+func TestDetectLocalKeychainFallbackAndMillisTimestamp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	orig := readClaudeKeychain
+	t.Cleanup(func() { readClaudeKeychain = orig })
+	readClaudeKeychain = func() ([]byte, error) { return nil, os.ErrNotExist }
+
+	const ms int64 = 1794000000123
+	credJSON := `{"claudeAiOauth":{"accessToken":"file-token","refreshToken":"r2","expiresAt":1794000000123}}`
+	path := filepath.Join(home, ".claude", ".credentials.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(credJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	creds := DetectLocal()
+	if len(creds) != 1 || creds[0].AccessToken != "file-token" {
+		t.Fatalf("expected fallback to credentials file, got %+v", creds)
+	}
+	if !creds[0].ExpiresAt.Equal(time.UnixMilli(ms)) {
+		t.Fatalf("ExpiresAt = %v, want %v", creds[0].ExpiresAt, time.UnixMilli(ms))
+	}
+	if got := parseTime("1794000000123"); !got.Equal(time.UnixMilli(ms)) {
+		t.Fatalf("parseTime ms string = %v, want %v", got, time.UnixMilli(ms))
+	}
+	if got := parseTime("1794000000"); !got.Equal(time.Unix(1794000000, 0)) {
+		t.Fatalf("parseTime sec string = %v, want %v", got, time.Unix(1794000000, 0))
+	}
+}
+
+func TestAllReturnsClonedSlice(t *testing.T) {
+	a := All()
+	if len(a) == 0 {
+		t.Fatal("empty presets")
+	}
+	origID := a[0].ID
+	a[0].ID = "tampered"
+	b := All()
+	if b[0].ID != origID {
+		t.Fatalf("All() backing slice was mutated: got %q, want %q", b[0].ID, origID)
+	}
+}
+
+func TestLocalUsageRollingWindow(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	projDir := filepath.Join(home, ".claude", "projects", "p1")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	writeUsageFile := func(name string, recs []struct {
+		ts       time.Time
+		in, out  int
+	}) {
+		var sb strings.Builder
+		for _, r := range recs {
+			line, _ := json.Marshal(map[string]any{
+				"timestamp": r.ts.Format(time.RFC3339Nano),
+				"message": map[string]any{
+					"usage": map[string]int{"input_tokens": r.in, "output_tokens": r.out},
+				},
+			})
+			sb.Write(line)
+			sb.WriteByte('\n')
+		}
+		if err := os.WriteFile(filepath.Join(projDir, name), []byte(sb.String()), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	firstActive := now.Add(-2 * time.Hour)
+	writeUsageFile("session.jsonl", []struct {
+		ts      time.Time
+		in, out int
+	}{
+		{now.Add(-6 * time.Hour), 9000, 1000},
+		{firstActive, 100, 20},
+		{now.Add(-30 * time.Minute), 50, 10},
+	})
+	q, ok := LocalUsage("claude-code")
+	if !ok {
+		t.Fatal("expected active LocalUsage")
+	}
+	if q.Used != 180 {
+		t.Fatalf("Used = %d, want 180", q.Used)
+	}
+	wantReset := firstActive.Add(5 * time.Hour)
+	if !q.ResetAt.Equal(wantReset) {
+		t.Fatalf("ResetAt = %v, want %v", q.ResetAt, wantReset)
+	}
+
+	writeUsageFile("session.jsonl", []struct {
+		ts      time.Time
+		in, out int
+	}{
+		{now.Add(-5*time.Hour - time.Minute), 100, 20},
+	})
+	if q, ok := LocalUsage("claude-code"); ok {
+		t.Fatalf("expected expired window to return false, got %+v", q)
+	}
+
+	oversized := strings.Repeat("a", (4<<20)+16) + "\n"
+	if err := os.WriteFile(filepath.Join(projDir, "session.jsonl"), []byte(oversized), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if q, ok := LocalUsage("claude-code"); ok {
+		t.Fatalf("expected scanner error to return false, got %+v", q)
 	}
 }

@@ -61,7 +61,7 @@ func buildRules(enabled map[string]bool, words []string) []matcher {
 	add("HOME", regexMatcher("HOME", reHome, homeOK))
 	add("MAC", regexMatcher("MAC", reMAC, macOK))
 
-	if len(words) > 0 {
+	if enabled["WORD"] && len(words) > 0 {
 		out = append(out, wordMatcher(words))
 	}
 	return out
@@ -304,7 +304,7 @@ func wordMatcher(words []string) matcher {
 					continue
 				}
 				from := 0
-				for from <= len(s) {
+				for from < len(s) {
 					i := strings.Index(s[from:], w)
 					if i < 0 {
 						break
@@ -313,8 +313,10 @@ func wordMatcher(words []string) matcher {
 					b := a + len(w)
 					if wordBoundaryOK(s, a, b) {
 						out = append(out, span{kind: "WORD", start: a, end: b})
+						from = b
+					} else {
+						from = a + 1
 					}
-					from = a + len(w)
 				}
 			}
 			return out

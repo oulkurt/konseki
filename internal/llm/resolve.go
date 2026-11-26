@@ -49,29 +49,47 @@ type Resolved struct {
 // 对有原生协议的厂商（Anthropic、DeepSeek、Kimi …）优先走原生，
 // 因为 thinking 和 prompt cache 在兼容层里常常被丢掉。
 func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
+	r, err := ResolveEndpoint(pc, preferAnthropic)
+	if err != nil {
+		return r, err
+	}
+	if r.Model == "" {
+		return r, fmt.Errorf("%s: %w", r.ProviderName, ErrNoModel)
+	}
+	return r, nil
+}
+
+func ResolveEndpoint(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 	preset, _ := providers.ByID(pc.Preset)
 
-	name := pc.Label
-	if name == "" {
-		name = preset.Name
-	}
-	if name == "" {
-		name = pc.Preset
-	}
+	name := firstNonEmpty(pc.Label, preset.Name, pc.Preset)
 
-	// 先找用户选的档位。档位里的端点可能只覆盖了一部分
-	// （比如某区域只给了 Chat 没给 Anthropic），缺的字段落回预设。
+	eps := providers.Endpoints(preset)
 	var region providers.Region
-	for _, r := range providers.Endpoints(preset) {
-		if r.ID == pc.Region {
-			region = r
-			break
+	var regionModels []string
+	matched := false
+	if pc.Region != "" {
+		for i, ep := range eps {
+			if ep.ID == pc.Region {
+				region = ep
+				matched = true
+				if i < len(preset.Regions) {
+					regionModels = preset.Regions[i].Models
+				}
+				break
+			}
 		}
 	}
-	if region.ID == "" && len(preset.Regions) > 0 {
-		// 没选或选了不存在的档位，用第一档。magpie 的约定是
-		// 第一个 region 就是预设的默认端点。
-		region = providers.Endpoints(preset)[0]
+	if !matched {
+		if pc.Region != "" && len(preset.Regions) > 0 && strings.TrimSpace(pc.ChatBase) == "" && strings.TrimSpace(pc.AnthropicBase) == "" {
+			return Resolved{ProviderName: name}, fmt.Errorf("%s: unknown region %q: %w", name, pc.Region, ErrNoEndpoint)
+		}
+		if len(eps) > 0 {
+			region = eps[0]
+		}
+		if len(preset.Regions) > 0 {
+			regionModels = preset.Regions[0].Models
+		}
 	}
 
 	chatBase := firstNonEmpty(pc.ChatBase, region.Chat, preset.Chat)
@@ -80,22 +98,21 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 	r := Resolved{
 		ProviderName:      name,
 		SupportsAnthropic: anthropicBase != "",
+		Model: firstNonEmpty(
+			pc.DefaultModel,
+			firstNonEmpty(regionModels...),
+			firstNonEmpty(pc.EnabledModels...),
+			firstNonEmpty(preset.Models...),
+		),
 	}
 
-	if pc.DefaultModel != "" {
-		r.Model = pc.DefaultModel
-	} else {
-		r.Model = firstOf(preset.Models)
-	}
-
-	// 模型列表：档位的模型 + 用户启用的，都没有才退到预设全集。
-	// 档位优先是因为某区域的模型列表才是那把 key 真能调的。
 	base := region.Models
 	if len(base) == 0 {
 		base = preset.Models
 	}
 	seen := map[string]bool{}
 	for _, m := range append(append([]string{}, base...), pc.EnabledModels...) {
+		m = strings.TrimSpace(m)
 		if m != "" && !seen[m] {
 			seen[m] = true
 			r.Models = append(r.Models, m)
@@ -110,18 +127,12 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		r.Kind = OpenAICompatible
 		r.BaseURL = chatBase
 	case anthropicBase != "":
-		// 只支持原生协议的供应商（Claude 官方）
 		r.Kind = AnthropicMessages
 		r.BaseURL = anthropicBase
 	default:
 		return r, fmt.Errorf("%s: %w", name, ErrNoEndpoint)
 	}
 
-	if r.Model == "" {
-		return r, fmt.Errorf("%s: %w", name, ErrNoModel)
-	}
-
-	// Azure 的部署名是模型 id，但请求要用 api-key 头而不是 Bearer。
 	if strings.Contains(r.BaseURL, ".openai.azure.com") {
 		r.Headers = map[string]string{"api-key": ""}
 	}
@@ -133,13 +144,6 @@ func firstNonEmpty(vals ...string) string {
 		if strings.TrimSpace(v) != "" {
 			return strings.TrimSpace(v)
 		}
-	}
-	return ""
-}
-
-func firstOf(vals []string) string {
-	if len(vals) > 0 {
-		return vals[0]
 	}
 	return ""
 }

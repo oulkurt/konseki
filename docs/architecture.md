@@ -2,18 +2,14 @@
 
 应用使用 Go 与 mygo 构建原生界面。main 在创建窗口前分流 query，再组合 capture、config、summary 与模型服务。shell 编排时间轴和设置，小票组件呈现摘要。
 
-界面跨帧保存模型数据、控件状态与 ui.Handle。ui.Context 和本轮 Element 不进入后台任务。后台任务通过 app.post 发布结果；该回调绑定 Window.Update，让界面线程接收状态更新。供应商探测和模型请求不阻塞界面构建。
+界面状态按显式状态机集中收口在 app_state.go。appTasks 统一监管后台任务取消与退出收尾，关闭应用时先关闭并等待所有后台任务，再调用 Runner.Close 等待采集循环、后台维护和存储策略全部退出。供应商测试与模型拉取通过单调递增护栏令牌（epoch）与供应商键丢弃过时结果；凭据扫描通过扫描 epoch 丢弃过时结果。摘要生成在切天时不立即作废后台写盘，但仅在匹配当前日期时更新列表，切换模型、默认供应商、清空或关闭时取消当前运行（setDefaultProvider 复用 setSummaryModel，rebuildGenerator 丢弃旧生成器时同步推进 cfgSeq 并取消运行），并在 summaryJobState.inFlight 中保留全部未退出句柄，供清空动作阻塞等完。清空活动数据以 clearSaga 管理多阶段状态，部分失败（含仅旧导出删除失败）时保留重试入口，成功或失败均同步刷新统计、会话和旧导出状态；清空成功后重置活动摘要错误并调用 rebuildGenerator 重新校验供应商配置，保留未修复的缺模型或缺失端点错误提示。小票送纸、新条目展开与碎纸清除分别采用显式动画阶段与两阶段测量，不再使用魔法负数哨兵；碎纸停止时在退出钩子内统一清零物理与蒙版状态并重置帧探针。配置保存错误（app.err）、只读刷新错误（app.readErr）、供应商装配或摘要任务失败（summary.err，其中 rebuildGenerator 配置错误跨日期作用域清空 dayKey 显示）与摘要读盘错误（summaryReadErr）分离存储：日常刷新不掩盖持久化失败，时间轴页直接展示对应日期或全局配置失败的摘要错误与读盘错误。切页与切换设置子页时统一归零滚动位置并清除输入框焦点态，消除卸载后的僵尸提交；供应商列表外层容器与内部控件统一绑定基于不可复用随机持久 ID（NewProviderID）的稳定 c.Key，新增供应商后按新建 ID 精确定位并展开编辑行，并在供应商设置行提供按协议触发的模型拉取入口与结果反馈。ui.Context 和本轮 Element 不进入后台任务，后台结果统一通过 postUI 投递到界面线程。
 
-capture.Machine 是纯状态机。它接收时间和观测，输出采集、探测及会话动作。Runner 读取系统观测，执行动作并反馈结果。Screen、OCREngine、观测源与时钟接口隔离平台能力，测试可注入假依赖。macOS 后端连接 CoreGraphics 与 Vision；其他平台的现有桩不构成全功能承诺。键鼠计数开启时读取系统累计值，按隐私状态与会话边界计算增量；关闭时不读数。
+capture.Machine 是纯状态机。它接收时间和观测，用显式作业槽（jobKind）区分空闲、抓取与探测，并在停止时完整归零状态。Machine.EffectivePhase 统一裁决关闭、锁屏、暂停、阻塞与录制优先级，Runner.Status 直接读取该结果以避免优先级反转。Runner 在 runner_state.go 拆分工作流逻辑，切换目标目录时先打开新目录并提交 Store 与 Storage，打开失败则中止开会话与抓帧并保留错误，不向旧目录写入截图或会话。bgWG 监管异步维护任务，runGen 隔离各次启停的维护错误以防旧错误覆写新一轮状态，ClearAll 与 Close 阻塞等待后台任务退出，而普通 Stop 仅等待采集循环退出（含完成当次抓帧及有界关闭 OCR 队列）并跳过后台维护任务的等待。抓帧结果通过显式 captureOutcome 区分保存、重复、黑屏、敏感、中止与失败，过期代次探测不触发退避。Start 与 ClearAll 同步重置基线、会话计数和历史错误，避免跨启停污染。Frame 持有互斥锁与 Close 边界，确保原生图像句柄并发释放安全。macOS 后端连接 CoreGraphics 与 Vision；其他平台的现有桩不构成全功能承诺。键鼠计数开启时读取系统累计值，在休眠恢复或计数器回绕时作废当前区间，按隐私状态与会话边界计算增量；关闭时不读数。
 
-抓帧任务先去重，再保存 JPEG 与快照。OCR 队列保留原分辨率帧，不从持久化 JPEG 回读识别。JPEG 编码单独缩放和压缩，维护任务继续降低旧截图质量。识别质量与磁盘成本因此各有边界。有界队列和会话抽样限制 OCR 积压。
+抓帧任务先去重，再保存 JPEG 与快照。OCR 队列通过 closed 标记、cancelableOCR 取消接口、VNRecognizeTextRequest.cancel 与 Runner 级共享执行许可（ocrPermit）编排超时与关闭路径：停止或超时触发上下文取消，有界宽限（cancelGrace）等待可取消识别器响应并确保未退出的旧工作协程未完成前不开启重叠识别；即使旧识别器暂未退出而 Stop 先行返回、Runner 随后重启新队列，新任务仍等待同一 ocrPermit 归还（并随时响应新队列停止信号），在保留有界停止的同时消除跨启停并发重叠。Store 按天向快照、OCR 和会话 JSONL 追加记录；OpenStore 标记只读并拒绝写入。Storage 追踪已扫描标志防止未扫描前绕过配额淘汰，并在 Degrade 中跳过重编码体积不减的文件以消除活锁，单张坏图不阻断后续降质。维护任务按保留天数与磁盘配额淘汰历史记录，不删除设置和摘要。
 
-Store 按天向快照、OCR 和会话 JSONL 追加记录。JPEG 独立存储，快照通过路径引用它。会话保留启动、暂停和结束边界。维护任务按保留天数与磁盘配额淘汰历史记录，不删除设置和摘要。
+config.Store 在 Open 和 Update 期间通过目录级 OS 锁（Unix flock / Windows LockFileEx）串行化访问并配合 .config.tx.json 预写事务协调双文件提交：在重放未完成事务前先校验磁盘与事务版本号以防止旧事务降级高版本配置，在锁内重读最新磁盘配置与密钥后再执行更新、为新建供应商分配不可复用的随机持久 ID 并拒绝覆写更高未知版本；写入时将密钥载荷隔离存放在独立的 0600 文件 .secrets.tx 中，.config.tx.json 仅保存配置字节与 secretsSha256 校验值（保留对旧内联 secrets 字段事务的恢复兼容），按序提交 secrets.json 与 config.json 并在第二步失败时回滚 secrets.json，清理阶段先删除并确认移除 .config.tx.json 后再清理 .secrets.tx（防止中断留下悬空引用）；只读 Read 通过 tx_stream.go 的固定 4 KiB 读取缓冲区逐字节零堆分配扫描从 .config.tx.json 中提取并解码 config 字段（不打开 .secrets.tx 或 secrets.json；若兼容扫描旧内联事务，仅该 4 KiB 读取缓冲区会短暂滑过旧事务原始字节，不将 secrets 堆分配、保留或执行 Base64 解码）。ProviderConfig 维护不可复用的唯一 ID（旧配置缺省 ID 仅在只读加载迁移期按确定性规则补齐），加载旧密钥时仅在整份配置下 preset|label 唯一时自动迁移，存在多条同组合键配置时以 unclaimed| 前缀隔离保留未认领旧密钥并仅在提交成功后同步 preservedSecrets，直到全部同键端点各自持钥或被移除。summary 模块在 store.go 与平台独占锁（含 Windows LockFileEx）上串行化跨实例写盘，维护目录级持久化 .gen 文件作为跨实例清空代次防线；Upsert 与 UpsertIfGen 在写入前严格解析行 JSON（坏行直接中止），GenerateDay 记录窗口覆盖末端 CoveredUntil 以便同一时间窗后半段新活动触发更新，并通过 upsertGuarded 在同一文件锁与 Store.mu 保护的提交边界内持 Generator.mu 复核取消与 cfgSeq 后才重命名落盘，消除等待存储锁期间切换模型或默认供应商引发的回写竞争。redact 区分进程盐与实例级反查表，禁用脱敏的实例不会从全局表还原旧明文，分类覆写大小写折叠保持一致。
 
-summary 聚合采集证据并调用 llm。脱敏总开关开启时，请求按所选规则遮蔽文字；关闭时发送原文。响应中的占位符在本机还原。供应商设置与密钥分开保存。截图保持可读图像，不执行图像脱敏。
+llm 层在 Stream 取消时返回错误并对齐非流式参数，Anthropic 统一拼装 /v1/messages 并无条件携带版本头，ListModelsForKind 按解析协议构造路径与鉴权头（Anthropic 走 /v1/models 与 x-api-key，OpenAI 兼容走 /models 与 Bearer），ResolveEndpoint 支持无默认模型时解析拉取端点。providers 对本机钥匙串调用设置超时并支持文件回退与毫秒时间戳，滚动窗口以当前时刻定锚。query 检验目录类型、补全布尔参数解析与环形搜索缓存，link 与 skill/legacy 防范符号链接竞争与尾斜杠绕过。
 
-query 通过 config.Read 读取不含密钥的设置。它只读打开采集与摘要存储，不创建数据目录，不启动采集或模型请求，也不扫描 CLI 凭据。命令输出 JSON，并按脱敏设置遮蔽文字。截图路径指向可读 JPEG。Agent 读取之后是否外传取决于该 Agent。
-
-skills/konseki 只含技能说明。独立 skills CLI 安装到 canonical universal 目录，Agent 按需执行 query。应用不再写静态历史导出。internal/skill 按固定内容标记清理旧导出，保留新技能、用户文件和软链接。
-
-e2e 构建的许可策略默认拒绝，仅环境值 1 放行。生产 Screen 构造器包装平台后端，在 Grab 与 Permission 前检查许可；公开授权入口同样先检查。live 启动命令清除继承许可，仅按 -recorder 写入 0 或 1。正式构建恒允许，不读取该变量。行为测试替换后端，放行测试也不调用原生 API。
+e2e 构建的许可策略默认拒绝，仅环境值 1 放行。guardedScreen 与 nativeObservations.LiveFront 同时拦截 Grab、Permission、FrontWindow 与实时窗口所有者查询。live 启动命令清除继承许可并按 -recorder 写入 0 或 1，将子进程 stderr 持久化到隔离目录内的 stderr.log 以避免启动器退出后子进程写日志触发 SIGPIPE（仅在提前退出或超时失败时读取有界诊断尾部），同时强制 RPC 截止时间与超时期满强杀后回收子进程。

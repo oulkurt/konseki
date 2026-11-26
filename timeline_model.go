@@ -86,20 +86,25 @@ func buildReceiptWindow(day time.Time, sums []summary.Entry, blocks []capture.Bl
 		if result.StartedAt.IsZero() || bs.Before(result.StartedAt) {
 			result.StartedAt = bs
 		}
-		// 摘要覆盖的窗口不再生成待摘要行。
 		for cursor := bs; cursor.Before(be) || cursor.Equal(bs); {
 			elapsed := cursor.Sub(start)
 			bucket := int64(elapsed / window)
 			ws := start.Add(time.Duration(bucket) * window)
 			we := minTime(ws.Add(window), end)
+			subEnd := minTime(be, we)
+			if subEnd.Equal(cursor) {
+				subEnd = cursor
+			}
 			covered := false
 			for _, s := range sums {
 				if s.Start.Before(we) && s.End.After(ws) {
-					covered = true
 					for i := range result.Lines {
 						if result.Lines[i].ID == s.ID {
 							result.Lines[i].Apps = appendUnique(result.Lines[i].Apps, b.App)
 						}
+					}
+					if !s.Start.After(cursor) && !s.End.Before(subEnd) {
+						covered = true
 					}
 				}
 			}
@@ -167,6 +172,7 @@ func buildReceiptWindow(day time.Time, sums []summary.Entry, blocks []capture.Bl
 	result.Serial = fmt.Sprintf("%s-%04d", start.Format("20060102"), result.Totals.Snapshots)
 	return result
 }
+
 func appendUnique(values []string, v string) []string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -179,12 +185,14 @@ func appendUnique(values []string, v string) []string {
 	}
 	return append(values, v)
 }
+
 func minTime(a, b time.Time) time.Time {
 	if a.Before(b) {
 		return a
 	}
 	return b
 }
+
 func maxTime(a, b time.Time) time.Time {
 	if a.After(b) {
 		return a

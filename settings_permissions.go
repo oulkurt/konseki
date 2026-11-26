@@ -34,17 +34,25 @@ func (a *app) renderRecorderPermissions(c *ui.Context, pal palette) {
 				ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, item.label).Grow(1).FontSize(12).TextColor(pal.textPrimary)
 					state := msg.RecorderPermissionMissing()
-					if item.state == capture.PermGranted {
+					switch item.state {
+					case capture.PermGranted:
 						state = msg.RecorderPermissionGranted()
+					case capture.PermUnknown:
+						if !a.cfgNow.Recorder.Enabled {
+							state = msg.ReceiptOff()
+						}
 					}
 					ui.Text(c, state).FontSize(11).TextColor(pal.textSecondary)
 					if item.state != capture.PermGranted {
 						if ui.Button(c.Key("request-"+item.key), msg.RecorderPermissionRequest()).Clicked() && item.request != nil {
-							state := item.request()
+							next := item.request()
 							if item.key == "screen" {
-								a.status.Perms.Screen = state
+								a.status.Perms.Screen = next
 							} else {
-								a.status.Perms.Accessibility = state
+								a.status.Perms.Accessibility = next
+							}
+							if a.runner != nil {
+								a.runner.SetPermissions(a.status.Perms)
 							}
 						}
 						if ui.Button(c.Key("settings-"+item.key), msg.RecorderPermissionSettings()).Clicked() && a.openExternal != nil {
@@ -55,8 +63,7 @@ func (a *app) renderRecorderPermissions(c *ui.Context, pal palette) {
 					}
 				})
 			}
-			// 系统设置里授权以后，要重启 Konseki 才生效，这期间状态仍是未授权。生效以后不再提示。
-			if a.status.Perms.Screen != capture.PermGranted {
+			if a.status.Perms.Screen == capture.PermDenied || (a.cfgNow.Recorder.Enabled && a.status.Perms.Screen != capture.PermGranted) {
 				ui.Text(c, msg.RecorderPermissionRestart()).FontSize(11).TextColor(pal.textSecondary)
 			}
 		})

@@ -206,25 +206,7 @@ func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, er
 	if strings.TrimSpace(req.BaseURL) == "" {
 		return nil, ErrNoEndpoint
 	}
-	body := openAIRequest{
-		Model:     req.Model,
-		MaxTokens: orDefault(req.MaxTokens, 4096),
-		Stream:    false,
-	}
-	if req.System != "" {
-		body.Messages = append(body.Messages, openAIMessage{Role: "system", Content: req.System})
-	}
-	body.Messages = append(body.Messages, openAIMessage{Role: "user", Content: req.Prompt})
-	if req.Temperature > 0 {
-		t := req.Temperature
-		body.Temperature = &t
-	}
-	if req.Thinking != "" && req.Thinking != "off" {
-		body.ReasoningEffort = req.Thinking
-	}
-	if req.JSON {
-		body.ResponseFormat = &responseFormat{Type: "json_object"}
-	}
+	body := buildOpenAIRequest(req, false)
 
 	raw, err := c.post(ctx, endpoint(req.BaseURL, "chat/completions"), req, body, false)
 	if err != nil {
@@ -250,6 +232,29 @@ func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, er
 			Cached: out.Usage.PromptTokensDetails.CachedTokens,
 		},
 	}, nil
+}
+
+func buildOpenAIRequest(req Request, stream bool) openAIRequest {
+	body := openAIRequest{
+		Model:     req.Model,
+		MaxTokens: orDefault(req.MaxTokens, 4096),
+		Stream:    stream,
+	}
+	if req.System != "" {
+		body.Messages = append(body.Messages, openAIMessage{Role: "system", Content: req.System})
+	}
+	body.Messages = append(body.Messages, openAIMessage{Role: "user", Content: req.Prompt})
+	if req.Temperature > 0 {
+		t := req.Temperature
+		body.Temperature = &t
+	}
+	if req.Thinking != "" && req.Thinking != "off" {
+		body.ReasoningEffort = req.Thinking
+	}
+	if req.JSON {
+		body.ResponseFormat = &responseFormat{Type: "json_object"}
+	}
+	return body
 }
 
 // ---------- Anthropic Messages ----------
@@ -309,18 +314,15 @@ func (c *Client) completeAnthropic(ctx context.Context, req Request) (*Response,
 	}
 	// Anthropic 的 thinking 和 temperature 互斥，而且 budget 必须小于
 	// max_tokens。给的是 max_tokens 的一半，够推理又不至于把答案挤掉。
-	if req.Thinking != "" && req.Thinking != "off" {
-		budget := maxTok / 2
-		if lvl := ThinkingBudget(req.Thinking); lvl > 0 && lvl < budget {
-			budget = lvl
+	if budget := ThinkingBudget(req.Thinking); budget > 0 && maxTok/2 > 1024 {
+		if maxTok/2 < budget {
+			budget = maxTok / 2
 		}
-		if budget > 1024 {
-			body.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
-			body.Temperature = nil
-		}
+		body.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+		body.Temperature = nil
 	}
 
-	raw, err := c.post(ctx, endpoint(req.BaseURL, "messages"), req, body, true)
+	raw, err := c.post(ctx, endpoint(req.BaseURL, "v1/messages"), req, body, true)
 	if err != nil {
 		return nil, err
 	}
@@ -369,14 +371,49 @@ func ThinkingBudget(level string) int {
 
 // ---------- 公共 ----------
 
+func splitQuery(raw string) (string, string) {
+	raw = strings.TrimSpace(raw)
+	if i := strings.IndexByte(raw, '?'); i >= 0 {
+		return strings.TrimRight(raw[:i], "/"), raw[i:]
+	}
+	return strings.TrimRight(raw, "/"), ""
+}
+
 // endpoint 把 base 和路径拼起来，容忍两种常见写法：
 // base 已经是完整的 .../chat/completions（中转站常这么给），或者只到 /v1。
 func endpoint(base, path string) string {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	if strings.HasSuffix(base, "/"+path) {
-		return base
+	basePath, query := splitQuery(base)
+	path = strings.TrimLeft(path, "/")
+	if strings.HasSuffix(basePath, "/"+path) {
+		return basePath + query
 	}
-	return base + "/" + path
+	if strings.HasPrefix(path, "v1/") && strings.HasSuffix(basePath, "/v1") {
+		return basePath + "/" + strings.TrimPrefix(path, "v1/") + query
+	}
+	return basePath + "/" + path + query
+}
+
+func hasHeader(h map[string]string, key string) bool {
+	for k := range h {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func applyAuthHeaders(h http.Header, apiKey string, extra map[string]string, anthropic bool) {
+	if anthropic {
+		h.Set("anthropic-version", "2023-06-01")
+		if apiKey != "" {
+			h.Set("x-api-key", apiKey)
+		}
+	} else if apiKey != "" && !hasHeader(extra, "api-key") {
+		h.Set("Authorization", "Bearer "+apiKey)
+	}
+	for k, v := range extra {
+		h.Set(k, v)
+	}
 }
 
 func (c *Client) post(ctx context.Context, url string, req Request, body any, anthropic bool) ([]byte, error) {
@@ -389,17 +426,7 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any, an
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if req.APIKey != "" {
-		if anthropic {
-			httpReq.Header.Set("x-api-key", req.APIKey)
-			httpReq.Header.Set("anthropic-version", "2023-06-01")
-		} else {
-			httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
-		}
-	}
-	for k, v := range req.Header {
-		httpReq.Header.Set(k, v)
-	}
+	applyAuthHeaders(httpReq.Header, req.APIKey, req.Header, anthropic)
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
@@ -428,20 +455,19 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any, an
 // 「边生成边显示摘要」时不用改结构。
 func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) (*Response, error) {
 	if req.Kind == AnthropicMessages {
-		return c.Complete(ctx, req)
+		resp, err := c.Complete(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if onDelta != nil && resp.Text != "" {
+			onDelta(resp.Text)
+		}
+		return resp, nil
 	}
 	if strings.TrimSpace(req.BaseURL) == "" {
 		return nil, ErrNoEndpoint
 	}
-	body := openAIRequest{
-		Model:     req.Model,
-		MaxTokens: orDefault(req.MaxTokens, 4096),
-		Stream:    true,
-	}
-	if req.System != "" {
-		body.Messages = append(body.Messages, openAIMessage{Role: "system", Content: req.System})
-	}
-	body.Messages = append(body.Messages, openAIMessage{Role: "user", Content: req.Prompt})
+	body := buildOpenAIRequest(req, true)
 
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -452,17 +478,12 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if req.APIKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+req.APIKey)
-	}
-	for k, v := range req.Header {
-		httpReq.Header.Set(k, v)
-	}
+	applyAuthHeaders(httpReq.Header, req.APIKey, req.Header, false)
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, &RequestError{Kind: ErrConnection, Cause: ctx.Err()}
 		}
 		return nil, &RequestError{Kind: ErrConnection, Cause: err}
 	}
@@ -473,6 +494,8 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 	}
 
 	var sb strings.Builder
+	var nonData strings.Builder
+	var sawData bool
 	var usage Usage
 	var model string
 	sc := bufio.NewScanner(resp.Body)
@@ -480,8 +503,12 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if !strings.HasPrefix(line, "data:") {
+			if !sawData && line != "" && nonData.Len() < 64<<10 {
+				nonData.WriteString(line)
+			}
 			continue
 		}
+		sawData = true
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
 			break
@@ -494,12 +521,22 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
+				PromptTokens        int `json:"prompt_tokens"`
+				CompletionTokens    int `json:"completion_tokens"`
+				PromptTokensDetails struct {
+					CachedTokens int `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
+			Error *struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			continue // 心跳或厂商自定义事件，跳过
+		}
+		if chunk.Error != nil && chunk.Error.Message != "" {
+			return nil, &APIError{Body: chunk.Error.Message}
 		}
 		if chunk.Model != "" {
 			model = chunk.Model
@@ -507,39 +544,72 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 		if chunk.Usage != nil {
 			usage.Input = chunk.Usage.PromptTokens
 			usage.Output = chunk.Usage.CompletionTokens
+			usage.Cached = chunk.Usage.PromptTokensDetails.CachedTokens
 		}
-		for _, ch := range chunk.Choices {
-			if ch.Delta.Content != "" {
-				sb.WriteString(ch.Delta.Content)
+		if len(chunk.Choices) > 0 {
+			if delta := chunk.Choices[0].Delta.Content; delta != "" {
+				sb.WriteString(delta)
 				if onDelta != nil {
-					onDelta(ch.Delta.Content)
+					onDelta(delta)
 				}
 			}
 		}
 	}
-	if err := sc.Err(); err != nil && ctx.Err() == nil {
+	if err := ctx.Err(); err != nil {
+		return nil, &RequestError{Kind: ErrConnection, Cause: err}
+	}
+	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	if !sawData && nonData.Len() > 0 {
+		var errBody struct {
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(nonData.String()), &errBody) == nil && errBody.Error != nil && errBody.Error.Message != "" {
+			return nil, &APIError{Body: errBody.Error.Message}
+		}
+	}
+	if sb.Len() == 0 {
+		return nil, ErrEmptyResponse
 	}
 	return &Response{Text: sb.String(), Usage: usage, Model: model}, nil
 }
 
-// ListModels 向供应商要模型列表。失败不算错 —— 很多中转不支持，
-// 预设里已经有兜底列表了。
 func (c *Client) ListModels(ctx context.Context, base, apiKey string, header map[string]string) ([]string, error) {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	if base == "" {
+	basePath, _ := splitQuery(base)
+	kind := OpenAICompatible
+	if strings.HasSuffix(basePath, "/v1/messages") || strings.HasSuffix(basePath, "/messages") {
+		kind = AnthropicMessages
+	}
+	return c.ListModelsForKind(ctx, kind, base, apiKey, header)
+}
+
+func (c *Client) ListModelsForKind(ctx context.Context, kind Kind, base, apiKey string, header map[string]string) ([]string, error) {
+	basePath, query := splitQuery(base)
+	if basePath == "" {
 		return nil, ErrNoEndpoint
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint(base, "models"), nil)
+	targetPath := "models"
+	anthropic := false
+	if kind == AnthropicMessages {
+		for _, suffix := range []string{"/v1/messages", "/messages"} {
+			if strings.HasSuffix(basePath, suffix) {
+				basePath = strings.TrimSuffix(basePath, suffix)
+				break
+			}
+		}
+		targetPath = "v1/models"
+		anthropic = true
+	} else {
+		basePath = strings.TrimSuffix(basePath, "/chat/completions")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint(basePath+query, targetPath), nil)
 	if err != nil {
 		return nil, err
 	}
-	if apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	for k, v := range header {
-		httpReq.Header.Set(k, v)
-	}
+	applyAuthHeaders(httpReq.Header, apiKey, header, anthropic)
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {

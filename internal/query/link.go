@@ -11,6 +11,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
+)
+
+const (
+	linkTempPrefix = ".konseki-link-"
+	staleLinkAge   = 10 * time.Minute
+	linkAttempts   = 3
 )
 
 var (
@@ -26,25 +34,48 @@ func Link(dir, exe string) error {
 	if !filepath.IsAbs(exe) {
 		return fmt.Errorf("%w: %q", ErrExecutableNotAbsolute, exe)
 	}
-	path := filepath.Join(dir, LinkName)
-	info, err := os.Lstat(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return os.Symlink(exe, path)
-	case err != nil:
-		return err
-	}
-	if info.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("%w: %s", ErrLinkOccupied, path)
-	}
-	target, err := os.Readlink(path)
+	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
 	}
-	if filepath.Clean(resolve(dir, target)) == filepath.Clean(exe) {
-		return nil
+	exe = filepath.Clean(exe)
+	path := filepath.Join(absDir, LinkName)
+	for attempt := 0; attempt < linkAttempts; attempt++ {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			err = os.Symlink(exe, path)
+			if err == nil {
+				return nil
+			}
+			if errors.Is(err, os.ErrExist) && attempt+1 < linkAttempts {
+				continue
+			}
+			return err
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return fmt.Errorf("%w: %s", ErrLinkOccupied, path)
+		}
+		target, err := os.Readlink(path)
+		if errors.Is(err, os.ErrNotExist) && attempt+1 < linkAttempts {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if filepath.Clean(resolve(absDir, target)) == exe {
+			return nil
+		}
+		return replaceLink(absDir, path, exe)
 	}
-	tmpDir, err := os.MkdirTemp(dir, ".konseki-link-")
+	return fmt.Errorf("query: failed to link %s", path)
+}
+
+func replaceLink(dir, path, exe string) error {
+	cleanStaleLinkTempDirs(dir)
+	tmpDir, err := os.MkdirTemp(dir, linkTempPrefix)
 	if err != nil {
 		return err
 	}
@@ -53,11 +84,34 @@ func Link(dir, exe string) error {
 	if err := os.Symlink(exe, tmp); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
+	return os.Rename(tmp, path)
+}
+
+func cleanStaleLinkTempDirs(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
 	}
-	return nil
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), linkTempPrefix) {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		info, err := os.Lstat(p)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		if time.Since(info.ModTime()) < staleLinkAge {
+			continue
+		}
+		sub, err := os.ReadDir(p)
+		if err != nil {
+			continue
+		}
+		if len(sub) == 0 || (len(sub) == 1 && sub[0].Name() == LinkName && sub[0].Type()&os.ModeSymlink != 0) {
+			_ = os.RemoveAll(p)
+		}
+	}
 }
 
 func resolve(dir, target string) string {

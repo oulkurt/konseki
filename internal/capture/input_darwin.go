@@ -16,7 +16,10 @@ import (
 	"time"
 )
 
-var platformInit sync.Once
+var (
+	platformMu    sync.Mutex
+	platformReady bool
+)
 var eventSeconds func(int32, uint32) float64
 var eventCounter func(int32, uint32) uint32
 var secureInput func() uint8
@@ -27,26 +30,29 @@ var accessibilityWithOptions func(uintptr) uint8
 var accessibilityPrompt uintptr
 
 func initPlatform() {
-	platformInit.Do(func() {
-		withPool(func() {
-			initRuntime()
-			initScreenPerm()
-			cg, _ := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
-			mustReg(cg, "CGEventSourceSecondsSinceLastEventType", &eventSeconds)
-			mustReg(cg, "CGSessionCopyCurrentDictionary", &sessionDictionary)
-			// 键鼠计数是可选功能：符号缺失时 Totals 返回 false，采集照常运行。
-			optionalReg(cg, "CGEventSourceCounterForEventType", &eventCounter)
-			if hit, err := purego.Dlopen("/System/Library/Frameworks/Carbon.framework/Frameworks/HIToolbox.framework/HIToolbox", purego.RTLD_NOW); err == nil {
-				optionalReg(hit, "IsSecureEventInputEnabled", &secureInput)
-			}
-			cf, _ := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
-			mustReg(cf, "CFRelease", &cfRelease)
-			ax, _ := purego.Dlopen("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_NOW)
-			mustReg(ax, "AXIsProcessTrusted", &accessibilityTrusted)
-			mustReg(ax, "AXIsProcessTrustedWithOptions", &accessibilityWithOptions)
-			accessibilityPrompt = nativeGlobal(ax, "kAXTrustedCheckOptionPrompt")
-		})
+	platformMu.Lock()
+	defer platformMu.Unlock()
+	if platformReady {
+		return
+	}
+	withPool(func() {
+		initRuntime()
+		initScreenPerm()
+		cg := dlopenChecked("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
+		mustReg(cg, "CGEventSourceSecondsSinceLastEventType", &eventSeconds)
+		mustReg(cg, "CGSessionCopyCurrentDictionary", &sessionDictionary)
+		optionalReg(cg, "CGEventSourceCounterForEventType", &eventCounter)
+		if hit, err := purego.Dlopen("/System/Library/Frameworks/Carbon.framework/Frameworks/HIToolbox.framework/HIToolbox", purego.RTLD_NOW); err == nil && hit != 0 {
+			optionalReg(hit, "IsSecureEventInputEnabled", &secureInput)
+		}
+		cf := dlopenChecked("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_NOW)
+		mustReg(cf, "CFRelease", &cfRelease)
+		ax := dlopenChecked("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", purego.RTLD_NOW)
+		mustReg(ax, "AXIsProcessTrusted", &accessibilityTrusted)
+		mustReg(ax, "AXIsProcessTrustedWithOptions", &accessibilityWithOptions)
+		accessibilityPrompt = nativeGlobal(ax, "kAXTrustedCheckOptionPrompt")
 	})
+	platformReady = true
 }
 
 // optionalReg 注册可选符号。找不到时函数保持 nil，只关掉依赖它的功能。
@@ -119,8 +125,7 @@ func (nativeObservations) Front() Front {
 	return front
 }
 
-// LiveFront 从窗口所有者读取进程信息，避开主线程滞后的工作区缓存。
-func (nativeObservations) LiveFront() (front Front) {
+func platformLiveFront() (front Front) {
 	initPlatform()
 	withPool(func() {
 		front.App, front.Title, front.PID = frontWindow()

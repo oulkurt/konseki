@@ -12,21 +12,40 @@ import (
 	"konseki/internal/summary"
 )
 
+func resolveSummaryProviderKey(summaryID string, list []config.ProviderConfig) string {
+	if summaryID == "" {
+		return ""
+	}
+	for _, p := range list {
+		if p.ID != "" && p.ID == summaryID {
+			return providerKey(p)
+		}
+	}
+	for _, p := range list {
+		if p.Preset == summaryID {
+			return providerKey(p)
+		}
+	}
+	return ""
+}
+
 func (a *app) rebuildGenerator() {
 	if a.cfg == nil || a.llmc == nil {
 		return
 	}
 	a.cfgNow = a.cfg.Get()
 
+	selectedKey := resolveSummaryProviderKey(a.cfgNow.Summary.ProviderID, a.cfgNow.Providers)
 	var pc *config.ProviderConfig
-	for i := range a.cfgNow.Providers {
-		p := &a.cfgNow.Providers[i]
-		if p.Preset == a.cfgNow.Summary.ProviderID {
-			pc = p
-			break
+	if selectedKey != "" {
+		for i := range a.cfgNow.Providers {
+			p := &a.cfgNow.Providers[i]
+			if providerKey(*p) == selectedKey {
+				pc = p
+				break
+			}
 		}
 	}
-	// 没指定就用第一个有 key 的。
 	if pc == nil {
 		for i := range a.cfgNow.Providers {
 			p := &a.cfgNow.Providers[i]
@@ -37,14 +56,27 @@ func (a *app) rebuildGenerator() {
 		}
 	}
 	if pc == nil {
+		if a.gen != nil {
+			a.gen.SetConfig(summary.LLMConfig{})
+		}
 		a.gen = nil
+		a.summary.cancelActive()
+		a.summary.phase = summaryIdle
+		a.summary.dayKey = ""
+		a.summary.err = nil
 		return
 	}
 
 	resolved, err := llm.Resolve(*pc, true)
 	if err != nil {
+		if a.gen != nil {
+			a.gen.SetConfig(summary.LLMConfig{})
+		}
 		a.gen = nil
-		a.sumErr = errorText(a.cfgNow.Language, err)
+		a.summary.cancelActive()
+		a.summary.phase = summaryFailed
+		a.summary.dayKey = ""
+		a.summary.err = err
 		return
 	}
 
@@ -74,20 +106,38 @@ func (a *app) rebuildGenerator() {
 	} else {
 		a.gen.SetConfig(cfg)
 	}
+	if a.summary.phase == summaryFailed {
+		a.summary.phase = summaryIdle
+		a.summary.dayKey = ""
+		a.summary.err = nil
+	} else {
+		a.summary.err = nil
+	}
 }
 
-// setSummaryModel 切换摘要用的模型。
 func (a *app) setSummaryModel(providerID, model string) {
-	a.cfg.Update(func(c *config.Config) {
+	if a.cfg == nil {
+		return
+	}
+	if err := a.cfg.Update(func(c *config.Config) {
 		c.Summary.ProviderID = providerID
 		c.Summary.Model = model
-	})
+	}); err != nil {
+		a.err = err
+		return
+	}
+	a.summary.cancelActive()
 	a.rebuildGenerator()
 }
 
-// setThinking 切换推理档位。
 func (a *app) setThinking(level string) {
-	a.cfg.Update(func(c *config.Config) { c.Summary.ThinkingEffort = level })
+	if a.cfg == nil {
+		return
+	}
+	if err := a.cfg.Update(func(c *config.Config) { c.Summary.ThinkingEffort = level }); err != nil {
+		a.err = err
+		return
+	}
 	a.cfgNow = a.cfg.Get()
 	if a.gen != nil {
 		a.rebuildGenerator()

@@ -35,10 +35,11 @@ func (a *app) loadRecentSessions() {
 	if a.runner == nil || a.sums == nil || !a.cfgNow.Recorder.Enabled {
 		return
 	}
-	if time.Since(a.lastSessions) < 10*time.Second {
+	now := a.currentTime()
+	if !a.lastSessions.IsZero() && now.Sub(a.lastSessions) < 10*time.Second {
 		return
 	}
-	a.lastSessions = time.Now()
+	a.lastSessions = now
 	entriesByDay := make(map[string][]summary.Entry)
 	a.recentSessions = nil
 	for _, session := range a.runner.RecentSessions(8) {
@@ -66,7 +67,7 @@ func (a *app) renderRecentSessions(c *ui.Context, pal palette) {
 				if title == "" {
 					title = msg.RecorderSessionFallback()
 				}
-				button := ui.ButtonBase(c.Key("recent-"+session.ID)).FillWidth().Padding(6, 0).Label(title)
+				button := ui.ButtonBase(c.Key("recent-"+session.ID)).FillWidth().Padding(6, 0).Disabled(a.clear.running()).Label(title)
 				button.Children(func() {
 					ui.Column(c).FillWidth().Gap(3).Children(func() {
 						ui.Text(c, title).Bold().FontSize(12).TextColor(pal.textPrimary)

@@ -9,6 +9,7 @@ package summary
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"konseki/internal/capture"
 	"konseki/internal/redact"
@@ -33,5 +34,17 @@ func TestScreenTextBoundary(t *testing.T) {
 		if !strings.Contains(systemPrompt(lang), "<screen_text>") {
 			t.Fatalf("%s 缺少屏幕数据声明", lang)
 		}
+	}
+}
+
+func TestTrimToSlicesByRunes(t *testing.T) {
+	in := strings.Repeat("汉", 15)
+	got := trimTo(in, 10)
+	if !utf8.ValidString(got) {
+		t.Fatalf("invalid UTF-8: %q", got)
+	}
+	want := strings.Repeat("汉", 10) + "…"
+	if got != want {
+		t.Fatalf("trimTo = %q, want %q", got, want)
 	}
 }

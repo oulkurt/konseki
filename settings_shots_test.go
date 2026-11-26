@@ -135,7 +135,7 @@ func renderShredArtifacts(t *testing.T, dir, lang string, dark bool, recordGIF b
 	a.now = func() time.Time { return time.Date(2026, 11, 4, 16, 0, 0, 0, time.Local) }
 	scanTestCredentials(t, a, shotCredentials)
 	shotDay(t, a)
-	a.clearReceipt = a.receipt
+	snap := a.receipt
 	a.receipt = ReceiptDay{}
 	a.dayFilter = ""
 	a.lastLoad = time.Now().Add(time.Hour)
@@ -143,8 +143,7 @@ func renderShredArtifacts(t *testing.T, dir, lang string, dark bool, recordGIF b
 	tt := ui.NewTester(a.view, 780, 920)
 	tt.SetLocale(lang)
 	tt.SetDark(dark)
-	a.shred.pending = true
-	a.shred.start = time.Time{}
+	a.shred.arm(snap)
 
 	appearance := "light"
 	if dark {

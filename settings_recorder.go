@@ -36,7 +36,27 @@ var recorderFields = []recorderField{
 	{"quality", locales.Messages.RecorderQuality, locales.Messages.RecorderQualityHelp, 30, 95, 5, false, func(r config.Recorder) int { return r.JPEGQuality }, func(r *config.Recorder, n int) { r.JPEGQuality = n }},
 }
 
+func (a *app) stepRecorderField(i int, dir int) int {
+	f := recorderFields[i]
+	cur := f.get(a.cfgNow.Recorder)
+	if n, err := strconv.Atoi(strings.TrimSpace(a.drafts.recorderDraft[i])); err == nil {
+		cur = n
+	}
+	if f.key == "poll" {
+		if dir < 0 && cur <= 10000 {
+			return 0
+		}
+		if dir > 0 && cur == 0 {
+			return 10000
+		}
+	}
+	return cur + dir*f.step
+}
+
 func (a *app) commitRecorderField(i int, value int) {
+	if a.clear.running() {
+		return
+	}
 	f := recorderFields[i]
 	value = max(f.min, min(f.max, value))
 	if f.key == "quality" {
@@ -47,7 +67,7 @@ func (a *app) commitRecorderField(i int, value int) {
 		return
 	}
 	a.applyRecorder()
-	a.recorderDraft[i] = strconv.Itoa(f.get(a.cfgNow.Recorder))
+	a.drafts.recorderDraft[i] = strconv.Itoa(f.get(a.cfgNow.Recorder))
 }
 
 func (a *app) renderRecorderFields(c *ui.Context, pal palette) {
@@ -60,26 +80,26 @@ func (a *app) renderRecorderFields(c *ui.Context, pal palette) {
 				if field.timed {
 					unit = msg.RecorderMilliseconds()
 				}
-				// 第一行说明字段管什么，第二行给范围和步长。
 				sub := field.help(msg) + "\n" + fmt.Sprintf("%d–%d · %d %s", field.min, field.max, field.step, unit)
 				a.settingsRow(c, field.label(msg), sub, pal, func() {
-					if !a.recorderFocus[i] {
-						a.recorderDraft[i] = strconv.Itoa(field.get(a.cfgNow.Recorder))
+					if !a.drafts.recorderFocus[i] {
+						a.drafts.recorderDraft[i] = strconv.Itoa(field.get(a.cfgNow.Recorder))
 					}
-					input := ui.TextInput(c.Key("recorder-"+field.key), &a.recorderDraft[i]).Width(110).Label(field.label(msg))
+					input := ui.TextInput(c.Key("recorder-"+field.key), &a.drafts.recorderDraft[i]).Width(110).Disabled(a.clear.running()).Label(field.label(msg))
 					focused := input.Focused()
 					if input.Shortcut(0, ui.KeyUp) {
-						a.commitRecorderField(i, field.get(a.cfgNow.Recorder)+field.step)
+						a.commitRecorderField(i, a.stepRecorderField(i, 1))
 					}
 					if input.Shortcut(0, ui.KeyDown) {
-						a.commitRecorderField(i, field.get(a.cfgNow.Recorder)-field.step)
+						a.commitRecorderField(i, a.stepRecorderField(i, -1))
 					}
-					if input.Submitted() || (a.recorderFocus[i] && !focused) {
-						if n, err := strconv.Atoi(strings.TrimSpace(a.recorderDraft[i])); err == nil {
+					if input.Submitted() || (a.drafts.recorderFocus[i] && !focused) {
+						if n, err := strconv.Atoi(strings.TrimSpace(a.drafts.recorderDraft[i])); err == nil {
 							a.commitRecorderField(i, n)
 						}
+						a.drafts.recorderDraft[i] = strconv.Itoa(field.get(a.cfgNow.Recorder))
 					}
-					a.recorderFocus[i] = focused
+					a.drafts.recorderFocus[i] = focused
 				})
 			}
 		})

@@ -37,21 +37,30 @@ func recorderSettings(r config.Recorder, appDir string) capture.Settings {
 }
 
 func (a *app) applyRecorder() {
+	if a.cfg == nil || a.runner == nil {
+		return
+	}
 	a.cfgNow = a.cfg.Get()
 	a.runner.Apply(recorderSettings(a.cfgNow.Recorder, a.appDir))
 }
 
 func (a *app) setRecorderEnabled(enabled bool) {
-	if a.clearRunning || a.runner == nil {
+	if a.clear.running() || a.runner == nil || a.cfg == nil {
 		return
 	}
-	if err := a.cfg.Update(func(c *config.Config) { c.Recorder.Enabled = enabled }); err != nil {
+	if err := a.cfg.Update(func(c *config.Config) {
+		c.Recorder.Enabled = enabled
+		if enabled {
+			c.Recorder.PausedUntil = time.Time{}
+		}
+	}); err != nil {
 		a.err = err
 		a.cfgNow = a.cfg.Get()
 		return
 	}
 	a.applyRecorder()
 	if enabled {
+		a.runner.Resume()
 		a.runner.Start()
 	} else {
 		a.runner.Stop()

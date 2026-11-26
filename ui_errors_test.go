@@ -131,22 +131,22 @@ func TestErrorPagesLanguages(t *testing.T) {
 						t.Fatal(err)
 					}
 					a.cfgNow = a.cfg.Get()
-					a.openProvider = providerKey(pc)
-					a.detectStarted, a.detectDone = true, true
-					a.testErr = tc.err
+					a.openProvider = providerKey(a.cfgNow.Providers[0])
+					a.credScan.phase = scanDone
+					a.providerTest = providerTestState{phase: testFailed, providerID: a.openProvider, err: tc.err}
 					want = shown
 				case "clear":
-					a.clearErr = tc.err
+					a.clear.phase = clearFailed
+					a.clear.err = tc.err
 					want = shown
 				case "agent-link":
 					a.settingsTab = 2
-					a.legacyChecked = true
+					a.legacy.phase = legacyReady
 					a.linkErr = tc.err
 					want = msg.GeneralAgentLinkError(shown)
 				case "agent-legacy":
 					a.settingsTab = 2
-					a.legacyChecked = true
-					a.legacyErr = tc.err
+					a.legacy = legacyState{phase: legacyFailed, err: tc.err}
 					want = msg.GeneralAgentLegacyError(shown)
 				}
 				tt := ui.NewTester(a.view, 780, 3000)
@@ -191,7 +191,7 @@ func TestConnectionErrorLanguages(t *testing.T) {
 				}
 				a.cfgNow = a.cfg.Get()
 				a.tab, a.settingsTab = 1, 1
-				a.openProvider = providerKey(pc)
+				a.openProvider = providerKey(a.cfgNow.Providers[0])
 				a.llmc.HTTP.Transport = errorTestTransport(func(*http.Request) (*http.Response, error) {
 					if tc.cause != nil {
 						return nil, tc.cause
@@ -207,8 +207,8 @@ func TestConnectionErrorLanguages(t *testing.T) {
 				case <-time.After(10 * time.Second):
 					t.Fatal("连接测试超时")
 				}
-				if a.testOK || a.testErr == nil {
-					t.Fatalf("连接测试结果错误: %v", a.testErr)
+				if a.providerTest.phase != testFailed || a.providerTest.err == nil {
+					t.Fatalf("连接测试结果错误: %+v", a.providerTest)
 				}
 				var want string
 				if tc.kind != nil {
@@ -227,7 +227,7 @@ func TestConnectionErrorLanguages(t *testing.T) {
 				} else {
 					want = locales.In(lang).ErrorProvider()
 				}
-				shown := errorText(lang, a.testErr)
+				shown := errorText(lang, a.providerTest.err)
 				if !strings.HasPrefix(shown, want) {
 					t.Fatalf("got %q, want prefix %q", shown, want)
 				}
@@ -267,6 +267,7 @@ func TestFetchModelsLanguages(t *testing.T) {
 				}
 				a.cfgNow = a.cfg.Get()
 				a.tab, a.settingsTab = 1, 1
+				a.openProvider = providerKey(a.cfgNow.Providers[0])
 				a.llmc.HTTP.Transport = errorTestTransport(func(*http.Request) (*http.Response, error) {
 					return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
 				})
@@ -289,14 +290,18 @@ func TestFetchModelsLanguages(t *testing.T) {
 				case "success":
 					want = msg.ModelsFetchSuccess(1)
 				}
-				if a.fetchMsg != want {
-					t.Fatalf("got %q, want %q", a.fetchMsg, want)
+				gotMsg := a.fetchState.message(lang)
+				if gotMsg != want {
+					t.Fatalf("got %q, want %q", gotMsg, want)
 				}
 				tt := ui.NewTester(a.view, 780, 3000)
 				tt.SetLocale(lang)
-				checkPageLanguage(t, tt, a, lang, "provider", "test-model")
-				if bad := langViolations(stripUserData([]string{a.fetchMsg}, external), lang, settingsAllow); len(bad) > 0 {
-					t.Fatalf("语言错误 %q: %q", bad, a.fetchMsg)
+				if !tt.HasText(want) {
+					t.Fatalf("模型拉取状态未渲染 %q: %q", want, tt.Texts())
+				}
+				checkPageLanguage(t, tt, a, lang, "provider", "test-model", external)
+				if bad := langViolations(stripUserData([]string{gotMsg}, external), lang, settingsAllow); len(bad) > 0 {
+					t.Fatalf("语言错误 %q: %q", bad, gotMsg)
 				}
 			})
 		}
@@ -312,8 +317,8 @@ func TestErrorLanguageSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.cfgNow = a.cfg.Get()
-	a.openProvider = providerKey(pc)
-	a.testErr = llm.ErrNoEndpoint
+	a.openProvider = providerKey(a.cfgNow.Providers[0])
+	a.providerTest = providerTestState{phase: testFailed, providerID: a.openProvider, err: llm.ErrNoEndpoint}
 	tt := ui.NewTester(a.view, 780, 3000)
 	for _, lang := range []string{"zh-Hans", "en"} {
 		tt.SetLocale(lang)
@@ -383,15 +388,15 @@ func TestSummaryFailureLanguages(t *testing.T) {
 				t.Fatal("摘要任务超时")
 			}
 			want := locales.In(lang).ErrorProvider() + "429: " + external
-			if a.sumErr != want {
-				t.Fatalf("摘要错误 %q，期望 %q", a.sumErr, want)
+			if got := a.summary.errorText(lang); got != want {
+				t.Fatalf("摘要错误 %q，期望 %q", got, want)
 			}
 			a.lastLoad = time.Now().Add(time.Hour)
 			tt := ui.NewTester(a.view, 780, 1000)
 			tt.SetLocale(lang)
 			checkPageLanguage(t, tt, a, lang, "user-app", external)
-			if tt.HasText(want) {
-				t.Fatal("摘要错误状态已渲染，需更新页面测试")
+			if !tt.HasText(want) {
+				t.Fatalf("摘要错误未显示：%q", tt.Texts())
 			}
 		})
 	}
@@ -419,15 +424,15 @@ func TestClearFailureLanguages(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("清除任务超时")
 			}
-			if a.clearErr == nil {
+			if a.clear.err == nil {
 				t.Fatal("清除应当失败")
 			}
 			tt := ui.NewTester(a.view, 780, 3000)
 			tt.SetLocale(lang)
-			if !tt.HasText(errorText(lang, a.clearErr)) {
+			if !tt.HasText(errorText(lang, a.clear.err)) {
 				t.Fatalf("清除错误未显示：%q", tt.Texts())
 			}
-			checkPageLanguage(t, tt, a, lang, a.clearErr.Error())
+			checkPageLanguage(t, tt, a, lang, a.clear.err.Error())
 		})
 	}
 }
@@ -448,7 +453,7 @@ func TestAgentErrorSourcesLanguages(t *testing.T) {
 					if !errors.Is(a.linkErr, query.ErrLinkOccupied) {
 						t.Fatalf("链接错误: %v", a.linkErr)
 					}
-					a.legacyChecked = true
+					a.legacy.phase = legacyReady
 				} else {
 					path := filepath.Join(a.appDir, "not-a-directory")
 					if err := os.WriteFile(path, []byte("blocked"), 0600); err != nil {
@@ -456,7 +461,7 @@ func TestAgentErrorSourcesLanguages(t *testing.T) {
 					}
 					a.legacySkillDir = func() string { return path }
 					a.checkLegacy(locales.In(lang))
-					if a.legacyErr == nil {
+					if a.legacy.err == nil {
 						t.Fatal("旧文件检查应当失败")
 					}
 				}
@@ -470,11 +475,11 @@ func TestAgentErrorSourcesLanguages(t *testing.T) {
 					}
 					checkPageLanguage(t, tt, a, lang)
 				} else {
-					want := msg.GeneralAgentLegacyError(errorText(lang, a.legacyErr))
+					want := msg.GeneralAgentLegacyError(errorText(lang, a.legacy.err))
 					if !tt.HasText(want) {
 						t.Fatalf("旧文件错误未显示：%q", tt.Texts())
 					}
-					checkPageLanguage(t, tt, a, lang, a.legacyErr.Error())
+					checkPageLanguage(t, tt, a, lang, a.legacy.err.Error())
 				}
 			})
 		}
@@ -489,7 +494,7 @@ func TestConnectionSuccessLanguageSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.cfgNow = a.cfg.Get()
-	a.tab, a.settingsTab, a.openProvider = 1, 1, providerKey(pc)
+	a.tab, a.settingsTab, a.openProvider = 1, 1, providerKey(a.cfgNow.Providers[0])
 	a.llmc.HTTP.Transport = errorTestTransport(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"model":"test-model","choices":[{"message":{"content":"ok"}}]}`)), Header: make(http.Header)}, nil
 	})
@@ -502,8 +507,8 @@ func TestConnectionSuccessLanguageSwitch(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("连接测试超时")
 	}
-	if !a.testOK {
-		t.Fatalf("连接测试失败: %v", a.testErr)
+	if a.providerTest.phase != testSucceeded {
+		t.Fatalf("连接测试失败: %v", a.providerTest.err)
 	}
 	tt := ui.NewTester(a.view, 780, 3000)
 	for _, lang := range []string{"zh-Hans", "en"} {

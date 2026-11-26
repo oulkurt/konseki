@@ -13,62 +13,67 @@ import (
 	"konseki/internal/providers"
 )
 
+func providerKey(pc config.ProviderConfig) string {
+	if pc.ID != "" {
+		return pc.ID
+	}
+	return pc.Preset + "\x00" + pc.Label
+}
+
 func (a *app) importCredential(cred providers.Credential) {
 	presetID := "anthropic"
 	model := "claude-sonnet-5-5"
 	if cred.Source == "codex" {
-		if cred.Kind == "api_key" {
-			presetID = "openai"
-		} else {
-			// ChatGPT 订阅走的是 Responses API，Konseki 这边按
-			// OpenAI 兼容处理，模型名用 codex 系列。
-			presetID = "openai"
-		}
+		presetID = "openai"
 		model = "gpt-5.2"
 	}
 	preset, _ := providers.ByID(presetID)
+	auth := cred.Kind
+	if auth == "api_key" {
+		auth = "apikey"
+	}
 
 	pc := config.ProviderConfig{
 		Preset:        presetID,
 		Label:         cred.Label,
 		ChatBase:      preset.Chat,
 		AnthropicBase: preset.Anthropic,
-		Auth:          cred.Kind,
+		Auth:          auth,
 		AccessToken:   cred.AccessToken,
 		RefreshToken:  cred.RefreshToken,
 		AccountID:     cred.AccountID,
 		ExpiresAt:     cred.ExpiresAt,
 		DefaultModel:  model,
 	}
-	if cred.Kind == "api_key" {
+	if auth == "apikey" {
 		pc.APIKey = cred.AccessToken
 	}
 
-	a.cfg.Update(func(c *config.Config) {
-		// 同样来源的重复导入就替换，不要堆一堆。
+	var matchedKey string
+	if err := a.cfg.Update(func(c *config.Config) {
 		for i := range c.Providers {
-			if c.Providers[i].Label == pc.Label {
+			if c.Providers[i].Preset == pc.Preset && c.Providers[i].Label == pc.Label {
+				pc.ID = c.Providers[i].ID
 				c.Providers[i] = pc
+				matchedKey = providerKey(c.Providers[i])
 				return
 			}
 		}
+		pc.ID = config.NewProviderID()
 		c.Providers = append(c.Providers, pc)
-	})
+	}); err != nil {
+		a.err = err
+		return
+	}
 	a.cfgNow = a.cfg.Get()
+	if matchedKey != "" {
+		a.providerTest.resetForProvider(matchedKey)
+		a.fetchState.clear()
+	}
 	a.rebuildGenerator()
-	a.testModel = ""
-	a.testErr = nil
-	a.testOK = true
-}
-
-func providerKey(pc config.ProviderConfig) string {
-	return pc.Preset + "\x00" + pc.Label
 }
 
 func (a *app) addProvider(p providers.Preset) {
-	// 有档位的家默认落在第一档，并把该档的地址和模型一起带进来 ——
-	// 只存预设的根地址而 region 留空，会让 Resolve 又要回退一次，
-	// 用户看到的和实际请求的不一致。
 	eps := providers.Endpoints(p)
 	region := ""
 	model := ""
@@ -86,39 +91,61 @@ func (a *app) addProvider(p providers.Preset) {
 		model = p.Models[0]
 	}
 	pc := config.ProviderConfig{
+		ID:            config.NewProviderID(),
 		Preset:        p.ID,
 		Region:        region,
 		ChatBase:      chat,
 		AnthropicBase: anthropic,
 		DefaultModel:  model,
 	}
-	a.cfg.Update(func(c *config.Config) { c.Providers = append(c.Providers, pc) })
+	if err := a.cfg.Update(func(c *config.Config) { c.Providers = append(c.Providers, pc) }); err != nil {
+		a.err = err
+		return
+	}
 	a.cfgNow = a.cfg.Get()
+	added := pc
+	for _, item := range a.cfgNow.Providers {
+		if item.ID == pc.ID {
+			added = item
+			break
+		}
+	}
 	a.rebuildGenerator()
-	a.openProvider = providerKey(pc)
+	a.openProvider = providerKey(added)
 	a.apiKeyDraft = ""
-	a.baseURLDraft = pc.ChatBase
-	a.modelDraft = model
+	a.baseURLDraft = added.ChatBase
+	a.modelDraft = added.DefaultModel
+	a.providerTest.clear()
+	a.fetchState.clear()
 }
 
 func (a *app) removeProvider(idx int) {
 	if idx < 0 || idx >= len(a.cfgNow.Providers) {
 		return
 	}
-	preset := a.cfgNow.Providers[idx].Preset
-	label := a.cfgNow.Providers[idx].Label
-	a.cfg.Update(func(c *config.Config) {
+	target := a.cfgNow.Providers[idx]
+	targetKey := providerKey(target)
+	if err := a.cfg.Update(func(c *config.Config) {
+		selectedKey := resolveSummaryProviderKey(c.Summary.ProviderID, c.Providers)
 		c.Providers = slices.DeleteFunc(c.Providers, func(p config.ProviderConfig) bool {
-			return p.Preset == preset && p.Label == label
+			return providerKey(p) == targetKey
 		})
-		// 删掉的正好是默认供应商，就清空默认，让 UI 提示重新选。
-		if c.Summary.ProviderID == preset {
+		if selectedKey == targetKey {
 			c.Summary.ProviderID = ""
 			c.Summary.Model = ""
 		}
-	})
+	}); err != nil {
+		a.err = err
+		return
+	}
 	a.cfgNow = a.cfg.Get()
-	a.openProvider = ""
+	if a.openProvider == targetKey {
+		a.openProvider = ""
+	}
+	a.providerTest.resetForProvider(targetKey)
+	if a.fetchState.providerID == targetKey {
+		a.fetchState.clear()
+	}
 	a.rebuildGenerator()
 }
 
@@ -126,30 +153,25 @@ func (a *app) saveProviderField(idx int, fn func(*config.ProviderConfig)) {
 	if idx < 0 || idx >= len(a.cfgNow.Providers) {
 		return
 	}
-	preset := a.cfgNow.Providers[idx].Preset
-	label := a.cfgNow.Providers[idx].Label
-	a.cfg.Update(func(c *config.Config) {
+	targetKey := providerKey(a.cfgNow.Providers[idx])
+	if err := a.cfg.Update(func(c *config.Config) {
 		for i := range c.Providers {
-			if c.Providers[i].Preset == preset && c.Providers[i].Label == label {
+			if providerKey(c.Providers[i]) == targetKey {
 				fn(&c.Providers[i])
 				return
 			}
 		}
-	})
+	}); err != nil {
+		a.err = err
+		return
+	}
 	a.cfgNow = a.cfg.Get()
+	a.providerTest.resetForProvider(targetKey)
+	if a.fetchState.providerID == targetKey {
+		a.fetchState.clear()
+	}
 }
 
-// setDefaultProvider 把某家设成摘要用的模型。
 func (a *app) setDefaultProvider(pc config.ProviderConfig) {
-	a.cfg.Update(func(c *config.Config) {
-		c.Summary.ProviderID = pc.Preset
-		c.Summary.Model = pc.DefaultModel
-	})
-	a.cfgNow = a.cfg.Get()
-	a.rebuildGenerator()
-	a.testModel = ""
-	a.testErr = nil
-	a.testOK = true
+	a.setSummaryModel(providerKey(pc), pc.DefaultModel)
 }
-
-// testConnection 发一个最小请求，确认 key/地址/模型都对得上。

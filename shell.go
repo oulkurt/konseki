@@ -16,8 +16,33 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+func (a *app) syncNavState() {
+	if a.tab != 0 && a.tab != 1 {
+		a.tab = 0
+	}
+	if a.settingsTab < 0 || a.settingsTab > 2 {
+		a.settingsTab = 0
+	}
+	if !a.navInit {
+		a.navInit = true
+		a.lastTab = a.tab
+		a.lastSettingsTab = a.settingsTab
+		return
+	}
+	if a.tab != a.lastTab || a.settingsTab != a.lastSettingsTab {
+		a.scrollState.Y = 0
+		a.drafts.clearFocus()
+		if a.tab == 1 && a.settingsTab == 2 && a.legacy.phase == legacyFailed {
+			a.resetLegacy()
+		}
+		a.lastTab = a.tab
+		a.lastSettingsTab = a.settingsTab
+	}
+}
+
 func (a *app) view(c *ui.Context) {
 	a.refresh()
+	a.syncNavState()
 	c.After(2 * time.Second)
 	pal := themePalette(c)
 	msg := locales.In(c.Locale())
@@ -37,7 +62,6 @@ func (a *app) view(c *ui.Context) {
 	}
 
 	ui.Box(c).Fill().Children(func() {
-		// 主滚动容器：包含 Capture、Summaries 与 History 三大模块
 		ui.Scroll(c).
 			TrackScroll(&a.scrollState).
 			Fill().
@@ -45,7 +69,6 @@ func (a *app) view(c *ui.Context) {
 			ScrollbarInsets(topInset, 0, 0).
 			Children(func() {
 				ui.Column(c).FillWidth().Gap(16).Children(func() {
-					// ---- 顶部轻量品牌状态栏（支持拖拽窗口与实时录制控制） ----
 					ui.Row(c).FillWidth().AlignItems(ui.Center).Padding(0, 6).DragWindow().Children(func() {
 						ui.Text(c, "痕跡 Konseki").
 							FontSize(11.5).
@@ -66,7 +89,6 @@ func (a *app) view(c *ui.Context) {
 
 						ui.Spacer(c)
 
-						// 快捷录制状态胶囊
 						ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(2, 8).Radius(999).
 							Material(glass.Glass{Style: glass.Regular, Clarity: 0.4}).
 							Border(1, pal.cardBorder).
@@ -83,34 +105,36 @@ func (a *app) view(c *ui.Context) {
 								}
 
 								if a.runner != nil {
-									toggleLabel := msg.ShellStart()
-									if a.status.Phase != capture.PhaseOff {
-										toggleLabel = msg.ShellPause()
+									toggleLabel := msg.ShellPause()
+									switch a.status.Phase {
+									case capture.PhaseOff:
+										toggleLabel = msg.ShellStart()
+									case capture.PhasePaused:
+										toggleLabel = msg.RecorderResume()
 									}
 									btn := ui.ButtonBase(c.Key("btn-record-toggle")).
 										Padding(2, 7).
 										Radius(999).
 										Background(pal.rowHoverBg).
-										Disabled(a.clearRunning)
+										Disabled(a.clear.running())
 									btn.Children(func() {
 										ui.Text(c, toggleLabel).FontSize(11).Bold().TextColor(pal.textPrimary)
 									})
 									if btn.Clicked() {
-										a.setRecorderEnabled(a.status.Phase == capture.PhaseOff)
+										if a.status.Phase == capture.PhasePaused {
+											a.pauseRecorder(time.Time{})
+										} else {
+											a.setRecorderEnabled(a.status.Phase == capture.PhaseOff)
+										}
 									}
 								}
 							})
 					})
 
-					if a.err != nil {
-						ui.Text(c, msg.ShellReadError()+errorText(c.Locale(), a.err)).FontSize(12).TextColor(t.Danger)
+					if err := a.bannerError(); err != nil {
+						ui.Text(c, msg.ShellReadError()+errorText(c.Locale(), err)).FontSize(12).TextColor(t.Danger)
 					}
 
-					// ---- 分页：时间轴 / 设置 ----
-					//
-					// 为什么从「一页长滚动」改成两页：加了供应商和 skill 之后
-					// 设置区比内容还长，进来第一屏看到一堆开关是错的。
-					// 时间轴是每天要看的东西，设置是配一次就不动的。
 					a.renderTabs(c, pal)
 
 					switch a.tab {
@@ -141,7 +165,6 @@ func (a *app) view(c *ui.Context) {
 				})
 			})
 
-		// 窗口顶部边缘 Liquid Glass 渐隐过渡 + 拖拽区
 		if bar.Height > 0 {
 			ui.Box(c).
 				Absolute().Top(0).Left(0).Right(0).Height(bar.Height + 10).
@@ -169,17 +192,12 @@ func (a *app) renderSettingsTabs(c *ui.Context, pal palette) {
 	})
 }
 
-// renderTabs 画顶部的时间轴 / 设置切换。
-//
-// 用分段控件而不是侧边栏：这个 App 只有两页，侧边栏的导航成本
-// 比它省下的空间贵。分段控件还能顺便显示「设置里有几项没配好」。
 func (a *app) renderTabs(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	names := []string{msg.TabsTimeline(), msg.TabsSettings()}
 
-	// 提示点：没配供应商，或者有内容但还没生成摘要。
-	needSetup := len(a.cfgNow.Providers) == 0
-	needSummary := len(a.cfgNow.Providers) > 0 && len(a.blocks) > 0 && len(a.sumEntries) == 0
+	needSetup := a.gen == nil
+	needSummary := !needSetup && len(a.blocks) > 0 && len(a.sumEntries) == 0
 	dirty := needSetup || needSummary
 
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
@@ -202,9 +220,8 @@ func (a *app) renderTabs(c *ui.Context, pal palette) {
 
 		ui.Spacer(c)
 
-		// 右上角一句状态：一句话说清现在到底有没有在记
 		switch {
-		case a.sumRunning:
+		case a.summary.running():
 			ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
 				ui.Spinner(c).Size(11, 11)
 				ui.Text(c, msg.TabsGenerating()).FontSize(11).TextColor(pal.textSecondary)

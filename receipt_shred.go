@@ -82,67 +82,68 @@ func LayerEffect(pos vec2) vec4 {
 }
 `)
 
-// shredEdgeShade 是纸条边缘压暗的比例。浅色背景和纸色几乎一样，不压暗就只看得见字。
 const shredEdgeShade = 0.14
 
-type shredAnimation struct {
-	pending     bool
-	start       time.Time
-	feedStarted bool
-	height      float32
-	mask        *ui.Canvas
-	handle      ui.Handle
-	physics     shredSimulation
-}
-
 func (a *app) stopShred() {
-	a.shred.pending = false
-	a.clearReceipt = ReceiptDay{}
-	a.feedDay = ""
+	a.shred.stop()
+	a.paperFeed.resetDay()
+	probeShredReset()
 }
 
 func (a *app) renderShred(c *ui.Context, width float32) {
 	if c.Preferences().ReduceMotion {
 		a.stopShred()
-		a.renderPaper(c, width)
+		a.renderPaperScroll(c, width)
 		return
 	}
 	s := &a.shred
-	// 测试构建记帧间隔；feedStarted 此时还是上一帧的阶段。
-	probeShredFrame(c.Now(), s.feedStarted)
-	if s.start.IsZero() {
-		s.start = c.Now()
-		s.feedStarted = false
-		s.height = 0
+	if s.phase == shredIdle {
+		a.renderPaperScroll(c, width)
+		return
 	}
+	if s.phase == shredArmed {
+		s.phase = shredRetracting
+		s.start = c.Now()
+		s.height = 0
+		s.physics = shredSimulation{}
+		probeShredReset()
+	}
+	probeShredFrame(c.Now(), s.phase == shredFalling)
 	stage := ui.Box(c).FillWidth().Grow(1).Clip()
 	bounds := stage.LayoutBounds()
 	if bounds.W <= 0 || bounds.H <= 0 {
 		bounds.W, bounds.H = c.Size()
 	}
-	if h := s.handle.Bounds(c).H; h > 0 && !s.feedStarted {
-		s.height = min(h, bounds.H)
-	}
-	elapsed := c.Now().Sub(s.start)
-	if elapsed < shredRetractDuration || s.height <= 0 {
-		progress := min(1, max(0, float64(elapsed)/float64(shredRetractDuration)))
-		offset := -s.height * float32(progress*progress*progress)
-		stage.Children(func() {
-			ui.Column(c).FillWidth().AlignItems(ui.Center).Translate(0, offset).Children(func() { a.renderShredPaper(c, width) })
-		})
-		c.AnimationFrame()
-		return
-	}
-	if !s.feedStarted {
-		s.feedStarted = true
+	if s.phase == shredRetracting {
+		if h := s.handle.Bounds(c).H; h > 0 {
+			s.height = min(h, bounds.H)
+		}
+		elapsed := c.Now().Sub(s.start)
+		if elapsed >= shredRetractDuration && s.height <= 0 {
+			s.height = bounds.H
+		}
+		if elapsed < shredRetractDuration || s.height <= 0 {
+			if elapsed >= shredRetractDuration && s.height <= 0 {
+				a.stopShred()
+				a.renderPaperScroll(c, width)
+				return
+			}
+			progress := min(1, max(0, float64(elapsed)/float64(shredRetractDuration)))
+			offset := -s.height * float32(progress*progress*progress)
+			stage.Children(func() {
+				ui.Column(c).FillWidth().AlignItems(ui.Center).Translate(0, offset).Children(func() { a.renderShredPaper(c, width) })
+			})
+			c.AnimationFrame()
+			return
+		}
+		s.phase = shredFalling
 		s.physics.reset(c.Now(), width, s.height)
 	}
 	s.physics.advance(c.Now())
-	// 纸条全部落出画面就收尾。窗口矮时纸条一秒多就落完，不用空等到下落时长用完。
 	if s.physics.elapsed >= float32((shredFeedDuration+shredFallDuration).Seconds()) || s.physics.below(bounds.H) {
 		probeShredDone()
 		a.stopShred()
-		stage.Children(func() { ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, width) }) })
+		a.renderPaperScroll(c, width)
 		return
 	}
 	if s.mask == nil {
@@ -174,7 +175,7 @@ func (a *app) renderShredPaper(c *ui.Context, width float32) {
 		paper = ui.Hex("#ECE8DF")
 	}
 	ui.Column(c).Width(width).Bind(&a.shred.handle).Children(func() {
-		ui.Column(c).FillWidth().Background(paper).Padding(20, 22, 16, 22).Gap(9).Children(func() { a.renderReceiptDayContents(c, a.clearReceipt, false) })
+		ui.Column(c).FillWidth().Background(paper).Padding(20, 22, 16, 22).Gap(9).Children(func() { a.renderReceiptDayContents(c, a.shred.receipt, false) })
 		receiptZigzag(c, paper)
 	})
 }

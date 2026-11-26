@@ -29,3 +29,5 @@ func platformRequestAccessibility() PermState {
 
 // RunningApps 在其他平台返回空列表，设置页只提供当前前台应用。
 func RunningApps() []Front { return nil }
+
+func platformLiveFront() Front { return Front{} }

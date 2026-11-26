@@ -19,6 +19,9 @@ import (
 )
 
 func (a *app) updateRecorder(fn func(*config.Recorder)) {
+	if a.clear.running() || a.cfg == nil {
+		return
+	}
 	if err := a.cfg.Update(func(cfg *config.Config) { fn(&cfg.Recorder) }); err != nil {
 		a.err = err
 		return
@@ -26,15 +29,23 @@ func (a *app) updateRecorder(fn func(*config.Recorder)) {
 	a.applyRecorder()
 }
 
-// runningAppsCache 让菜单打开期间复用同一份应用列表。
-// 菜单每帧重建，选中那一帧的序号要和打开时的列表对得上。
 type runningAppsCache struct {
-	at   time.Time
-	apps []capture.Front
+	at        time.Time
+	apps      []capture.Front
+	front     capture.Front
+	menuBuilt time.Time
 }
 
-// candidateSensitiveApps 列出可加入的应用：运行中的应用和当前前台应用，去掉已在列表里的。
 func (a *app) candidateSensitiveApps() []capture.Front {
+	now := a.currentTime()
+	menuOpen := !a.running.menuBuilt.IsZero() && now.Sub(a.running.menuBuilt) < time.Second
+	if !menuOpen && (a.running.at.IsZero() || now.Sub(a.running.at) > 2*time.Second || now.Before(a.running.at)) {
+		var apps []capture.Front
+		if a.runningApps != nil {
+			apps = a.runningApps()
+		}
+		a.running = runningAppsCache{at: now, apps: apps, front: a.status.Front}
+	}
 	seen := map[string]bool{}
 	for _, b := range a.cfgNow.Recorder.SensitiveApps {
 		seen[strings.ToLower(strings.TrimSpace(b))] = true
@@ -48,25 +59,22 @@ func (a *app) candidateSensitiveApps() []capture.Front {
 		seen[strings.ToLower(b)] = true
 		out = append(out, capture.Front{App: f.App, Bundle: b})
 	}
-	if a.runningApps != nil {
-		now := a.currentTime()
-		if a.running.at.IsZero() || now.Sub(a.running.at) > 2*time.Second || now.Before(a.running.at) {
-			a.running = runningAppsCache{at: now, apps: a.runningApps()}
-		}
-		for _, f := range a.running.apps {
-			add(f)
-		}
+	for _, f := range a.running.apps {
+		add(f)
 	}
-	add(a.status.Front)
+	if menuOpen {
+		add(a.running.front)
+	} else {
+		add(a.status.Front)
+	}
 	return out
 }
 
-// addSensitiveApp 追加一个 bundle ID。配置归一化会按不分大小写去重。
 func (a *app) addSensitiveApp(bundle string) {
 	a.updateRecorder(func(r *config.Recorder) {
 		r.SensitiveApps = append(r.SensitiveApps, bundle)
 	})
-	a.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
+	a.drafts.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
 }
 
 func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
@@ -80,29 +88,31 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 				}
 			})
 			a.settingsRow(c, msg.RecorderOCRLanguages(), msg.RecorderOCRLanguagesHelp(), pal, func() {
-				if !a.ocrLanguagesFocus {
-					a.ocrLanguagesDraft = strings.Join(a.cfgNow.Recorder.OCR.Languages, ", ")
+				if !a.drafts.ocrLanguagesFocus {
+					a.drafts.ocrLanguagesDraft = strings.Join(a.cfgNow.Recorder.OCR.Languages, ", ")
 				}
-				in := ui.TextInput(c.Key("recorder-ocr-languages"), &a.ocrLanguagesDraft).Width(240).Label(msg.RecorderOCRLanguages())
+				in := ui.TextInput(c.Key("recorder-ocr-languages"), &a.drafts.ocrLanguagesDraft).Width(240).Disabled(a.clear.running()).Label(msg.RecorderOCRLanguages())
 				focused := in.Focused()
-				if in.Submitted() || (a.ocrLanguagesFocus && !focused) {
-					values := strings.Split(a.ocrLanguagesDraft, ",")
+				if in.Submitted() || (a.drafts.ocrLanguagesFocus && !focused) {
+					values := strings.Split(a.drafts.ocrLanguagesDraft, ",")
 					a.updateRecorder(func(r *config.Recorder) { r.OCR.Languages = values })
+					a.drafts.ocrLanguagesDraft = strings.Join(a.cfgNow.Recorder.OCR.Languages, ", ")
 				}
-				a.ocrLanguagesFocus = focused
+				a.drafts.ocrLanguagesFocus = focused
 			})
 			a.settingsRow(c, msg.RecorderOCREvery(), msg.RecorderOCREveryHelp(), pal, func() {
-				if !a.ocrEveryFocus {
-					a.ocrEveryDraft = strconv.Itoa(a.cfgNow.Recorder.OCR.EveryN)
+				if !a.drafts.ocrEveryFocus {
+					a.drafts.ocrEveryDraft = strconv.Itoa(a.cfgNow.Recorder.OCR.EveryN)
 				}
-				in := ui.TextInput(c.Key("recorder-ocr-every"), &a.ocrEveryDraft).Width(110).Label(msg.RecorderOCREvery())
+				in := ui.TextInput(c.Key("recorder-ocr-every"), &a.drafts.ocrEveryDraft).Width(110).Disabled(a.clear.running()).Label(msg.RecorderOCREvery())
 				focused := in.Focused()
-				if in.Submitted() || (a.ocrEveryFocus && !focused) {
-					if n, err := strconv.Atoi(strings.TrimSpace(a.ocrEveryDraft)); err == nil {
+				if in.Submitted() || (a.drafts.ocrEveryFocus && !focused) {
+					if n, err := strconv.Atoi(strings.TrimSpace(a.drafts.ocrEveryDraft)); err == nil {
 						a.updateRecorder(func(r *config.Recorder) { r.OCR.EveryN = n })
 					}
+					a.drafts.ocrEveryDraft = strconv.Itoa(a.cfgNow.Recorder.OCR.EveryN)
 				}
-				a.ocrEveryFocus = focused
+				a.drafts.ocrEveryFocus = focused
 			})
 			a.settingsRow(c, msg.RecorderInputCounts(), msg.RecorderInputCountsDescription(), pal, func() {
 				on := a.cfgNow.Recorder.InputCounts
@@ -122,6 +132,7 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 				})
 				renderSelectPill(c, "recorder-sensitive-add", msg.RecorderSensitiveAdd(), 145, pal.textPrimary, pal, func(m *ui.Menu) {
 					candidates := a.candidateSensitiveApps()
+					a.running.menuBuilt = a.currentTime()
 					if len(candidates) == 0 {
 						m.Item(msg.RecorderSensitiveEmpty()).Disabled(true)
 						return
@@ -137,16 +148,17 @@ func (a *app) renderRecorderPrivacy(c *ui.Context, pal palette) {
 					}
 				})
 			})
-			if !a.sensitiveFocus {
-				a.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
+			if !a.drafts.sensitiveFocus {
+				a.drafts.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
 			}
-			in := ui.TextArea(c.Key("recorder-sensitive"), &a.sensitiveDraft).FillWidth().Height(160).Label(msg.RecorderSensitive())
+			in := ui.TextArea(c.Key("recorder-sensitive"), &a.drafts.sensitiveDraft).FillWidth().Height(160).Disabled(a.clear.running()).Label(msg.RecorderSensitive())
 			focused := in.Focused()
-			if a.sensitiveFocus && !focused {
-				values := strings.Split(a.sensitiveDraft, "\n")
+			if a.drafts.sensitiveFocus && !focused {
+				values := strings.Split(a.drafts.sensitiveDraft, "\n")
 				a.updateRecorder(func(r *config.Recorder) { r.SensitiveApps = values })
+				a.drafts.sensitiveDraft = strings.Join(a.cfgNow.Recorder.SensitiveApps, "\n")
 			}
-			a.sensitiveFocus = focused
+			a.drafts.sensitiveFocus = focused
 		})
 	})
 }

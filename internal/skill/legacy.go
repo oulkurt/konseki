@@ -40,14 +40,17 @@ const (
 // LegacyDir 返回旧导出器的默认目录，也是新技能的安装位置。
 func LegacyDir() string {
 	home, err := os.UserHomeDir()
-	if err != nil {
-		return legacySkillDefaultName
+	if err != nil || home == "" {
+		return ""
 	}
 	return filepath.Join(home, ".claude", "skills", legacySkillDefaultName)
 }
 
 // FindLegacy 返回 dir 里旧导出器写出的文件。目录不存在时返回空。
 func FindLegacy(dir string) ([]string, error) {
+	if dir == "" {
+		return nil, nil
+	}
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -65,6 +68,9 @@ func FindLegacy(dir string) ([]string, error) {
 		case legacySkillFile:
 			b, err := os.ReadFile(path)
 			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
 				return nil, err
 			}
 			text := string(b)
@@ -76,6 +82,9 @@ func FindLegacy(dir string) ([]string, error) {
 		case legacyProfileFile:
 			b, err := os.ReadFile(path)
 			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
 				return nil, err
 			}
 			if strings.HasPrefix(string(b), legacyProfilePrefix) {
@@ -84,8 +93,22 @@ func FindLegacy(dir string) ([]string, error) {
 		}
 	}
 
-	days, err := os.ReadDir(filepath.Join(dir, legacyDaysDir))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
+	daysDir := filepath.Join(dir, legacyDaysDir)
+	daysInfo, err := os.Lstat(daysDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return out, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if daysInfo.Mode()&os.ModeSymlink != 0 || !daysInfo.IsDir() {
+		return out, nil
+	}
+	days, err := os.ReadDir(daysDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return out, nil
+		}
 		return nil, err
 	}
 	for _, e := range days {
@@ -101,7 +124,7 @@ func FindLegacy(dir string) ([]string, error) {
 		if _, err := time.Parse(legacyDayLayout, day); err != nil {
 			continue
 		}
-		path := filepath.Join(dir, legacyDaysDir, name)
+		path := filepath.Join(daysDir, name)
 		b, err := os.ReadFile(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -121,9 +144,15 @@ func FindLegacy(dir string) ([]string, error) {
 // days/ 空了就删，dir 空了也删。dir 本身是软链接时只删里面的文件，
 // 不删链接和链接目标目录。
 func RemoveLegacy(dir string) (int, error) {
+	if dir == "" {
+		return 0, nil
+	}
 	files, err := FindLegacy(dir)
 	if err != nil {
 		return 0, err
+	}
+	if len(files) == 0 {
+		return 0, nil
 	}
 	n := 0
 	for _, path := range files {
@@ -142,8 +171,9 @@ func RemoveLegacy(dir string) (int, error) {
 
 // removeEmptyDir 只删除空的真实目录。软链接和文件不动。
 func removeEmptyDir(path string) {
+	path = filepath.Clean(path)
 	info, err := os.Lstat(path)
-	if err != nil || !info.IsDir() {
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return
 	}
 	entries, err := os.ReadDir(path)
