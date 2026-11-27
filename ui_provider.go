@@ -23,9 +23,22 @@ func providerKey(pc config.ProviderConfig) string {
 func (a *app) importCredential(cred providers.Credential) {
 	presetID := "anthropic"
 	model := "claude-sonnet-5-5"
-	if cred.Source == "codex" {
+	var models []string
+	switch {
+	case cred.Source == "gemini":
+		presetID = "gemini-cli"
+		model = "gemini-2.5-pro"
+	case cred.Source == "codex":
 		presetID = "openai"
 		model = "gpt-5.2"
+		// 订阅的真实模型列表在 ~/.codex 的目录文件里。读到就一并写进配置，
+		// 免得用户再拉一次 —— 订阅端点没有通用的 /models 可拉。
+		if cred.Kind == "oauth" {
+			if ms := providers.CodexModels(); len(ms) > 0 {
+				models = ms
+				model = ms[0]
+			}
+		}
 	}
 	preset, _ := providers.ByID(presetID)
 	auth := cred.Kind
@@ -36,14 +49,19 @@ func (a *app) importCredential(cred providers.Credential) {
 	pc := config.ProviderConfig{
 		Preset:        presetID,
 		Label:         cred.Label,
-		ChatBase:      preset.Chat,
-		AnthropicBase: preset.Anthropic,
 		Auth:          auth,
 		AccessToken:   cred.AccessToken,
 		RefreshToken:  cred.RefreshToken,
 		AccountID:     cred.AccountID,
 		ExpiresAt:     cred.ExpiresAt,
+		EnabledModels: models,
 		DefaultModel:  model,
+	}
+	// ChatGPT 订阅的地址由 Resolve 写死成专属端点，这里必须留空：
+	// 填了预设的公开 API 地址，会让人误以为它是 API key 模式。
+	if cred.Source != "codex" || cred.Kind != "oauth" {
+		pc.ChatBase = preset.Chat
+		pc.AnthropicBase = preset.Anthropic
 	}
 	if auth == "apikey" {
 		pc.APIKey = cred.AccessToken
@@ -114,7 +132,9 @@ func (a *app) addProvider(p providers.Preset) {
 	a.openProvider = providerKey(added)
 	a.apiKeyDraft = ""
 	a.baseURLDraft = added.ChatBase
+	a.responsesDraft = added.ResponsesBase
 	a.modelDraft = added.DefaultModel
+	a.modelsAll = false
 	a.providerTest.clear()
 	a.fetchState.clear()
 }
@@ -149,9 +169,9 @@ func (a *app) removeProvider(idx int) {
 	a.rebuildGenerator()
 }
 
-func (a *app) saveProviderField(idx int, fn func(*config.ProviderConfig)) {
+func (a *app) saveProviderField(idx int, fn func(*config.ProviderConfig)) bool {
 	if idx < 0 || idx >= len(a.cfgNow.Providers) {
-		return
+		return false
 	}
 	targetKey := providerKey(a.cfgNow.Providers[idx])
 	if err := a.cfg.Update(func(c *config.Config) {
@@ -163,13 +183,14 @@ func (a *app) saveProviderField(idx int, fn func(*config.ProviderConfig)) {
 		}
 	}); err != nil {
 		a.err = err
-		return
+		return false
 	}
 	a.cfgNow = a.cfg.Get()
 	a.providerTest.resetForProvider(targetKey)
 	if a.fetchState.providerID == targetKey {
 		a.fetchState.clear()
 	}
+	return true
 }
 
 func (a *app) setDefaultProvider(pc config.ProviderConfig) {

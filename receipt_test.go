@@ -197,14 +197,14 @@ func TestReceiptDurationAndHeadline(t *testing.T) {
 		}
 	}
 	oneSession := ReceiptDay{Lines: make([]ReceiptLine, 2), Totals: ReceiptTotals{HasActive: true, Active: time.Hour, Sessions: 1}}
-	if got := receiptHeadline(zh, oneSession); got != "1小时 · 1 段" {
+	if got := receiptHeadline(zh, oneSession); got != "1小时 · 1段" {
 		t.Errorf("中文累计 = %q", got)
 	}
 	if got := receiptHeadline(en, oneSession); got != "1h · 1 session" {
 		t.Errorf("英文累计 = %q", got)
 	}
 	summariesOnly := ReceiptDay{Lines: make([]ReceiptLine, 3)}
-	if got := receiptHeadline(zh, summariesOnly); got != "3 条" {
+	if got := receiptHeadline(zh, summariesOnly); got != "3条" {
 		t.Errorf("只剩摘要的中文累计 = %q", got)
 	}
 	if got := receiptHeadline(en, summariesOnly); got != "3 entries" {
@@ -217,10 +217,10 @@ func TestReceiptSummariesOnlyDay(t *testing.T) {
 	a.blocks = nil
 	a.receipt = buildReceipt(time.Date(2026, 11, 4, 0, 0, 0, 0, time.Local), a.sumEntries, nil, nil)
 	tt.Advance(time.Second)
-	if !hasExactText(tt, "3 条") {
+	if !hasExactText(tt, "3条") {
 		t.Fatalf("只剩摘要的日子应印条目数：%q", tt.Texts())
 	}
-	for _, s := range []string{"会话", "快照", "合计", "0分 · 0 段"} {
+	for _, s := range []string{"会话", "快照", "合计", "0分 · 0段"} {
 		if hasExactText(tt, s) {
 			t.Fatalf("没有采集记录的日子印出了 %q：%q", s, tt.Texts())
 		}

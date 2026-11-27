@@ -47,7 +47,7 @@ func TestErrorTextLanguages(t *testing.T) {
 		{"api", &llm.APIError{Status: 429, Body: external}, "模型接口返回错误：429: " + external, "The model service returned an error: 429: " + external, true},
 		{"link-path", fmt.Errorf("secret: %w", query.ErrExecutableNotAbsolute), "程序路径不是绝对路径", "The executable path is not absolute", false},
 		{"link-exists", fmt.Errorf("secret: %w", query.ErrLinkOccupied), "命令链接的位置已被其他文件占用", "A file already exists at the command link location", false},
-		{"clear-count", clearCountError(2), "2 个文件无法删除", "2 files could not be deleted", false},
+		{"clear-count", clearCountError(2), "2个文件无法删除", "2 files could not be deleted", false},
 		{"unknown", errors.New(external), "操作失败：" + external, "Operation failed: " + external, true},
 		{"timeout", fmt.Errorf("summary: %w", context.DeadlineExceeded), "请求超时", "The request timed out", false},
 		{"net-timeout", &llm.RequestError{Kind: llm.ErrConnection, Cause: &net.DNSError{Err: "i/o timeout", Name: "api.example.com", IsTimeout: true}}, "请求超时", "The request timed out", false},

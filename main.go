@@ -69,7 +69,9 @@ type app struct {
 	providerSearch  string
 	apiKeyDraft     string
 	baseURLDraft    string
+	responsesDraft  string
 	modelDraft      string
+	modelsAll       bool
 	providerTest    providerTestState
 	credScan        credScanState
 	fetchState      fetchModelsState
@@ -89,7 +91,7 @@ type app struct {
 	recentSessions []recentSession
 	lastSessions   time.Time
 
-	legacy        legacyState
+	legacy         legacyState
 	agentCopiedKey string
 	agentCopiedAt  time.Time
 }

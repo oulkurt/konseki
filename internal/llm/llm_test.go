@@ -187,10 +187,10 @@ func TestEndpointAndAnthropicURLAssembly(t *testing.T) {
 	}
 
 	paths = nil
-	if _, err := c.ListModels(context.Background(), srv.URL+"/v1/chat/completions?api-version=1", "k", nil); err != nil {
+	if _, err := c.ListModels(context.Background(), Request{BaseURL: srv.URL + "/v1/chat/completions?api-version=1", APIKey: "k"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.ListModels(context.Background(), srv.URL+"/v1/messages", "k", nil); err != nil {
+	if _, err := c.ListModels(context.Background(), Request{Kind: AnthropicMessages, BaseURL: srv.URL + "/v1/messages", APIKey: "k"}); err != nil {
 		t.Fatal(err)
 	}
 	wantList := []string{"/v1/models?api-version=1", "/v1/models"}
@@ -230,7 +230,7 @@ func TestAnthropicPresetListModelsPathAndHeaders(t *testing.T) {
 			Header:     make(http.Header),
 		}, nil
 	})
-	ids, err := c.ListModelsForKind(context.Background(), resolved.Kind, resolved.BaseURL, pc.APIKey, nil)
+	ids, err := c.ListModels(context.Background(), Request{Kind: resolved.Kind, BaseURL: resolved.BaseURL, APIKey: pc.APIKey})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +286,7 @@ func TestAuthHeadersAnthropicVersionAndAzure(t *testing.T) {
 		t.Fatalf("Azure request must not send Authorization header, got %q", seenAuth)
 	}
 
-	if _, err := c.ListModels(context.Background(), srv.URL+"/v1", "secret-key", map[string]string{"api-key": "az-key"}); err != nil {
+	if _, err := c.ListModels(context.Background(), Request{BaseURL: srv.URL + "/v1", APIKey: "secret-key", Header: map[string]string{"api-key": "az-key"}}); err != nil {
 		t.Fatal(err)
 	}
 	if seenAuth != "" {

@@ -59,7 +59,7 @@ func (a *app) testConnection(idx int) {
 			if pc.Auth == "oauth" {
 				key = pc.AccessToken
 			}
-			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.BaseURL, APIKey: key, Header: headersFor(pc, r), Model: r.Model, Prompt: "Reply with OK.", MaxTokens: 32})
+			resp, e := client.Complete(ctx, llm.Request{Kind: r.Kind, BaseURL: r.CallBase(), APIKey: key, Header: headersFor(pc, r), AuthKind: r.AuthKind, Model: r.Model, Prompt: "Reply with OK.", MaxTokens: 32})
 			err = e
 			if err == nil {
 				model = resp.Model
@@ -103,6 +103,14 @@ func withGlass(el ui.Element, clarity float32) ui.Element {
 	return el.Material(glass.Glass{Style: glass.Clear, Interactive: true, Clarity: clarity})
 }
 
+// fetchModels 真的去问供应商要模型列表。
+//
+// 为什么不在本地维护：模型 id 每周都在变（deepseek-flash 这种名字
+// 跟文档里写的 v4.1-flash 完全对不上），硬编码一份必然过期，
+// 而过期的表现是「配好了但请求 400」。
+//
+// 拿到的列表写成发现清单（全量），并默认全选进 EnabledModels。
+// 分开存是为了让用户取消勾选：发现清单留着，界面上才能把取消的模型显示回来。
 func (a *app) fetchModels(idx int) {
 	if a.llmc == nil || idx < 0 || idx >= len(a.cfgNow.Providers) || a.tasks.isClosed() {
 		return
@@ -119,7 +127,7 @@ func (a *app) fetchModels(idx int) {
 			if pc.Auth == "oauth" && pc.AccessToken != "" {
 				key = pc.AccessToken
 			}
-			ids, err = client.ListModelsForKind(ctx, resolved.Kind, resolved.BaseURL, key, headersFor(pc, resolved))
+			ids, err = client.ListModels(ctx, llm.Request{Kind: resolved.Kind, BaseURL: resolved.CallBase(), APIKey: key, Header: headersFor(pc, resolved), AuthKind: resolved.AuthKind})
 		}
 		var chat []string
 		for _, id := range ids {
@@ -145,16 +153,15 @@ func (a *app) fetchModels(idx int) {
 				return
 			}
 			found := false
-			defaultChanged := false
 			if updateErr := a.cfg.Update(func(c *config.Config) {
 				for i := range c.Providers {
 					p := &c.Providers[i]
 					if providerKey(*p) == pid {
 						found = true
+						p.DiscoveredModels = slices.Clone(chat)
 						p.EnabledModels = slices.Clone(chat)
 						if p.DefaultModel == "" {
 							p.DefaultModel = chat[0]
-							defaultChanged = true
 						}
 						return
 					}
@@ -169,9 +176,7 @@ func (a *app) fetchModels(idx int) {
 				a.fetchState.clear()
 				return
 			}
-			if defaultChanged {
-				a.rebuildGenerator()
-			}
+			a.rebuildGenerator()
 			a.fetchState.finish(epoch, pid, len(chat), nil)
 		})
 	})

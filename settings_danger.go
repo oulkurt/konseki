@@ -28,8 +28,8 @@ func (a *app) renderDanger(c *ui.Context, pal palette) {
 	canClear := hasData || a.clear.phase == clearFailed || len(a.legacy.files) > 0
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
-			ui.Text(c, msg.RecorderDanger()).Bold().TextColor(c.Theme().Danger)
-			ui.Text(c, msg.RecorderClearDescription()).FontSize(12).TextColor(pal.textSecondary).LineHeight(1.4)
+			headingText(c, msg.RecorderDanger()).SingleLine().TextColor(c.Theme().Danger)
+			bodyText(c, msg.RecorderClearDescription()).FontSize(12).TextColor(pal.textSecondary)
 			label := msg.RecorderClear()
 			if a.clear.running() {
 				label = msg.RecorderClearing()

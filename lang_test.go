@@ -72,6 +72,7 @@ var settingsAllow = append(append([]string{}, timelineAllow...),
 	"MB", "ms", "API", "bundle", "ID", "English", "简体中文", "zh-Hans, en-US",
 	"com.1password.1password", "com.apple.keychainaccess", "com.bitwarden.desktop",
 	"Agent", "Claude Code", "Codex", "SKILL.md", "Mac",
+	"OpenAI", "Responses", "key",
 )
 
 // checkPageLanguage 剔除应用目录、技能命令和调用方给的用户数据，再检查当前页面。

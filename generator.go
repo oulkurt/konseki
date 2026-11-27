@@ -13,18 +13,8 @@ import (
 )
 
 func resolveSummaryProviderKey(summaryID string, list []config.ProviderConfig) string {
-	if summaryID == "" {
-		return ""
-	}
-	for _, p := range list {
-		if p.ID != "" && p.ID == summaryID {
-			return providerKey(p)
-		}
-	}
-	for _, p := range list {
-		if p.Preset == summaryID {
-			return providerKey(p)
-		}
+	if idx := config.SummaryProviderIndex(summaryID, list); idx >= 0 {
+		return providerKey(list[idx])
 	}
 	return ""
 }
@@ -84,15 +74,16 @@ func (a *app) rebuildGenerator() {
 	if pc.Auth == "oauth" && pc.AccessToken != "" {
 		key = pc.AccessToken
 	}
-	model := a.cfgNow.Summary.Model
-	if model == "" {
-		model = resolved.Model
+	model := resolved.Model
+	if pc.AllowsModel(a.cfgNow.Summary.Model) {
+		model = a.cfgNow.Summary.Model
 	}
 
 	cfg := summary.LLMConfig{
 		Kind:      resolved.Kind,
-		BaseURL:   resolved.BaseURL,
+		BaseURL:   resolved.CallBase(),
 		APIKey:    key,
+		AuthKind:  resolved.AuthKind,
 		Header:    headersFor(*pc, resolved),
 		Model:     model,
 		Thinking:  a.cfgNow.Summary.ThinkingEffort,

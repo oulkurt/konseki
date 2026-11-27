@@ -17,6 +17,7 @@ import (
 	"konseki/internal/capture"
 	"konseki/internal/providers"
 	"konseki/internal/summary"
+	"konseki/locales"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -93,8 +94,11 @@ func shot(t *testing.T, state, lang string, dark bool) []byte {
 	tt.SetLocale(lang)
 	tt.SetDark(dark)
 	if state == "settings" {
-		if !tt.HasText("测试连接") {
-			t.Fatal("供应商编辑区没有展开，截图覆盖不到它")
+		// 断言文案要跟着语言走：硬编码中文，en 那一轮永远找不到按钮。
+		// 夹具自己设了语言，HasText 却查另一种语言的文案，是夹具自相矛盾。
+		testBtn := locales.In(lang).ModelsTest()
+		if !tt.HasText(testBtn) {
+			t.Fatalf("供应商编辑区没有展开，截图覆盖不到它（找 %q）", testBtn)
 		}
 	}
 	tt.Advance(time.Second)

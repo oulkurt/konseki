@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,8 @@ type ProviderConfig struct {
 	// 覆盖预设里的端点。用户接中转站或者自建网关时要填。
 	ChatBase      string `json:"chatBase,omitempty"`
 	AnthropicBase string `json:"anthropicBase,omitempty"`
+	// ResponsesBase 覆盖 OpenAI Responses 端点，和 ChatBase 并列。
+	ResponsesBase string `json:"responsesBase,omitempty"`
 
 	// APIKey 只在内存里以明文出现；落盘时由 Store 拆出去单独存。
 	APIKey string `json:"-"`
@@ -61,8 +64,14 @@ type ProviderConfig struct {
 	// 每档有自己的 host 和 key 适用范围。空表示用预设的默认档。
 	Region string `json:"region,omitempty"`
 
-	// 用户启用/禁用了哪些模型。空表示全用预设给的。
+	// 用户勾选了哪些模型。空表示全用预设给的。
 	EnabledModels []string `json:"enabledModels,omitempty"`
+	// DiscoveredModels 是拉取或首次勾选时固化的可选模型全集，含未勾选的。
+	//
+	// 和 EnabledModels 分开存：发现是「这家有什么」，勾选是「我要用哪些」。
+	// 混在一个字段里，取消勾选就没有依据，用户也无法在界面上恢复显示。
+	// 为空表示还没进入勾选模式，此时按预设与 EnabledModels 的并集解析。
+	DiscoveredModels []string `json:"discoveredModels,omitempty"`
 	// DefaultModel 是这个供应商下的默认模型 id。
 	DefaultModel string `json:"defaultModel,omitempty"`
 }
@@ -244,17 +253,19 @@ type wireOCR struct {
 }
 
 type wireProvider struct {
-	ID            *string    `json:"id,omitempty"`
-	Preset        *string    `json:"preset,omitempty"`
-	Label         *string    `json:"label,omitempty"`
-	ChatBase      *string    `json:"chatBase,omitempty"`
-	AnthropicBase *string    `json:"anthropicBase,omitempty"`
-	Auth          *string    `json:"auth,omitempty"`
-	AccountID     *string    `json:"accountId,omitempty"`
-	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
-	Region        *string    `json:"region,omitempty"`
-	EnabledModels *[]string  `json:"enabledModels,omitempty"`
-	DefaultModel  *string    `json:"defaultModel,omitempty"`
+	ID               *string    `json:"id,omitempty"`
+	Preset           *string    `json:"preset,omitempty"`
+	Label            *string    `json:"label,omitempty"`
+	ChatBase         *string    `json:"chatBase,omitempty"`
+	AnthropicBase    *string    `json:"anthropicBase,omitempty"`
+	ResponsesBase    *string    `json:"responsesBase,omitempty"`
+	Auth             *string    `json:"auth,omitempty"`
+	AccountID        *string    `json:"accountId,omitempty"`
+	ExpiresAt        *time.Time `json:"expiresAt,omitempty"`
+	Region           *string    `json:"region,omitempty"`
+	EnabledModels    *[]string  `json:"enabledModels,omitempty"`
+	DiscoveredModels *[]string  `json:"discoveredModels,omitempty"`
+	DefaultModel     *string    `json:"defaultModel,omitempty"`
 }
 
 type wireRedact struct {
@@ -320,6 +331,36 @@ func parse(data []byte) (Config, bool, error) {
 	}
 	normalize(&c, false)
 	return c, legacy, nil
+}
+
+func (p ProviderConfig) AllowsModel(model string) bool {
+	return model != "" && (len(p.DiscoveredModels) == 0 || slices.Contains(p.EnabledModels, model) ||
+		(model == p.DefaultModel && !slices.Contains(p.DiscoveredModels, model)))
+}
+
+func (p ProviderConfig) ModelSelection(model string) string {
+	if p.AllowsModel(model) {
+		return model
+	}
+	if p.AllowsModel(p.DefaultModel) {
+		return p.DefaultModel
+	}
+	for _, enabled := range p.EnabledModels {
+		if enabled != "" {
+			return enabled
+		}
+	}
+	return ""
+}
+
+func SummaryProviderIndex(id string, providers []ProviderConfig) int {
+	if id == "" {
+		return -1
+	}
+	if idx := slices.IndexFunc(providers, func(p ProviderConfig) bool { return p.ID == id }); idx >= 0 {
+		return idx
+	}
+	return slices.IndexFunc(providers, func(p ProviderConfig) bool { return p.Preset == id })
 }
 
 func clamp(n, lo, hi int) int {
@@ -414,6 +455,12 @@ func normalize(c *Config, randomNewIDs bool) {
 			} else {
 				c.Providers[i].ID = nextProviderID(c.Providers[i], used)
 			}
+		}
+	}
+	if idx := SummaryProviderIndex(c.Summary.ProviderID, c.Providers); idx >= 0 {
+		p := c.Providers[idx]
+		if len(p.DiscoveredModels) > 0 {
+			c.Summary.Model = p.ModelSelection(c.Summary.Model)
 		}
 	}
 }

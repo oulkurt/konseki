@@ -1,7 +1,7 @@
 # summary/
 > L2 | 父级: ../CLAUDE.md
 CLAUDE.md: 描述本目录的职责和成员。
-summary.go: 按时间窗生成摘要（含窗口覆盖追踪与提交边界 cfgSeq/代次防线），屏幕文本作为不可信数据。
+summary.go: 按时间窗生成摘要（含窗口覆盖追踪与提交边界 cfgSeq/代次防线），屏幕文本作为不可信数据。LLMConfig 透传鉴权方式。
 store.go: 带目录级 .gen 代次隔离、严格读检验、提交守卫与只读保护的 JSONL 摘要存储。
 lock_unix.go: Unix 平台下摘要目录独占文件锁。
 lock_windows.go: Windows 平台下摘要目录独占系统锁。

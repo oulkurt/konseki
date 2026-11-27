@@ -186,7 +186,7 @@ func TestProviderKeyInputRebuildsGenerator(t *testing.T) {
 		seenAuth = r.Header.Get("Authorization")
 		return &http.Response{
 			StatusCode: 200,
-			Body:       io.NopCloser(strings.NewReader(`{"model":"gpt-5.2","choices":[{"message":{"content":"{\"headline\":\"h\",\"summary\":\"s\"}"}}]}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"model":"gpt-5.2","output":[{"type":"message","content":[{"type":"output_text","text":"{\"headline\":\"h\",\"summary\":\"s\"}"}]}]}`)),
 			Header:     make(http.Header),
 		}, nil
 	})
@@ -467,7 +467,7 @@ func TestTimelineSummaryErrorScopedToFailedDayAndFetchButtonTriggers(t *testing.
 	jobs := make(chan func(), 2)
 	a.post = func(f func()) { jobs <- f }
 	tt.Frame()
-	if err := tt.Click("拉取模型"); err != nil {
+	if err := tt.Click(locales.In("zh-Hans").ModelsFetch()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -477,7 +477,7 @@ func TestTimelineSummaryErrorScopedToFailedDayAndFetchButtonTriggers(t *testing.
 		t.Fatal("拉取模型按钮触发后超时")
 	}
 	tt.Frame()
-	if !tt.HasText("拉到 2 个模型") {
+	if !tt.HasText(locales.In("zh-Hans").ModelsFetchSuccess(2)) {
 		t.Fatalf("未渲染拉取模型结果: %q", tt.Texts())
 	}
 }
@@ -586,7 +586,7 @@ func TestAnthropicPresetFetchModelsButtonHitsV1Models(t *testing.T) {
 	jobs := make(chan func(), 2)
 	a.post = func(f func()) { jobs <- f }
 	tt := ui.NewTester(a.view, 780, 1800)
-	if err := tt.Click("拉取模型"); err != nil {
+	if err := tt.Click(locales.In("zh-Hans").ModelsFetch()); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -599,7 +599,7 @@ func TestAnthropicPresetFetchModelsButtonHitsV1Models(t *testing.T) {
 	if gotURL != "https://api.anthropic.com/v1/models" || gotVersion != "2023-06-01" || gotKey != "sk-ant-btn" {
 		t.Fatalf("Anthropic 拉取请求参数错误: url=%q version=%q key=%q", gotURL, gotVersion, gotKey)
 	}
-	if !tt.HasText("拉到 1 个模型") {
+	if !tt.HasText(locales.In("zh-Hans").ModelsFetchSuccess(1)) {
 		t.Fatalf("未渲染 Anthropic 拉取结果: %q", tt.Texts())
 	}
 }
@@ -708,7 +708,7 @@ func TestStaleWindowDeletePreservesRecreatedProviderAndAddExpandsRow(t *testing.
 	}
 	a.tab, a.settingsTab = 1, 1
 	tt := ui.NewTester(a.view, 780, 1800)
-	if !tt.HasText("拉取模型") {
+	if !tt.HasText(locales.In("zh-Hans").ModelsFetch()) {
 		t.Fatalf("新增供应商面板未展开: %q", tt.Texts())
 	}
 }
