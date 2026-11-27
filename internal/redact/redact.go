@@ -26,6 +26,8 @@ import (
 	"crypto/sha256"
 	"encoding/base32"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -83,21 +85,16 @@ type Hit struct {
 	Value string
 }
 
-// maxHits 是保留的命中条数上限。OCR 一小时可能扫到上千个邮箱，全存
-// 下来没有意义，调用方只需要知道「遮了什么类型的东西」。
-const maxHits = 200
+const (
+	maxHits  = 200
+	maxTable = 10000
+)
 
 // rePlaceholder 匹配完整占位符。截断的半截（如 {{EMAIL_ab）不匹配，
 // Restore 因此会把它原样留下而不是吞掉。
 var rePlaceholder = regexp.MustCompile(`\{\{[A-Z][A-Z0-9_]*_[a-z2-7]{8}\}\}`)
 
-// 反查表与 salt 是包级状态而不是每个 Masker 一份：进程级 salt 保证
-// 同一值在任何 Masker 里换出同一个占位符，反查表于是也共享，任意一个
-// Masker 都能还原任意占位符。二者都只在内存，进程退出即失效。
 var (
-	tableMu sync.RWMutex
-	table   = map[string]string{} // placeholder -> 原值
-
 	saltOnce sync.Once
 	salt     []byte
 )
@@ -112,25 +109,33 @@ type Masker struct {
 	allow   []string
 	rules   []matcher
 
-	mu     sync.Mutex
-	hits   []Hit
-	hitSet map[string]struct{}
+	mu         sync.RWMutex
+	hits       []Hit
+	hitSet     map[string]struct{}
+	table      map[string]string
+	tableOrder []string
+	tableHead  int
 }
 
 // New 按 Options 预编译规则，返回可复用的 Masker。
 func New(opts Options) *Masker {
 	m := &Masker{
 		enabled: map[string]bool{},
-		words:   opts.Words,
-		allow:   opts.Allow,
+		words:   slices.Clone(opts.Words),
+		allow:   slices.Clone(opts.Allow),
 		hitSet:  map[string]struct{}{},
+		table:   map[string]string{},
 	}
 
-	// Kinds 的 key 可能是 kind 名（IP/EMAIL）也可能是类别 ID（network），
-	// 统一转大写再查，避免大小写造成「写了却无效」。
+	keys := make([]string, 0, len(opts.Kinds))
+	for k := range opts.Kinds {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	norm := make(map[string]bool, len(opts.Kinds))
-	for k, v := range opts.Kinds {
-		norm[strings.ToUpper(k)] = v
+	for _, k := range keys {
+		norm[strings.ToUpper(k)] = opts.Kinds[k]
 	}
 
 	for _, cat := range Categories {
@@ -139,6 +144,11 @@ func New(opts Options) *Masker {
 				m.enabled[kind] = true
 			}
 		}
+	}
+	if v, ok := norm["WORD"]; ok {
+		m.enabled["WORD"] = v
+	} else if len(m.words) > 0 {
+		m.enabled["WORD"] = true
 	}
 
 	m.rules = buildRules(m.enabled, m.words)
@@ -151,7 +161,7 @@ func kindEnabled(kind string, cat Category, o Options, norm map[string]bool) boo
 	if v, ok := norm[kind]; ok {
 		return v
 	}
-	if v, ok := norm[cat.ID]; ok {
+	if v, ok := norm[strings.ToUpper(cat.ID)]; ok {
 		return v
 	}
 	if cat.ID == "secrets" {
@@ -162,7 +172,7 @@ func kindEnabled(kind string, cat Category, o Options, norm map[string]bool) boo
 
 // Mask 找到并替换 text 里的敏感值，返回脱敏后的文本。
 func (m *Masker) Mask(text string) string {
-	if text == "" {
+	if text == "" || len(m.rules) == 0 {
 		return text
 	}
 
@@ -182,7 +192,7 @@ func (m *Masker) Mask(text string) string {
 			continue
 		}
 		b.WriteString(text[last:sp.start])
-		b.WriteString(placeholderFor(sp.kind, val))
+		b.WriteString(m.placeholderFor(sp.kind, val))
 		last = sp.end
 		m.recordHit(sp.kind, val)
 	}
@@ -192,10 +202,13 @@ func (m *Masker) Mask(text string) string {
 
 // Restore 把完整占位符换回原值。截断的半截占位符不匹配正则，原样保留。
 func (m *Masker) Restore(text string) string {
+	if len(m.rules) == 0 || text == "" {
+		return text
+	}
 	return rePlaceholder.ReplaceAllStringFunc(text, func(ph string) string {
-		tableMu.RLock()
-		v, ok := table[ph]
-		tableMu.RUnlock()
+		m.mu.RLock()
+		v, ok := m.table[ph]
+		m.mu.RUnlock()
 		if !ok {
 			return ph
 		}
@@ -205,25 +218,32 @@ func (m *Masker) Restore(text string) string {
 
 // Hits 返回去重后的命中记录（最多 200 条），顺序为首次出现顺序。
 func (m *Masker) Hits() []Hit {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	out := make([]Hit, len(m.hits))
 	copy(out, m.hits)
 	return out
 }
 
-// placeholderFor 计算占位符并登记反查表。消息是 kind + "\x00" + value：
-// 同一值在不同 kind 下用不同占位符，避免 EMAIL 和 WORD 命中同一串时
-// 互相覆盖，也保证占位符里的 KIND 标签永远和命中规则一致。
-func placeholderFor(kind, val string) string {
+func (m *Masker) placeholderFor(kind, val string) string {
 	h := hmac.New(sha256.New, saltBytes())
 	h.Write([]byte(kind + "\x00" + val))
 	sum := h.Sum(nil)
 	ph := "{{" + kind + "_" + strings.ToLower(b32.EncodeToString(sum)[:8]) + "}}"
 
-	tableMu.Lock()
-	table[ph] = val
-	tableMu.Unlock()
+	m.mu.Lock()
+	if _, exists := m.table[ph]; !exists {
+		if len(m.table) >= maxTable {
+			evict := m.tableOrder[m.tableHead]
+			delete(m.table, evict)
+			m.tableOrder[m.tableHead] = ph
+			m.tableHead = (m.tableHead + 1) % maxTable
+		} else {
+			m.tableOrder = append(m.tableOrder, ph)
+		}
+		m.table[ph] = val
+	}
+	m.mu.Unlock()
 	return ph
 }
 

@@ -26,5 +26,6 @@ func init() {
 		Note:    "Google AI Pro/Ultra 订阅",
 		Website: "https://gemini.google",
 		NoKey:   true,
+		NoList:  true,
 	})
 }

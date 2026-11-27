@@ -191,7 +191,7 @@ func TestRunnerDuplicateUsesStoredDimensions(t *testing.T) {
 	c.advance(250 * time.Millisecond)
 	day := c.Now().Format("2006-01-02")
 	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 1 })
-	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.machine.inFlight })
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.job != jobCapture })
 	c.advance(time.Second)
 	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 2 })
 	rows, _ := r.Snapshots(day)
@@ -219,8 +219,9 @@ func TestRunnerSuspendPersistsPreviousTick(t *testing.T) {
 	// 墙钟跨过睡眠，macOS 单调钟却不包含睡眠时长。
 	c.advance(8 * time.Hour)
 	eventually(t, func() bool { return r.Status().Session == nil })
-	sessions := r.RecentSessions(1)
-	if len(sessions) != 1 || sessions[0].EndReason != EndSuspend || !sessions[0].End.Equal(before) {
+	var sessions []Session
+	eventually(t, func() bool { sessions = r.RecentSessions(1); return len(sessions) == 1 })
+	if sessions[0].EndReason != EndSuspend || !sessions[0].End.Equal(before) {
 		t.Fatal(sessions)
 	}
 }
@@ -269,4 +270,273 @@ func TestClearAllDoesNotRecoverResidualSession(t *testing.T) {
 			}
 		})
 	}
+}
+
+type staleProbeScreen struct {
+	fakeScreen
+	mu      sync.Mutex
+	calls   int
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s *staleProbeScreen) Grab() *Frame {
+	s.mu.Lock()
+	s.calls++
+	n := s.calls
+	s.mu.Unlock()
+	if n == 2 {
+		close(s.started)
+		<-s.release
+		return (&changingScreen{}).Grab()
+	}
+	return s.fakeScreen.Grab()
+}
+
+func TestRunnerStaleProbeGenerationRejected(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	screen := &staleProbeScreen{started: make(chan struct{}), release: make(chan struct{})}
+	d.screen = screen
+	r, err := newRunner(Settings{Root: t.TempDir(), ScreenPoll: 500 * time.Millisecond, Heartbeat: time.Hour, Idle: time.Minute, Debounce: time.Millisecond}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	day := c.Now().Format("2006-01-02")
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 1 })
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.job == jobIdle })
+
+	c.advance(500 * time.Millisecond)
+	<-screen.started
+
+	sys.mu.Lock()
+	sys.front = Front{App: "B", Bundle: "b", PID: 2}
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.generation >= 2 && r.machine.pending == TriggerAppFocus })
+
+	close(screen.release)
+	eventually(t, func() bool { rows, _ := r.Snapshots(day); return len(rows) == 2 })
+	rows, err := r.Snapshots(day)
+	if err != nil || rows[1].Bundle != "b" || rows[1].Trigger != TriggerAppFocus {
+		t.Fatalf("陈旧探测干扰了新代际采集: %+v %v", rows, err)
+	}
+	r.mu.Lock()
+	pf := r.machine.probeFactor
+	r.mu.Unlock()
+	if pf != 1 {
+		t.Fatalf("陈旧探测修改了退避倍数: %d", pf)
+	}
+}
+
+type abortOnProbeScreen struct {
+	fakeScreen
+	sys    *fakeSystem
+	mu     sync.Mutex
+	probed int
+}
+
+func (s *abortOnProbeScreen) Grab() *Frame {
+	f := s.fakeScreen.Grab()
+	s.sys.mu.Lock()
+	s.sys.locked = true
+	s.sys.mu.Unlock()
+	s.mu.Lock()
+	s.probed++
+	s.mu.Unlock()
+	return f
+}
+
+func TestRunnerAbortedProbeNotBackedOff(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	screen := &abortOnProbeScreen{sys: sys}
+	d.screen = screen
+	r, err := newRunner(Settings{Root: t.TempDir(), ScreenPoll: time.Second, Heartbeat: time.Hour, Idle: time.Minute}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	c.advance(time.Second)
+	eventually(t, func() bool {
+		screen.mu.Lock()
+		probed := screen.probed
+		screen.mu.Unlock()
+		if probed == 0 {
+			return false
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.machine.job == jobIdle
+	})
+	screen.mu.Lock()
+	probed := screen.probed
+	screen.mu.Unlock()
+	r.mu.Lock()
+	pf, pending := r.machine.probeFactor, r.machine.pending
+	r.mu.Unlock()
+	if probed != 1 || pf != 1 || pending == TriggerVisual {
+		t.Fatalf("中止探测退避或误触发视觉变化: probed=%d probeFactor=%d pending=%q", probed, pf, pending)
+	}
+}
+
+func TestRunnerEffectivePhaseLockedPrecedence(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Hour}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	sys.mu.Lock()
+	sys.locked = true
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Block == BlockScreenLocked })
+
+	r.Pause(c.Now().Add(time.Hour))
+	if st := r.Status(); st.Phase != PhaseBlocked || st.Block != BlockScreenLocked {
+		t.Fatalf("锁屏优先级低于暂停: %+v", st)
+	}
+	sys.mu.Lock()
+	sys.locked = false
+	sys.mu.Unlock()
+	c.advance(time.Second)
+	eventually(t, func() bool { return r.Status().Phase == PhasePaused })
+}
+
+type mutablePermsScreen struct {
+	fakeScreen
+	mu   sync.Mutex
+	perm PermState
+}
+
+func (s *mutablePermsScreen) Permission(bool) PermState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.perm
+}
+
+func TestRunnerSetPermissionsDoesNotFlicker(t *testing.T) {
+	d, c, _ := fakeDependencies()
+	screen := &mutablePermsScreen{perm: PermDenied}
+	d.screen = screen
+	r, err := newRunner(Settings{Root: t.TempDir(), Heartbeat: time.Hour}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Perms.Screen == PermDenied })
+
+	r.SetPermissions(Perms{Screen: PermGranted, Accessibility: PermGranted})
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	if p := r.Status().Perms; p.Screen != PermGranted || p.Accessibility != PermGranted {
+		t.Fatalf("权限状态回退闪烁: %+v", p)
+	}
+}
+
+type applyDisableTotals struct {
+	mu     sync.Mutex
+	runner *Runner
+	cfg    Settings
+	value  InputTotals
+	calls  int
+}
+
+func (t *applyDisableTotals) Totals() (InputTotals, bool) {
+	t.mu.Lock()
+	t.calls++
+	r, cfg, v := t.runner, t.cfg, t.value
+	t.mu.Unlock()
+	if r != nil {
+		cfg.InputCounts = false
+		r.Apply(cfg)
+	}
+	return v, true
+}
+
+func TestRunnerInputCountsDisabledDuringTickDoesNotResurrect(t *testing.T) {
+	d, c, _ := fakeDependencies()
+	cfg := Settings{Root: t.TempDir(), Heartbeat: time.Hour, InputCounts: true}
+	src := &applyDisableTotals{cfg: cfg, value: InputTotals{Keys: 42, Clicks: 9}}
+	d.totals = src
+	r, err := newRunner(cfg, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src.mu.Lock()
+	src.runner = r
+	src.mu.Unlock()
+	r.Start()
+	defer r.Stop()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+	r.mu.Lock()
+	have := r.counts.have
+	r.mu.Unlock()
+	if have {
+		t.Fatal("禁用输入计数后被旧读数复活")
+	}
+}
+
+func TestRunnerDirectorySwitchFailureDoesNotWriteToOldDirAndRecovers(t *testing.T) {
+	d, c, sys := fakeDependencies()
+	oldRoot := t.TempDir()
+	blockedParent := filepath.Join(t.TempDir(), "file-blocker")
+	if err := os.WriteFile(blockedParent, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	badRoot := filepath.Join(blockedParent, "nested")
+	cfg := Settings{Root: oldRoot, Heartbeat: time.Hour, Idle: time.Minute, Debounce: time.Millisecond}
+	r, err := newRunner(cfg, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Close()
+
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Front.Bundle == "a" })
+
+	cfg.Root = badRoot
+	r.Apply(cfg)
+
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().LastErr != nil })
+
+	if shots, err := os.ReadDir(filepath.Join(oldRoot, "shots")); (err != nil && !os.IsNotExist(err)) || len(shots) != 0 {
+		t.Fatalf("目标目录切换失败后仍向旧目录写入截图: %v %v", shots, err)
+	}
+	if sess, err := os.ReadDir(filepath.Join(oldRoot, "sessions")); (err != nil && !os.IsNotExist(err)) || len(sess) != 0 {
+		t.Fatalf("目标目录切换失败后仍向旧目录写入会话: %v %v", sess, err)
+	}
+
+	goodRoot := t.TempDir()
+	cfg.Root = goodRoot
+	r.Apply(cfg)
+	c.advance(250 * time.Millisecond)
+	sys.mu.Lock()
+	sys.click = c.Now()
+	sys.mu.Unlock()
+	c.advance(250 * time.Millisecond)
+
+	eventually(t, func() bool {
+		return r.Root() == goodRoot && r.Status().LastErr == nil && r.Status().Usage.Shots == 1
+	})
 }

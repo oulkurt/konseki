@@ -49,7 +49,7 @@ func liveGrabs(t *testing.T, liveSensitive bool) (int, Status) {
 		c.advance(250 * time.Millisecond)
 		eventually(t, func() bool { return reads() > n0 })
 		time.Sleep(2 * time.Millisecond)
-		eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return !r.machine.inFlight && !r.machine.probing })
+		eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.machine.job == jobIdle })
 	}
 	return screen.count(), r.Status()
 }
@@ -116,10 +116,10 @@ func TestLiveSensitiveAppearsDuringGrab(t *testing.T) {
 	c.advance(time.Second)
 	eventually(t, func() bool { return r.Status().Block == BlockSensitiveApp })
 	r.mu.Lock()
-	inFlight, pending := r.machine.inFlight, r.machine.pending
+	job, pending := r.machine.job, r.machine.pending
 	r.mu.Unlock()
-	if inFlight || pending != "" {
-		t.Fatalf("敏感帧触发重试: inFlight=%v pending=%q", inFlight, pending)
+	if job != jobIdle || pending != "" {
+		t.Fatalf("敏感帧触发重试: job=%v pending=%q", job, pending)
 	}
 	rows, err := r.Snapshots(c.Now().Format("2006-01-02"))
 	if err != nil || len(rows) != 0 {

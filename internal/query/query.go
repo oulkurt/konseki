@@ -82,11 +82,15 @@ func Main(args []string, env Env, stdout, stderr io.Writer) int {
 	if cmd == "" {
 		return printUsageError(stderr, errors.New("missing command"))
 	}
-	if _, err := os.Stat(env.Dir); errors.Is(err, os.ErrNotExist) {
+	info, err := os.Stat(env.Dir)
+	if errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(stderr, "konseki query: no Konseki data at %s. Open Konseki once first.\n", env.Dir)
 		return 1
 	} else if err != nil {
 		return fail(stderr, err)
+	}
+	if !info.IsDir() {
+		return fail(stderr, fmt.Errorf("%s is not a directory", env.Dir))
 	}
 
 	cfg, err := config.Read(env.Dir)
@@ -104,18 +108,7 @@ func Main(args []string, env Env, stdout, stderr io.Writer) int {
 		sums: summary.OpenStore(env.Dir),
 		mask: redact.New(cfg.Redact.Options()),
 	}
-	switch cmd {
-	case "status":
-		err = r.status(stdout)
-	case "days":
-		err = r.days(stdout, opts)
-	case "day":
-		err = r.day(stdout, opts)
-	case "snapshots":
-		err = r.snapshots(stdout, opts)
-	case "search":
-		err = r.search(stdout, opts)
-	}
+	err = r.dispatch(cmd, opts, stdout)
 	if err != nil {
 		if ue, ok := err.(usageError); ok {
 			return printUsageError(stderr, ue.err)
@@ -123,6 +116,23 @@ func Main(args []string, env Env, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 	return 0
+}
+
+func (r *runner) dispatch(cmd string, opts options, stdout io.Writer) error {
+	switch cmd {
+	case "status":
+		return r.status(stdout)
+	case "days":
+		return r.days(stdout, opts)
+	case "day":
+		return r.day(stdout, opts)
+	case "snapshots":
+		return r.snapshots(stdout, opts)
+	case "search":
+		return r.search(stdout, opts)
+	default:
+		return fmt.Errorf("unknown command %q", cmd)
+	}
 }
 
 // usage 标记用法错误：Main 打印用法并返回 2。
@@ -210,11 +220,19 @@ func parseArgs(args []string) (string, options, error) {
 			if eq := strings.IndexByte(name, '='); eq >= 0 {
 				value := name[eq+1:]
 				name = name[:eq]
-				if !valueFlags[name] {
-					return "", o, fmt.Errorf("unknown flag --%s", name)
+				if valueFlags[name] {
+					o.values[name], o.set[name] = value, true
+					continue
 				}
-				o.values[name], o.set[name] = value, true
-				continue
+				if boolFlags[name] {
+					v, err := strconv.ParseBool(value)
+					if err != nil {
+						return "", o, fmt.Errorf("invalid --%s %q", name, value)
+					}
+					o.flags[name], o.set[name] = v, true
+					continue
+				}
+				return "", o, fmt.Errorf("unknown flag --%s", name)
 			}
 			if valueFlags[name] {
 				if i+1 >= len(args) {

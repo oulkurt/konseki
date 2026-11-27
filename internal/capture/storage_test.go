@@ -477,3 +477,100 @@ func TestStorageIgnoresTemporaryFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestStorageUnscannedEnforce(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"shots/20261101-000000.jpg", "shots/20261102-000000.jpg", "shots/20261103-000000.jpg"} {
+		writeTestFile(t, root, name, []byte("1234567890"))
+	}
+	s := NewStorage(root)
+	freed, err := s.Enforce(25)
+	if err != nil || freed != 10 {
+		t.Fatalf("unscanned enforce: %d %v", freed, err)
+	}
+	if u := s.Usage(); u.Bytes != 20 || u.Shots != 2 {
+		t.Fatalf("usage: %+v", u)
+	}
+	s2 := NewStorage(root)
+	freed, err = s2.Enforce(50)
+	if err != nil || freed != 0 {
+		t.Fatalf("unscanned under quota: %d %v", freed, err)
+	}
+	if u := s2.Usage(); u.Bytes != 20 || u.Shots != 2 {
+		t.Fatalf("aligned usage: %+v", u)
+	}
+}
+
+func TestStorageDegradeNonShrinkingNoLivelock(t *testing.T) {
+	root := t.TempDir()
+	img := image.NewRGBA(image.Rect(0, 0, 1281, 721))
+	for y := 0; y < 721; y++ {
+		for x := 0; x < 1281; x++ {
+			img.SetRGBA(x, y, color.RGBA{uint8(x*37 + y*13), uint8(x*19 + y*53), uint8(x*7 + y*29), 255})
+		}
+	}
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, img, &jpeg.Options{Quality: 1}); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, root, "shots/2026-11-03/120000.000-abcd.jpg", b.Bytes())
+	s := NewStorage(root)
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.Local)
+	before := fullDecodeCount.Load()
+	n, err := s.Degrade(now)
+	if err != nil || n != 0 {
+		t.Fatalf("first degrade: %d %v", n, err)
+	}
+	afterFirst := fullDecodeCount.Load()
+	if afterFirst != before+1 {
+		t.Fatalf("expected 1 full decode, got %d", afterFirst-before)
+	}
+	n, err = s.Degrade(now)
+	if err != nil || n != 0 {
+		t.Fatalf("second degrade: %d %v", n, err)
+	}
+	if got := fullDecodeCount.Load(); got != afterFirst {
+		t.Fatalf("non-shrinking file re-decoded: %d", got-afterFirst)
+	}
+}
+
+func TestStorageDegradeCorruptSkipsAndContinues(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "shots/2026-11-03/100000.000-bad1.jpg", []byte("not-a-jpeg"))
+	writeTestFile(t, root, "shots/2026-11-03/120000.000-good.jpg", testJPEG(t))
+	s := NewStorage(root)
+	if err := s.Rescan(); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.Local)
+	n, err := s.Degrade(now)
+	if err == nil || n != 1 {
+		t.Fatalf("corrupt skip: n=%d err=%v", n, err)
+	}
+}
+
+func TestStoragePrunePartialErrorRescans(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("需要目录权限限制")
+	}
+	root := t.TempDir()
+	writeTestFile(t, root, "shots/2026-11-01/120000.000-a.jpg", []byte("12345"))
+	writeTestFile(t, root, "shots/2026-11-02/120000.000-b.jpg", []byte("1234567"))
+	blocked := filepath.Join(root, "shots", "2026-11-02")
+	if err := os.Chmod(blocked, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(blocked, 0700) })
+	s := NewStorage(root)
+	if err := s.Rescan(); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.Local)
+	_, err := s.Prune(2, now)
+	if err == nil {
+		t.Fatal("expected partial prune error")
+	}
+	if u := s.Usage(); u.Shots != 1 || u.Bytes != 7 {
+		t.Fatalf("partial prune left stale usage: %+v", u)
+	}
+}

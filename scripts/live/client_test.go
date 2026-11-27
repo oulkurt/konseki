@@ -11,15 +11,62 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"konseki/internal/summary"
 )
+
+func TestMain(m *testing.M) {
+	switch os.Getenv("KONSEKI_TEST_LIVE_HELPER") {
+	case "early":
+		_, _ = fmt.Fprintln(os.Stderr, strings.Repeat("boom-", 2500))
+		os.Exit(1)
+	case "hang":
+		if pidFile := os.Getenv("KONSEKI_TEST_LIVE_PIDFILE"); pidFile != "" {
+			_ = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600)
+		}
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	case "stderr_child":
+		sock := os.Getenv("MYGO_AUTOMATION")
+		l, err := net.Listen("unix", sock)
+		if err != nil {
+			os.Exit(2)
+		}
+		defer l.Close()
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			var req struct {
+				ID     int    `json:"id"`
+				Method string `json:"method"`
+			}
+			_ = json.NewDecoder(conn).Decode(&req)
+			switch req.Method {
+			case "check_stderr":
+				_, _ = fmt.Fprintln(os.Stderr, "after-launch-stderr-log")
+				_ = json.NewEncoder(conn).Encode(map[string]any{"id": req.ID, "result": map[string]any{"alive": true}})
+			case "quit":
+				_ = json.NewEncoder(conn).Encode(map[string]any{"id": req.ID, "result": map[string]any{"bye": true}})
+				_ = conn.Close()
+				os.Exit(0)
+			}
+			_ = conn.Close()
+		}
+	default:
+		os.Exit(m.Run())
+	}
+}
 
 type fakeRequest struct {
 	ID     int            `json:"id"`
@@ -30,7 +77,11 @@ type fakeRequest struct {
 // shortSocket 返回一个短路径。macOS 的 Unix 套接字路径不能超过 104 字节，t.TempDir() 太长。
 func shortSocket(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("/tmp", "live")
+	tmpRoot := "/tmp"
+	if runtime.GOOS == "windows" {
+		tmpRoot = ""
+	}
+	dir, err := os.MkdirTemp(tmpRoot, "live")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,5 +293,341 @@ func TestLaunchChildEnvironment(t *testing.T) {
 				t.Fatalf("继承=%q recorder=%v: %v", inherited, recorder, got)
 			}
 		}
+	}
+}
+
+func TestClientSubMillisecondIdleAndValidation(t *testing.T) {
+	path := shortSocket(t)
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	gotTimeout := make(chan int, 1)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var req fakeRequest
+		if err := json.NewDecoder(conn).Decode(&req); err != nil {
+			return
+		}
+		gotTimeout <- req.Params["timeout"]
+		_ = json.NewEncoder(conn).Encode(map[string]any{"id": req.ID, "result": map[string]any{}})
+	}()
+
+	c, err := dial(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.conn.Close()
+
+	if err := c.idle(0); err == nil {
+		t.Fatal("idle(0) succeeded")
+	}
+	if err := c.idle(-time.Millisecond); err == nil {
+		t.Fatal("idle(-1ms) succeeded")
+	}
+	if err := c.idle(500 * time.Microsecond); err != nil {
+		t.Fatalf("idle(500us) failed: %v", err)
+	}
+	if ms := <-gotTimeout; ms != 1 {
+		t.Fatalf("sub-millisecond timeout = %d, want 1", ms)
+	}
+}
+
+func TestClientEmptyResultPoisonAndConcurrency(t *testing.T) {
+	path := shortSocket(t)
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		dec := json.NewDecoder(conn)
+		enc := json.NewEncoder(conn)
+		for range 5 {
+			var req fakeRequest
+			if err := dec.Decode(&req); err != nil {
+				return
+			}
+			switch req.Method {
+			case "null_result":
+				_ = enc.Encode(map[string]any{"id": req.ID, "result": nil})
+			case "missing_result":
+				_ = enc.Encode(map[string]any{"id": req.ID})
+			case "ok":
+				_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]int{"n": req.ID}})
+			}
+		}
+	}()
+
+	c, err := dial(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.conn.Close()
+
+	for _, method := range []string{"null_result", "missing_result"} {
+		var out map[string]any
+		err := c.call(method, nil, &out)
+		var pe *protocolError
+		if !errors.As(err, &pe) || pe.Code != "empty_result" {
+			t.Fatalf("%s err = %v, want empty_result protocolError", method, err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 3)
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var res struct {
+				N int `json:"n"`
+			}
+			errs <- c.call("ok", nil, &res)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent call failed: %v", err)
+		}
+	}
+}
+
+func TestClientPoisonedAfterDeadline(t *testing.T) {
+	path := shortSocket(t)
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	release := make(chan struct{})
+	defer close(release)
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var req fakeRequest
+		_ = json.NewDecoder(conn).Decode(&req)
+		<-release
+	}()
+
+	c, err := dial(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.conn.Close()
+
+	var out map[string]any
+	if err := c.callTimeout("hang", nil, &out, 40*time.Millisecond); err == nil {
+		t.Fatal("expected deadline error")
+	}
+	start := time.Now()
+	err = c.callTimeout("after", nil, &out, time.Second)
+	if err == nil || time.Since(start) > 100*time.Millisecond {
+		t.Fatalf("poisoned client did not fail fast: err=%v elapsed=%v", err, time.Since(start))
+	}
+}
+
+func TestActGuardAndEmptyWindows(t *testing.T) {
+	path := shortSocket(t)
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func(conn net.Conn) {
+				defer conn.Close()
+				dec := json.NewDecoder(conn)
+				enc := json.NewEncoder(conn)
+				for {
+					var req struct {
+						ID     int            `json:"id"`
+						Method string         `json:"method"`
+						Params map[string]any `json:"params"`
+					}
+					if err := dec.Decode(&req); err != nil {
+						return
+					}
+					switch req.Method {
+					case "windows":
+						_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{"windows": []any{}}})
+					case "act":
+						_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]any{}})
+					}
+				}
+			}(conn)
+		}
+	}()
+
+	for _, args := range [][]string{
+		{"act", "-sock", path},
+		{"act", "-sock", path, "-id", "n1", "extra"},
+		{"act", "-sock", path, "-id", "n1", "extra1", "extra2"},
+		{"act", "-sock", path, "k1", "k2"},
+	} {
+		if err := run(args); err == nil {
+			t.Fatalf("run(%v) succeeded, want error", args)
+		}
+	}
+	if err := run([]string{"act", "-sock", path, "-id", "n1"}); err != nil {
+		t.Fatalf("act -id failed: %v", err)
+	}
+	if err := run([]string{"act", "-sock", path, "btn"}); err != nil {
+		t.Fatalf("act key failed: %v", err)
+	}
+
+	if err := run([]string{"tree", "-sock", path}); err == nil {
+		t.Fatal("tree with empty windows succeeded")
+	}
+	shotOut := filepath.Join(t.TempDir(), "shots")
+	if err := run([]string{"shot", "-sock", path, "-out", shotOut}); err == nil {
+		t.Fatal("shot with empty windows succeeded")
+	}
+	if _, err := os.Stat(shotOut); !os.IsNotExist(err) {
+		t.Fatalf("shot created output dir despite empty windows: %v", err)
+	}
+}
+
+func TestHomeNormalizationAndLaunchRollback(t *testing.T) {
+	base := t.TempDir()
+	t.Chdir(base)
+	relHome := "rel-home"
+	if err := os.MkdirAll(relHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"seed", "-home", relHome}); err != nil {
+		t.Fatalf("seed relative home failed: %v", err)
+	}
+	absHome, err := filepath.Abs(relHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := summary.NewStore(absHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries, err := st.Load(time.Now().Format("2006-01-02")); err != nil || len(entries) != 3 {
+		t.Fatalf("seeded entries = %d, err = %v", len(entries), err)
+	}
+
+	bin, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("early", func(t *testing.T) {
+		earlyHome := filepath.Join(base, "early-home")
+		if err := os.MkdirAll(earlyHome, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("KONSEKI_TEST_LIVE_HELPER", "early")
+		err := launchWithTimeout(bin, earlyHome, shortSocket(t), "zh-Hans", false, true, 5*time.Second)
+		if err == nil || !strings.Contains(err.Error(), "boom-") || !strings.Contains(err.Error(), "...(truncated)") {
+			t.Fatalf("early exit error = %v", err)
+		}
+		if entries, err := os.ReadDir(earlyHome); err != nil || len(entries) != 0 {
+			t.Fatalf("earlyHome not rolled back: %v, %v", entries, err)
+		}
+	})
+
+	t.Run("hang", func(t *testing.T) {
+		pidFile := filepath.Join(base, "hang.pid")
+		hangHome := filepath.Join(base, "hang-home")
+		if err := os.MkdirAll(hangHome, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("KONSEKI_TEST_LIVE_HELPER", "hang")
+		t.Setenv("KONSEKI_TEST_LIVE_PIDFILE", pidFile)
+		err := launchWithTimeout(bin, hangHome, shortSocket(t), "en", false, true, 500*time.Millisecond)
+		if err == nil || !strings.Contains(err.Error(), "超时") {
+			t.Fatalf("timeout error = %v", err)
+		}
+		if entries, err := os.ReadDir(hangHome); err != nil || len(entries) != 0 {
+			t.Fatalf("hangHome not rolled back: %v, %v", entries, err)
+		}
+		rawPID, readErr := os.ReadFile(pidFile)
+		if readErr != nil {
+			t.Fatalf("hang helper did not record pid: %v", readErr)
+		}
+		var childPID int
+		if _, scanErr := fmt.Sscan(string(rawPID), &childPID); scanErr != nil || childPID <= 0 {
+			t.Fatalf("invalid hang pid %q: %v", rawPID, scanErr)
+		}
+		if alive, sigErr := processAlive(childPID); sigErr != nil || alive {
+			t.Fatalf("timed-out child %d still alive/unreaped: alive=%v err=%v", childPID, alive, sigErr)
+		}
+	})
+}
+
+func TestLaunchChildStderrAfterLauncherExit(t *testing.T) {
+	bin, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sock := shortSocket(t)
+	t.Setenv("KONSEKI_TEST_LIVE_HELPER", "stderr_child")
+	if err := launchWithTimeout(bin, home, sock, "zh-Hans", false, false, 5*time.Second); err != nil {
+		t.Fatalf("launchWithTimeout failed: %v", err)
+	}
+	t.Cleanup(func() {
+		if q, err := dial(sock); err == nil {
+			var quitRes map[string]any
+			_ = q.call("quit", nil, &quitRes)
+			_ = q.conn.Close()
+		}
+	})
+
+	c, err := dial(sock)
+	if err != nil {
+		t.Fatalf("dial launched child: %v", err)
+	}
+	var res struct {
+		Alive bool `json:"alive"`
+	}
+	if err := c.call("check_stderr", nil, &res); err != nil || !res.Alive {
+		_ = c.conn.Close()
+		t.Fatalf("child exited on post-launch stderr write: res=%+v err=%v", res, err)
+	}
+	_ = c.conn.Close()
+
+	c2, err := dial(sock)
+	if err == nil {
+		var quitRes map[string]any
+		_ = c2.call("quit", nil, &quitRes)
+		_ = c2.conn.Close()
+	}
+
+	raw, err := os.ReadFile(filepath.Join(home, "stderr.log"))
+	if err != nil || !strings.Contains(string(raw), "after-launch-stderr-log") {
+		t.Fatalf("stderr.log missing child output: %q err=%v", raw, err)
 	}
 }

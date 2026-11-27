@@ -52,10 +52,7 @@ func (windowsScreen) FrontWindow() (string, string, int) {
 }
 
 func (windowsScreen) Permission(ask bool) PermState {
-	// Windows 传统截屏不需要授权，直接当作已授予。
-	// 只有走 Windows.Graphics.Capture（UWP）才需要用户确认，
-	// 但那条路对桌面 App 没有好处，不用它。
-	return PermGranted
+	return PermUnknown
 }
 
 func (windowsScreen) Grab() *Frame {

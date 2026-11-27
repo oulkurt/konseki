@@ -9,33 +9,50 @@
 package capture
 
 import (
+	"errors"
 	"runtime"
 	"sync"
 
 	"github.com/ebitengine/purego"
 )
 
-var poolOnce sync.Once
-var poolPush, poolPop uintptr
+var (
+	poolMu            sync.Mutex
+	poolReady         bool
+	poolPush, poolPop uintptr
+)
 
 func withPool(fn func()) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	poolOnce.Do(func() {
-		lib, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW)
+	poolMu.Lock()
+	if !poolReady {
+		lib := dlopenChecked("/usr/lib/libobjc.A.dylib", purego.RTLD_NOW)
+		push, err := purego.Dlsym(lib, "objc_autoreleasePoolPush")
 		if err != nil {
+			poolMu.Unlock()
 			panic(err)
 		}
-		poolPush, err = purego.Dlsym(lib, "objc_autoreleasePoolPush")
+		if push == 0 {
+			poolMu.Unlock()
+			panic(errors.New("objc_autoreleasePoolPush returned 0"))
+		}
+		pop, err := purego.Dlsym(lib, "objc_autoreleasePoolPop")
 		if err != nil {
+			poolMu.Unlock()
 			panic(err)
 		}
-		poolPop, err = purego.Dlsym(lib, "objc_autoreleasePoolPop")
-		if err != nil {
-			panic(err)
+		if pop == 0 {
+			poolMu.Unlock()
+			panic(errors.New("objc_autoreleasePoolPop returned 0"))
 		}
-	})
-	p, _, _ := purego.SyscallN(poolPush)
-	defer purego.SyscallN(poolPop, p)
+		poolPush = push
+		poolPop = pop
+		poolReady = true
+	}
+	push, pop := poolPush, poolPop
+	poolMu.Unlock()
+	p, _, _ := purego.SyscallN(push)
+	defer purego.SyscallN(pop, p)
 	fn()
 }

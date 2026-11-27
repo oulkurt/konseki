@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,33 +25,32 @@ func (a *app) renderDanger(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
 	usage := a.status.Usage
 	hasData := usage.Bytes > 0 || usage.Shots > 0 || usage.Snapshots > 0 || usage.Sessions > 0 || a.hasSummaries
+	canClear := hasData || a.clear.phase == clearFailed || len(a.legacy.files) > 0
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
 			headingText(c, msg.RecorderDanger()).SingleLine().TextColor(c.Theme().Danger)
 			bodyText(c, msg.RecorderClearDescription()).FontSize(12).TextColor(pal.textSecondary)
 			label := msg.RecorderClear()
-			if a.clearRunning {
+			if a.clear.running() {
 				label = msg.RecorderClearing()
 			}
-			btn := ui.Button(c.Key("clear-activity"), label).Disabled(!hasData || a.clearRunning)
-			if hasData && !a.clearRunning {
-				// 不可撤销的操作用危险色描边，和普通按钮区分开。
+			btn := ui.Button(c.Key("clear-activity"), label).Disabled(!canClear || a.clear.running())
+			if canClear && !a.clear.running() {
 				btn.TextColor(c.Theme().Danger).Border(1, c.Theme().Danger)
 			}
 			if btn.Clicked() {
-				a.clearConfirm = true
+				a.clear.confirm = true
 			}
-			if a.clearErr != nil {
-				ui.Text(c, errorText(c.Locale(), a.clearErr)).TextColor(c.Theme().Danger).FontSize(12)
+			if a.clear.err != nil {
+				ui.Text(c, errorText(c.Locale(), a.clear.err)).TextColor(c.Theme().Danger).FontSize(12)
 			}
 		})
 	})
-	if ui.AlertDialog(c, &a.clearConfirm, msg.RecorderClearTitle(), msg.RecorderClearDescription(), msg.RecorderCancel(), msg.RecorderConfirm()) == 1 {
+	if ui.AlertDialog(c, &a.clear.confirm, msg.RecorderClearTitle(), msg.RecorderClearDescription(), msg.RecorderCancel(), msg.RecorderConfirm()) == 1 {
 		a.clearActivity()
 	}
 }
 
-// clearSequence 等待摘要退出，再依次清除采集、摘要和旧导出文件。
 func clearSequence(done <-chan struct{}, captureClear, summaryClear, removeLegacy func() error) error {
 	if done != nil {
 		<-done
@@ -64,21 +64,18 @@ func clearSequence(done <-chan struct{}, captureClear, summaryClear, removeLegac
 }
 
 func (a *app) clearActivity() {
-	if a.clearRunning || a.runner == nil || a.sums == nil {
+	if a.clear.running() || a.runner == nil || a.sums == nil || a.tasks.isClosed() {
 		return
 	}
-	a.clearRunning = true
-	a.clearReceipt = a.receipt
-	a.clearErr = nil
-	a.sumEpoch++
-	if a.sumCancel != nil {
-		a.sumCancel()
-	}
-	done := a.sumDone
+	a.clear.phase = clearRunning
+	a.clear.confirm = false
+	a.clear.receipt = a.receipt
+	a.clear.err = nil
+	done := a.summary.waitAllChannel()
+	a.summary.cancelActive()
 	runner, sums := a.runner, a.sums
 	legacyDir := a.legacyDir()
-	post := a.post
-	go func() {
+	ok := a.tasks.goTask(func(context.Context) {
 		err := clearSequence(done, func() error {
 			cleared, err := runner.ClearAll()
 			if err != nil {
@@ -92,30 +89,50 @@ func (a *app) clearActivity() {
 			_, err := skill.RemoveLegacy(legacyDir)
 			return err
 		})
-		post(func() {
-			a.clearRunning = false
-			a.sumRunning = false
-			a.sumCancel = nil
-			a.sumDone = nil
-			if err != nil {
-				a.clearErr = err
-				return
-			}
-			a.sumEntries = nil
-			a.blocks = nil
-			a.receiptStore = nil
-			a.receipt = ReceiptDay{}
-			a.hasSummaries = false
+		a.postUI(func() {
+			a.summary.cancelActive()
 			a.recentSessions = nil
 			a.lastSessions = time.Time{}
 			a.status = runner.Status()
 			a.lastLoad = time.Time{}
+			a.receiptStore = nil
+			a.receiptStoreDir = ""
+			a.hasSummaries = len(sums.Days()) > 0
+			a.resetLegacy()
+			if err != nil {
+				a.clear.phase = clearFailed
+				a.clear.err = err
+				a.clear.receipt = ReceiptDay{}
+				return
+			}
+			a.clear.phase = clearIdle
+			a.clear.err = nil
+			snapshot := a.clear.receipt
+			a.clear.receipt = ReceiptDay{}
+			a.summary.phase = summaryIdle
+			a.summary.dayKey = ""
+			a.summary.err = nil
+			a.summaryReadErr = nil
+			a.rebuildGenerator()
+			a.sumEntries = nil
+			a.blocks = nil
+			a.receipt = ReceiptDay{}
+			a.expanded = map[string]bool{}
+			a.receiptTarget = ""
+			a.err = nil
+			a.readErr = nil
+			a.addProviderOpen = false
+			a.wasAddOpen = false
+			a.providerSearch = ""
 			a.tab = 0
 			a.dayFilter = ""
 			a.scrollState.Y = 0
-			a.shred.pending = true
-			a.shred.start = time.Time{}
-			a.resetLegacy()
+			a.shred.arm(snapshot)
+			a.paperFeed.resetDay()
 		})
-	}()
+	})
+	if !ok {
+		a.clear.phase = clearIdle
+		a.clear.receipt = ReceiptDay{}
+	}
 }

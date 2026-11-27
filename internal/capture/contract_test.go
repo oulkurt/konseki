@@ -7,9 +7,11 @@
 package capture
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -41,7 +43,7 @@ func TestStoreContracts(t *testing.T) {
 		t.Fatalf("OCR %v %v", got, err)
 	}
 	snaps, err := s.ReadDay(day)
-	if err != nil || len(snaps) != 3 || snaps[0].App != "old" || snaps[1].OCR != "recognized" || snaps[1].OCRLine != 2 || snaps[2].OCR != "existing" || snaps[2].OCRLine != 8 {
+	if err != nil || len(snaps) != 3 || snaps[0].App != "old" || snaps[1].OCR != "recognized" || snaps[1].OCRLine != 2 || snaps[1].OCRMs != 4 || snaps[2].OCR != "existing" || snaps[2].OCRLine != 8 {
 		t.Fatalf("快照 %+v %v", snaps, err)
 	}
 	now := time.Now()
@@ -171,4 +173,63 @@ func TestTimelineTodayUsesInjectedClock(t *testing.T) {
 	if err != nil || len(blocks) != 1 || blocks[0].App != "Editor" {
 		t.Fatal(blocks, err)
 	}
+}
+
+func TestStoreReadOnlyAndShortShotID(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	ro, err := OpenStore(missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Fatalf("OpenStore created directory: %v", err)
+	}
+	if err := ro.Append(Snapshot{TS: time.Now().Format(time.RFC3339)}); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := ro.AppendOCR("2026-11-05", OCRResult{}); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("AppendOCR: %v", err)
+	}
+	if err := ro.AppendSession(Session{End: time.Now()}); !errors.Is(err, ErrReadOnly) {
+		t.Fatalf("AppendSession: %v", err)
+	}
+
+	s, err := NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, short := range []string{"", "short", "20261105-"} {
+		if got := s.ShotFile(short); got != "" {
+			t.Fatalf("ShotFile(%q) = %q", short, got)
+		}
+	}
+	utc := time.Date(2026, 11, 5, 23, 30, 0, 0, time.UTC)
+	id := s.NewSnapshotID(utc)
+	localDay := utc.In(time.Local).Format("2006-01-02")
+	if got := filepath.Base(filepath.Dir(s.ShotFile(id))); got != localDay {
+		t.Fatalf("UTC shot folder mismatch: got %s want %s", got, localDay)
+	}
+	t1 := time.Date(2026, 11, 5, 12, 0, 0, 0, time.Local)
+	t2 := t1.Add(time.Millisecond)
+	id1 := s.NewSnapshotID(t1)
+	_ = s.NewSnapshotID(t2)
+	id1b := s.NewSnapshotID(t1)
+	if id1 == id1b {
+		t.Fatalf("out-of-order ID collision: %s", id1)
+	}
+}
+
+func TestFrameCloseConcurrentAndIdempotent(t *testing.T) {
+	var nilFrame *Frame
+	nilFrame.Close()
+	f := &Frame{W: 4, H: 4}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f.Close()
+		}()
+	}
+	wg.Wait()
 }

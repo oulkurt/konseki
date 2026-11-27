@@ -136,3 +136,88 @@ func TestRemoveLegacyThroughSymlink(t *testing.T) {
 		t.Fatal("目标目录里的旧文件残留")
 	}
 }
+
+func TestLegacyDirEmptyHomeAndNoOpGuards(t *testing.T) {
+	cwd := t.TempDir()
+	copyFixture(t, filepath.Join(cwd, legacySkillDefaultName))
+	t.Chdir(cwd)
+	t.Setenv("HOME", "")
+
+	if got := LegacyDir(); got != "" {
+		t.Fatalf("LegacyDir() = %q, want empty", got)
+	}
+	if files, err := FindLegacy(""); err != nil || len(files) != 0 {
+		t.Fatalf("FindLegacy(\"\") = %v, %v", files, err)
+	}
+	if n, err := RemoveLegacy(""); err != nil || n != 0 {
+		t.Fatalf("RemoveLegacy(\"\") = %d, %v", n, err)
+	}
+	if !exists(filepath.Join(cwd, legacySkillDefaultName, "SKILL.md")) {
+		t.Fatal("RemoveLegacy(\"\") touched CWD")
+	}
+}
+
+func TestRemoveLegacyPreservesUserEmptyDirsWhenNoLegacyFiles(t *testing.T) {
+	dir := t.TempDir()
+	daysDir := filepath.Join(dir, legacyDaysDir)
+	if err := os.MkdirAll(daysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	n, err := RemoveLegacy(dir)
+	if err != nil || n != 0 {
+		t.Fatalf("RemoveLegacy = %d, %v", n, err)
+	}
+	if !exists(daysDir) || !exists(dir) {
+		t.Fatal("empty user directories deleted despite zero legacy files")
+	}
+}
+
+func TestRemoveLegacyTrailingSlashSymlinkDir(t *testing.T) {
+	target := t.TempDir()
+	copyFixture(t, target)
+	parent := t.TempDir()
+	link := filepath.Join(parent, "konseki")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := RemoveLegacy(link + string(filepath.Separator))
+	if err != nil || n != 4 {
+		t.Fatalf("RemoveLegacy(link+/) = %d, %v", n, err)
+	}
+	info, err := os.Lstat(link)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("symlink lost: %v", err)
+	}
+	if !exists(target) {
+		t.Fatal("target deleted")
+	}
+}
+
+func TestFindLegacyBrokenLinksAndNonDirDays(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink("/nonexistent/skill.md", filepath.Join(dir, legacySkillFile)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/nonexistent/konseki.md", filepath.Join(dir, legacyProfileFile)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, legacyDaysDir), []byte("regular file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if files, err := FindLegacy(dir); err != nil || len(files) != 0 {
+		t.Fatalf("FindLegacy with broken links and file days = %v, %v", files, err)
+	}
+
+	outside := t.TempDir()
+	copyFixture(t, filepath.Join(outside, "sub"))
+	if err := os.Remove(filepath.Join(dir, legacyDaysDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "sub", legacyDaysDir), filepath.Join(dir, legacyDaysDir)); err != nil {
+		t.Fatal(err)
+	}
+	if files, err := FindLegacy(dir); err != nil || len(files) != 0 {
+		t.Fatalf("FindLegacy followed symlinked days: %v, %v", files, err)
+	}
+}

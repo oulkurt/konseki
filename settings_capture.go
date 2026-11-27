@@ -45,9 +45,12 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 					})
 					ui.Text(c, msg.RecorderEnableDescription()).FontSize(12.2).TextColor(pal.textSecondary).LineHeight(1.38)
 				})
-				ui.Row(c).Gap(8).AlignItems(ui.Center).Disabled(a.clearRunning).Children(func() {
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Disabled(a.clear.running()).Children(func() {
 					if a.cfgNow.Recorder.Enabled {
 						renderSelectPill(c, "recorder-pause", msg.RecorderPause(), 100, pal.textPrimary, pal, func(m *ui.Menu) {
+							if a.clear.running() {
+								return
+							}
 							if m.Item(msg.RecorderResume()).Chosen() {
 								a.pauseRecorder(time.Time{})
 							}
@@ -100,7 +103,7 @@ func (a *app) renderCaptureSection(c *ui.Context, pal palette) {
 }
 
 func (a *app) pauseRecorder(until time.Time) {
-	if a.clearRunning || a.runner == nil {
+	if a.clear.running() || a.runner == nil || a.cfg == nil {
 		return
 	}
 	if err := a.cfg.Update(func(cfg *config.Config) { cfg.Recorder.PausedUntil = until }); err != nil {
@@ -130,17 +133,18 @@ func (a *app) renderRecorderStorage(c *ui.Context, pal palette) {
 				headingText(c, msg.RecorderStorage()).SingleLine().TextColor(pal.textPrimary)
 			})
 			a.settingsRow(c, msg.RecorderStorageLimit(), msg.RecorderStorageHelp(), pal, func() {
-				if !a.storageFocus {
-					a.storageDraft = strconv.Itoa(a.cfgNow.Recorder.MaxStorageMB)
+				if !a.drafts.storageFocus {
+					a.drafts.storageDraft = strconv.Itoa(a.cfgNow.Recorder.MaxStorageMB)
 				}
-				in := ui.TextInput(c.Key("recorder-storage"), &a.storageDraft).Width(110).Label(msg.RecorderStorageLimit())
+				in := ui.TextInput(c.Key("recorder-storage"), &a.drafts.storageDraft).Width(110).Disabled(a.clear.running()).Label(msg.RecorderStorageLimit())
 				focused := in.Focused()
-				if in.Submitted() || (a.storageFocus && !focused) {
-					if n, err := strconv.Atoi(strings.TrimSpace(a.storageDraft)); err == nil {
+				if in.Submitted() || (a.drafts.storageFocus && !focused) {
+					if n, err := strconv.Atoi(strings.TrimSpace(a.drafts.storageDraft)); err == nil {
 						a.updateRecorder(func(r *config.Recorder) { r.MaxStorageMB = n })
 					}
+					a.drafts.storageDraft = strconv.Itoa(a.cfgNow.Recorder.MaxStorageMB)
 				}
-				a.storageFocus = focused
+				a.drafts.storageFocus = focused
 			})
 			a.settingsRow(c, msg.RecorderOutput(), a.cfgNow.Recorder.Dir(a.appDir), pal, func() {
 				if ui.Button(c.Key("recorder-reveal"), msg.RecorderReveal()).Clicked() && a.showFolder != nil {
@@ -149,17 +153,18 @@ func (a *app) renderRecorderStorage(c *ui.Context, pal palette) {
 			})
 			a.settingsRow(c, msg.RecorderRetention(), msg.RecorderRetentionDescription(), pal, func() {
 				menu := func(m *ui.Menu) {
+					if a.clear.running() {
+						return
+					}
 					for _, days := range []int{7, 14, 30, 90, 0} {
 						if m.Item(label(days)).Checked(a.cfgNow.Recorder.RetentionDays == days).Chosen() {
-							if err := a.cfg.Update(func(cfg *config.Config) { cfg.Recorder.RetentionDays = days }); err != nil {
-								a.err = err
-								return
-							}
-							a.applyRecorder()
+							a.updateRecorder(func(r *config.Recorder) { r.RetentionDays = days })
 						}
 					}
 				}
-				renderSelectPill(c, "btn-retention", label(a.cfgNow.Recorder.RetentionDays), 100, pal.textPrimary, pal, menu)
+				ui.Box(c).Disabled(a.clear.running()).Children(func() {
+					renderSelectPill(c, "btn-retention", label(a.cfgNow.Recorder.RetentionDays), 100, pal.textPrimary, pal, menu)
+				})
 			})
 		})
 	})

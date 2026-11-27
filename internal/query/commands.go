@@ -46,11 +46,12 @@ func (r *runner) status(w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	now := r.now()
 	var out statusOutput
 	out.DataDir = r.env.Dir
 	out.CaptureDir = r.cfg.Recorder.Dir(r.env.Dir)
 	out.Recorder.Enabled = r.cfg.Recorder.Enabled
-	if until := r.cfg.Recorder.PausedUntil; until.After(r.now()) {
+	if until := r.cfg.Recorder.PausedUntil; r.cfg.Recorder.Enabled && until.After(now) {
 		out.Recorder.PausedUntil = stamp(until)
 	}
 	out.Language = r.cfg.Language
@@ -62,7 +63,7 @@ func (r *runner) status(w io.Writer) error {
 		out.Days.Last = days[0]
 		out.Days.First = days[len(days)-1]
 	}
-	out.Today.Day = r.today()
+	out.Today.Day = now.Format("2006-01-02")
 	snaps, err := r.cap.ReadSnapshots(out.Today.Day)
 	if err != nil {
 		return err
@@ -310,7 +311,6 @@ func (r *runner) snapshots(w io.Writer, o options) error {
 		Snapshots: make([]snapshotOutput, 0, len(filtered)),
 	}
 	prevOCR := ""
-	havePrev := false
 	for _, sn := range filtered {
 		t, _ := sn.Time()
 		item := snapshotOutput{
@@ -330,12 +330,12 @@ func (r *runner) snapshots(w io.Writer, o options) error {
 			}
 		}
 		if o.flags["ocr"] && sn.OCR != "" {
-			if havePrev && sn.OCR == prevOCR {
+			if sn.OCR == prevOCR {
 				item.OCRRepeat = true
 			} else {
 				item.OCR = r.maskText(sn.OCR)
+				prevOCR = sn.OCR
 			}
-			prevOCR, havePrev = sn.OCR, true
 		}
 		out.Snapshots = append(out.Snapshots, item)
 	}
@@ -367,6 +367,9 @@ func dayBounds(day, from, to string, hasFrom, hasTo bool) (time.Time, time.Time,
 		}
 	}
 	if !start.Before(end) {
+		if !hasFrom && hasTo {
+			return time.Time{}, time.Time{}, usagef("--to %q must be after 00:00", to)
+		}
 		return time.Time{}, time.Time{}, usagef("--from must precede --to")
 	}
 	return start, end, nil

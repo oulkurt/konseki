@@ -7,9 +7,12 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 
 	"konseki/internal/redact"
@@ -93,5 +96,95 @@ func TestRedactOptionsHonorMasterSwitch(t *testing.T) {
 	}
 	if got := on.Options(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("规则翻译 = %+v，期望 %+v", got, want)
+	}
+}
+
+func TestReadPendingTxIgnoresInvalidSecretsField(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"version":2,"language":"zh-Hans","recorder":{"enabled":false}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	txRaw, err := json.Marshal(map[string]any{
+		"config":  []byte(`{"version":2,"language":"en","recorder":{"enabled":false}}`),
+		"secrets": "!",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, txFile), txRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := dirState(t, dir)
+
+	cfg, err := Read(dir)
+	if err != nil {
+		t.Fatalf("Read failed on tx with invalid secrets: %v", err)
+	}
+	if cfg.Language != "en" {
+		t.Fatalf("Read language = %q, want en", cfg.Language)
+	}
+	if after := dirState(t, dir); !reflect.DeepEqual(before, after) {
+		t.Fatalf("Read mutated directory: %#v -> %#v", before, after)
+	}
+}
+
+func TestReadPendingTxStreamsWithoutBufferingLargeSecrets(t *testing.T) {
+	cases := []struct {
+		name  string
+		makeTx func(cfgB []byte) string
+	}{
+		{
+			name: "config-first",
+			makeTx: func(cfgB []byte) string {
+				return `{"config":` + string(cfgB) + `,"secrets":"` + strings.Repeat("A", 8<<20) + `"}`
+			},
+		},
+		{
+			name: "secrets-first",
+			makeTx: func(cfgB []byte) string {
+				return `{"secrets":"` + strings.Repeat("A", 8<<20) + `","config":` + string(cfgB) + `}`
+			},
+		},
+		{
+			name: "escaped-secrets-first",
+			makeTx: func(cfgB []byte) string {
+				return `{"secrets":"` + strings.Repeat(`\u0041`, (8<<20)/6) + `","config":` + string(cfgB) + `}`
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"version":2,"language":"zh-Hans","recorder":{"enabled":false}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfgB, err := json.Marshal([]byte(`{"version":2,"language":"en","recorder":{"enabled":false}}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, txFile), []byte(tc.makeTx(cfgB)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			beforeState := dirState(t, dir)
+
+			runtime.GC()
+			var msBefore, msAfter runtime.MemStats
+			runtime.ReadMemStats(&msBefore)
+			cfg, err := Read(dir)
+			runtime.ReadMemStats(&msAfter)
+			if err != nil {
+				t.Fatalf("Read failed: %v", err)
+			}
+			if cfg.Language != "en" {
+				t.Fatalf("Read language = %q, want en", cfg.Language)
+			}
+			allocDelta := msAfter.TotalAlloc - msBefore.TotalAlloc
+			if allocDelta >= 1<<20 {
+				t.Fatalf("Read buffered large secrets in memory: allocDelta=%d bytes", allocDelta)
+			}
+			if afterState := dirState(t, dir); !reflect.DeepEqual(beforeState, afterState) {
+				t.Fatalf("Read mutated directory: %#v -> %#v", beforeState, afterState)
+			}
+		})
 	}
 }

@@ -42,7 +42,7 @@ func TestSummaryBackgroundPublication(t *testing.T) {
 	a.runSummary(true)
 	timer := time.NewTimer(10 * time.Second)
 	defer timer.Stop()
-	for a.sumRunning {
+	for a.summary.running() {
 		select {
 		case f := <-jobs:
 			f()
@@ -50,8 +50,8 @@ func TestSummaryBackgroundPublication(t *testing.T) {
 			t.Fatal("摘要任务超时")
 		}
 	}
-	if a.sumErr != "" || len(a.sumEntries) != 1 || a.sumEntries[0].Headline != "测试摘要" {
-		t.Fatalf("摘要回写失败: entries=%+v error=%q", a.sumEntries, a.sumErr)
+	if a.summary.err != nil || len(a.sumEntries) != 1 || a.sumEntries[0].Headline != "测试摘要" {
+		t.Fatalf("摘要回写失败: entries=%+v error=%v", a.sumEntries, a.summary.err)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestConnectionReportsModelAndLatency(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("连接测试超时")
 	}
-	if !a.testOK || a.testModel != "actual-model" || a.testLatency < 0 {
-		t.Fatalf("连接结果错误：模型=%q 耗时=%d", a.testModel, a.testLatency)
+	if a.providerTest.phase != testSucceeded || a.providerTest.model != "actual-model" || a.providerTest.latency < 0 {
+		t.Fatalf("连接结果错误：phase=%v 模型=%q 耗时=%d err=%v", a.providerTest.phase, a.providerTest.model, a.providerTest.latency, a.providerTest.err)
 	}
 }

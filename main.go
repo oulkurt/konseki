@@ -24,6 +24,7 @@ import (
 )
 
 type app struct {
+	tasks                appTasks
 	runner               *capture.Runner
 	appDir               string
 	post                 func(func())
@@ -36,112 +37,65 @@ type app struct {
 	legacySkillDir       func() string
 	runningApps          func() []capture.Front
 	running              runningAppsCache
-	// linkErr 是启动时维护数据目录软链接失败的说明，显示在 Agent 技能卡片上。
-	linkErr error
+	linkErr              error
 
-	// ---- 持久层 ----
 	cfg    *config.Store
 	cfgNow config.Config
 	sums   *summary.Store
 	gen    *summary.Generator
 	llmc   *llm.Client
 
-	// ---- 界面与采集状态 ----
 	blocks          []capture.Block
 	status          capture.Status
-	doctor          string
-	showDiag        bool
 	lastLoad        time.Time
 	err             error
-	listState       ui.ListState
+	readErr         error
+	summaryReadErr  error
 	scrollState     ui.ScrollState
 	expanded        map[string]bool
 	dayFilter       string
 	now             func() time.Time
 	receipt         ReceiptDay
 	receiptStore    *capture.Store
+	receiptStoreDir string
 	receiptRevision int
 	receiptTarget   string
-	feedDay         string
-	feedStart       time.Time
-	feedDistance    float32
-	paperHandle     ui.Handle
-	printRevision   int
-	printStart      time.Time
-	printHeight     float32
-	printHandle     ui.Handle
+	paperFeed       paperFeedState
+	printReveal     printRevealState
 
-	// ---- 供应商 ----
-	// 当前展开的是哪个供应商的配置面板，空表示都收起。
 	openProvider    string
 	addProviderOpen bool
-	providerFilter  int // 0=全部 1=官方 2=中转 3=本地 4=订阅
+	wasAddOpen      bool
 	providerSearch  string
 	apiKeyDraft     string
 	baseURLDraft    string
 	responsesDraft  string
 	modelDraft      string
-	// modelsAll 记录可用模型列表是否展开了全部条目。
-	modelsAll      bool
-	testing        bool
-	testModel      string
-	testLatency    int
-	testErr        error
-	testOK         bool
-	detected       []providers.Credential
-	detectDone     bool
-	detectStarted  bool
-	fetchingModels bool
-	fetchMsg       string
-	// fetchFor 是拉取结果所属的供应商；消息只显示在它的面板里。
-	fetchFor string
+	modelsAll       bool
+	providerTest    providerTestState
+	credScan        credScanState
+	fetchState      fetchModelsState
 
-	// ---- 摘要 ----
-	// 视图切换：0 = 时间轴，1 = 设置
-	tab               int
-	settingsTab       int
-	recorderDraft     [6]string
-	recorderFocus     [6]bool
-	ocrLanguagesDraft string
-	ocrEveryDraft     string
-	sensitiveDraft    string
-	ocrLanguagesFocus bool
-	ocrEveryFocus     bool
-	sensitiveFocus    bool
-	storageDraft      string
-	storageFocus      bool
-	sumEntries        []summary.Entry
-	sumErr            string
-	sumRunning        bool
-	sumCancel         context.CancelFunc
-	sumDone           chan struct{}
-	sumEpoch          uint64
-	clearRunning      bool
-	clearErr          error
-	clearReceipt      ReceiptDay
-	shred             shredAnimation
-	clearConfirm      bool
-	hasSummaries      bool
-	recentSessions    []recentSession
-	lastSessions      time.Time
-	// 摘要生成时的进度文字，UI 上直接显示。
-	sumProgress string
-	// 本次生成的脱敏命中数，给用户一个「遮了多少」的反馈。
-	sumRedactions int
-	showRedactLog bool
+	tab             int
+	settingsTab     int
+	lastTab         int
+	lastSettingsTab int
+	navInit         bool
+	drafts          editDrafts
 
-	// ---- Agent 技能 ----
-	// 旧版导出的文件列表只在通用页第一次渲染时检查一次，结果缓存。
-	legacyFiles   []string
-	legacyChecked bool
-	legacyErr     error
-	// 最近一次点过的复制按钮和时刻，按钮文字在两秒内显示「已复制」。
+	sumEntries     []summary.Entry
+	summary        summaryJobState
+	clear          clearSaga
+	shred          shredState
+	hasSummaries   bool
+	recentSessions []recentSession
+	lastSessions   time.Time
+
+	legacy         legacyState
 	agentCopiedKey string
 	agentCopiedAt  time.Time
 }
 
-// legacyDir 返回要检查旧导出文件的目录。
-// 设置里留过目录时优先用它，其次是测试注入的目录，最后是旧导出器的默认目录。
 func (a *app) legacyDir() string {
 	if a.cfgNow.Skill.ExportDir != "" {
 		return a.cfgNow.Skill.ExportDir
@@ -152,11 +106,8 @@ func (a *app) legacyDir() string {
 	return skill.LegacyDir()
 }
 
-// resetLegacy 让下一次渲染重新检查旧导出文件。
 func (a *app) resetLegacy() {
-	a.legacyChecked = false
-	a.legacyFiles = nil
-	a.legacyErr = nil
+	a.legacy = legacyState{}
 }
 
 func (a *app) ensureInit() {
@@ -168,17 +119,16 @@ func (a *app) ensureInit() {
 	}
 }
 
-// refresh 重新读一次数据和状态。每帧调用，但内部按 2 秒节流，
-// 避免每秒都在扫 JSONL。
 func (a *app) refresh() {
-	if a.clearRunning {
+	if a.clear.running() {
 		return
 	}
 	a.ensureInit()
-	if time.Since(a.lastLoad) < 2*time.Second {
+	now := a.currentTime()
+	if !a.lastLoad.IsZero() && now.Sub(a.lastLoad) < 2*time.Second {
 		return
 	}
-	a.lastLoad = time.Now()
+	a.lastLoad = now
 	if a.runner == nil {
 		return
 	}
@@ -189,12 +139,14 @@ func (a *app) refresh() {
 		a.hasSummaries = len(a.sums.Days()) > 0
 	}
 	a.loadRecentSessions()
-	if a.receiptStore == nil {
-		store, err := capture.NewStore(a.runner.Root())
+	root := a.runner.Root()
+	if a.receiptStore == nil || a.receiptStoreDir != root {
+		store, err := capture.OpenStore(root)
 		if err != nil {
-			a.err = err
+			a.readErr = err
 		} else {
 			a.receiptStore = store
+			a.receiptStoreDir = root
 		}
 	}
 	var sessions []capture.Session
@@ -202,12 +154,12 @@ func (a *app) refresh() {
 		var err error
 		sessions, err = a.receiptStore.ReadSessions(a.dayKey())
 		if err != nil && !os.IsNotExist(err) {
-			a.err = err
+			a.readErr = err
 		}
 	}
 	day, err := time.ParseInLocation("2006-01-02", a.dayKey(), time.Local)
 	if err != nil {
-		day = time.Now()
+		day = now
 	}
 	next := buildReceiptWindow(day, a.sumEntries, a.blocks, sessions, time.Duration(a.cfgNow.Summary.WindowMinutes)*time.Minute)
 	if a.receipt.Day.Equal(next.Day) && len(next.Lines) > 0 && (len(a.receipt.Lines) == 0 || (next.Lines[0].ID != a.receipt.Lines[0].ID && next.Lines[0].Start.After(a.receipt.Lines[0].Start))) {
@@ -216,40 +168,54 @@ func (a *app) refresh() {
 	a.receipt = next
 }
 
-// loadDay 读回当天的时间块。
 func (a *app) loadDay() {
-	key := a.dayKey()
+	a.loadDayFor(a.dayKey())
+}
+
+func (a *app) loadDayFor(key string) {
+	if a.runner == nil {
+		return
+	}
 	blocks, err := a.runner.Timeline(key)
 	if err != nil {
-		if !os.IsNotExist(err) {
-			a.err = err
+		if os.IsNotExist(err) {
+			a.readErr = nil
+		} else {
+			a.readErr = err
 		}
 		a.blocks = nil
 		return
 	}
-	a.err = nil
+	a.readErr = nil
 	a.blocks = blocks
 }
 
-// loadSummaries 读回当天的摘要。
 func (a *app) loadSummaries() {
+	a.loadSummariesFor(a.dayKey())
+}
+
+func (a *app) loadSummariesFor(key string) {
 	if a.sums == nil {
 		return
 	}
-	ents, err := a.sums.Load(a.dayKey())
+	ents, err := a.sums.Load(key)
 	if err != nil {
-		a.sumErr = errorText(a.cfgNow.Language, err)
+		a.summaryReadErr = err
+		a.sumEntries = nil
 		return
 	}
-	a.sumErr = ""
+	a.summaryReadErr = nil
 	a.sumEntries = ents
 }
 
-// dayKey 返回所选日期，空值表示今天。
 func (a *app) dayKey() string {
 	if a.dayFilter != "" {
 		return a.dayFilter
 	}
+	return a.currentTime().Format("2006-01-02")
+}
+
+func (a *app) todayKey() string {
 	return a.currentTime().Format("2006-01-02")
 }
 
@@ -260,74 +226,69 @@ func (a *app) currentTime() time.Time {
 	return time.Now()
 }
 
-// dayLabel 给摘要生成用：昨天生成昨天，其余都当今天。
 func (a *app) dayLabel() string {
 	return a.dayKey()
 }
 
-// ---------- 摘要生成 ----------
-
-// summarizable 说现在能不能生成摘要。UI 用它决定按钮是否置灰。
 func (a *app) summarizable() bool {
-	return a.gen != nil && len(a.blocks) > 0 && !a.sumRunning
+	return a.gen != nil && len(a.blocks) > 0 && !a.summary.running()
 }
 
-// runSummary 在后台生成摘要，并在界面线程发布结果。
 func (a *app) runSummary(force bool) {
-	if a.gen == nil || a.sumRunning || a.clearRunning {
+	a.runSummaryForDay(a.dayKey(), a.blocks, force)
+}
+
+func (a *app) runSummaryForDay(key string, blocks []capture.Block, force bool) {
+	if a.gen == nil || a.summary.running() || a.clear.running() || a.tasks.isClosed() {
 		return
 	}
-	a.sumRunning = true
-	a.sumEpoch++
-	epoch := a.sumEpoch
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	a.sumCancel = cancel
-	done := make(chan struct{})
-	a.sumDone = done
-	a.sumErr = ""
-	a.showRedactLog = false
-
-	key := a.dayKey()
-	blocks := a.blocks
+	a.ensureInit()
+	epoch, ctx, cancel, done := a.summary.start(a.tasks.ensure(), key, 15*time.Minute)
 	gen := a.gen
 	window := time.Duration(a.cfgNow.Summary.WindowMinutes) * time.Minute
 	if window <= 0 {
 		window = time.Hour
 	}
 
-	go func() {
+	ok := a.tasks.goTask(func(context.Context) {
 		defer close(done)
 		defer cancel()
 		ocr, err := a.runner.OCRIndex(key)
 		if err != nil {
-			ocr = nil // OCR 拿不到也能生成，靠窗口标题
+			ocr = nil
 		}
 
-		entries, err := gen.GenerateDay(ctx, blocks, ocr, key, window, force)
-		redactions := 0
-		if m := gen.Masker(); m != nil {
-			redactions = len(m.Hits())
+		entries, genErr := gen.GenerateDay(ctx, blocks, ocr, key, window, force)
+		if genErr == nil && !force && a.sums != nil {
+			if full, loadErr := a.sums.Load(key); loadErr == nil {
+				entries = full
+			}
 		}
-		a.post(func() {
-			if a.sumEpoch != epoch {
+		a.postUI(func() {
+			if !a.summary.finish(epoch, genErr) {
 				return
 			}
-			a.sumCancel = nil
-			a.sumDone = nil
-			a.sumRunning = false
-			a.sumRedactions = redactions
-			if err != nil {
-				a.sumErr = errorText(a.cfgNow.Language, err)
+			if genErr != nil {
 				return
 			}
-			a.sumEntries = entries
+			if a.sums != nil {
+				a.hasSummaries = len(a.sums.Days()) > 0
+			}
+			a.lastSessions = time.Time{}
+			if a.dayKey() == key {
+				a.sumEntries = entries
+				a.summaryReadErr = nil
+				a.lastLoad = time.Time{}
+			}
 		})
-	}()
+	})
+	if !ok {
+		a.summary.cancelActive()
+		close(done)
+	}
 }
 
 func main() {
-	// 查询命令必须在任何 mygo 调用之前分流：带上 query 时只读输出 JSON，
-	// 不开窗口，也不出现 Dock 图标。
 	if code, ok := runCLI(os.Args[1:], os.Stdout, os.Stderr); ok {
 		os.Exit(code)
 	}
@@ -369,9 +330,9 @@ func main() {
 	}
 	a.rebuildGenerator()
 
-	// 启动时就清一次过期数据。放在 goroutine 里是因为它要扫目录，
-	// 而窗口应该在几百毫秒内出现。
-	go func() { _, _ = runner.Storage().Prune(current.Recorder.RetentionDays, time.Now()) }()
+	a.tasks.goTask(func(context.Context) {
+		_, _ = runner.Storage().Prune(current.Recorder.RetentionDays, time.Now())
+	})
 
 	mygo.App.WhenReady(func() {
 		if current.Recorder.Enabled {
@@ -392,20 +353,16 @@ func main() {
 			Content:         ui.View(a.view),
 		})
 		a.post = win.Update
-		// 自动摘要单独一个循环：一次摘要要跑几分钟，和采集混在一起会拖慢采样。
-		// 无条件启动、由循环自己读开关，用户打开 Auto 后不用重启。
-		// 它把检查投递到界面线程，所以必须等窗口建好、post 有值以后才启动。
-		go a.autoSummaryLoop()
+		a.tasks.goTask(a.autoSummaryLoop)
 	})
 
 	if err := mygo.App.Run(); err != nil {
+		a.shutdown()
 		log.Fatal(err)
 	}
-	runner.Stop()
+	a.shutdown()
 }
 
-// summaryInterval 是两次自动摘要之间的最短间隔，不低于 5 分钟。
-// 设置页的说明也读它，所以说明里的分钟数和实际间隔一致。
 func summaryInterval(s config.SummaryConfig) time.Duration {
 	if interval := time.Duration(s.IntervalMinutes) * time.Minute; interval >= 5*time.Minute {
 		return interval
@@ -413,60 +370,54 @@ func summaryInterval(s config.SummaryConfig) time.Duration {
 	return 5 * time.Minute
 }
 
-// autoSummaryLoop 按设置里的间隔自动补摘要。
-//
-// 只在「有新的采样、且距上次生成超过间隔」时才跑。空转一次要
-// 花一次模型的 token，白花钱还会让用户怀疑它在偷跑。
-func (a *app) autoSummaryLoop() {
-	// tick 用固定的 1 分钟，真正该跑的间隔在循环里按设置判断。
-	//
-	// 用 Ticker 而不是 time.Sleep(interval)：用户把间隔从 30 分钟
-	// 改成 5 分钟时，睡着的 goroutine 叫不醒，得等那一觉睡完。
-	// 1 分钟一次的检查几乎不花代价（只读几个字段）。
+func (a *app) autoSummaryLoop(ctx context.Context) {
 	tick := time.NewTicker(time.Minute)
 	defer tick.Stop()
 
 	lastRun := time.Time{}
 
-	for range tick.C {
-		a.post(func() {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		a.postUI(func() {
+			if ctx.Err() != nil {
+				return
+			}
 			a.ensureInit()
-			if !a.cfgNow.Summary.Auto || a.sumRunning || a.clearRunning || a.gen == nil {
+			if !a.cfgNow.Summary.Auto || a.summary.running() || a.clear.running() || a.gen == nil {
 				return
 			}
 			if !a.cfgNow.Recorder.Enabled {
 				return
 			}
-
-			if !lastRun.IsZero() && time.Since(lastRun) < summaryInterval(a.cfgNow.Summary) {
+			now := a.currentTime()
+			if !lastRun.IsZero() && now.Sub(lastRun) < summaryInterval(a.cfgNow.Summary) {
 				return
 			}
-
-			a.loadDay()
-			if len(a.blocks) == 0 {
+			today := a.todayKey()
+			blocks, err := a.runner.Timeline(today)
+			if err != nil || len(blocks) == 0 {
 				return
 			}
-			// 已经覆盖到最新一块就不用再跑了 —— 没有新内容时跑一次
-			// 只是白烧 token。
-			if a.coversLatest() {
+			var entries []summary.Entry
+			if a.sums != nil {
+				entries, err = a.sums.Load(today)
+				if err != nil {
+					return
+				}
+			}
+			window := time.Duration(a.cfgNow.Summary.WindowMinutes) * time.Minute
+			if window <= 0 {
+				window = time.Hour
+			}
+			if !summary.HasPendingWindows(today, blocks, entries, window) {
 				return
 			}
-			lastRun = time.Now()
-			a.runSummary(false)
+			lastRun = now
+			a.runSummaryForDay(today, blocks, false)
 		})
 	}
-}
-
-// coversLatest 说最后一小时是否已经有摘要了。
-func (a *app) coversLatest() bool {
-	if len(a.sumEntries) == 0 || len(a.blocks) == 0 {
-		return false
-	}
-	lastBlock := a.blocks[len(a.blocks)-1].End
-	for _, e := range a.sumEntries {
-		if !e.End.Before(lastBlock) {
-			return true
-		}
-	}
-	return false
 }

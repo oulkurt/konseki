@@ -47,6 +47,14 @@ type Action struct {
 	At      time.Time
 }
 
+type jobKind uint8
+
+const (
+	jobIdle jobKind = iota
+	jobCapture
+	jobProbe
+)
+
 type Machine struct {
 	Phase                                     Phase
 	Block                                     BlockReason
@@ -56,11 +64,44 @@ type Machine struct {
 	front                                     string
 	initialized, locked, typing               bool
 	lastAttempt, lastSaved, lastProbe         time.Time
-	inFlight, probing                         bool
+	job                                       jobKind
 	pending, flying                           Trigger
 	failures                                  int
 	retryAt                                   time.Time
 	probeFactor                               int
+}
+
+func (m *Machine) abandonJob() {
+	m.job = jobIdle
+	m.flying = ""
+}
+
+func (m *Machine) abandonProbe(now time.Time) {
+	m.job = jobIdle
+	m.flying = ""
+	m.lastProbe = now
+}
+
+func (m *Machine) abortSessionOpen() {
+	m.active = false
+	m.idle = 0
+	m.Phase = PhaseWaiting
+	m.job = jobIdle
+	m.flying = ""
+	m.pending = ""
+}
+
+func (m *Machine) EffectivePhase(running bool, pausedUntil, now time.Time) (Phase, BlockReason) {
+	if !running {
+		return PhaseOff, BlockNone
+	}
+	if m.Phase == PhaseBlocked && m.Block == BlockScreenLocked {
+		return PhaseBlocked, BlockScreenLocked
+	}
+	if !pausedUntil.IsZero() && now.Before(pausedUntil) {
+		return PhasePaused, BlockNone
+	}
+	return m.Phase, m.Block
 }
 
 func (m *Machine) Step(o Observation, s Settings) []Action {
@@ -76,9 +117,11 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		}
 	}
 	if o.CaptureDone {
-		m.inFlight = false
+		retryTrigger := m.flying
+		m.job = jobIdle
+		m.flying = ""
 		if o.CaptureFailed {
-			m.queue(m.flying)
+			m.queue(retryTrigger)
 			if m.failures < 16 {
 				m.failures++
 			}
@@ -100,29 +143,39 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		}
 	}
 	if o.ProbeDone {
-		m.probing = false
+		m.job = jobIdle
+		m.flying = ""
 		m.lastProbe = now
 		if o.ProbeDuplicate {
-			if m.probeFactor < 8 {
-				m.probeFactor *= 2
-				if m.probeFactor > 8 {
-					m.probeFactor = 8
-				}
-			}
+			m.backoffProbe()
 		} else {
 			m.probeFactor = 1
 			m.queue(TriggerVisual)
 		}
 	}
-	if m.probeFactor == 0 {
-		m.probeFactor = 1
-	}
+	m.normalizeProbeFactor()
 	if o.Stop {
 		closeSession(EndStop)
 		m.Phase = PhaseOff
 		m.Block = BlockNone
+		m.idle = 0
+		m.job = jobIdle
+		m.flying = ""
 		m.pending = ""
 		m.typing = false
+		m.failures = 0
+		m.retryAt = time.Time{}
+		m.probeFactor = 1
+		m.locked = false
+		m.initialized = false
+		m.front = ""
+		m.lastInput = time.Time{}
+		m.lastKey = time.Time{}
+		m.lastClick = time.Time{}
+		m.lastScroll = time.Time{}
+		m.lastAttempt = time.Time{}
+		m.lastSaved = time.Time{}
+		m.lastProbe = time.Time{}
 		return actions
 	}
 	if o.Slept && m.active {
@@ -139,7 +192,9 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 	m.locked = o.Locked
 	if !m.initialized {
 		m.initialized = true
-		m.front = o.Front.Bundle
+		if !systemFront(o.Front) {
+			m.front = o.Front.Bundle
+		}
 		m.lastKey = eventTime(now, o.SinceKey)
 		m.lastClick = eventTime(now, o.SinceClick)
 		m.lastScroll = eventTime(now, o.SinceScroll)
@@ -161,11 +216,6 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 	}
 	if newScroll {
 		m.lastScroll = scroll
-	}
-	focus := !systemFront(o.Front) && o.Front.Bundle != m.front && o.Front.Bundle != ""
-	if focus {
-		m.front = o.Front.Bundle
-		add(ActionResetBaseline, "", "")
 	}
 	if m.active && m.idle > 0 && now.Sub(m.lastInput) > m.idle {
 		closeSession(EndIdle)
@@ -211,6 +261,17 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		return actions
 	}
 
+	var focus bool
+	if m.front == "" {
+		if o.Front.Bundle != "" {
+			m.front = o.Front.Bundle
+		}
+	} else if o.Front.Bundle != m.front && o.Front.Bundle != "" {
+		focus = true
+		m.front = o.Front.Bundle
+		add(ActionResetBaseline, "", "")
+	}
+
 	input := newKey || newClick || newScroll || focus
 	if input {
 		m.lastInput = now
@@ -240,24 +301,35 @@ func (m *Machine) Step(o Observation, s Settings) []Action {
 		m.Phase = PhaseWaiting
 	}
 	m.Block = BlockNone
-	if m.pending != "" && !m.inFlight && !m.probing && !now.Before(m.retryAt) && (m.lastAttempt.IsZero() || now.Sub(m.lastAttempt) >= s.Debounce) {
+	if m.pending != "" && m.job == jobIdle && !now.Before(m.retryAt) && (m.lastAttempt.IsZero() || now.Sub(m.lastAttempt) >= s.Debounce) {
 		t := m.pending
 		m.pending = ""
-		m.inFlight = true
+		m.job = jobCapture
 		m.flying = t
 		m.lastAttempt = now
 		add(ActionCapture, t, "")
 	}
-	if !m.inFlight && !m.probing && m.pending == "" && s.ScreenPoll > 0 && !now.Before(m.retryAt) && now.Sub(m.lastSaved) >= s.ScreenPoll*time.Duration(m.probeFactor) && now.Sub(m.lastProbe) >= s.ScreenPoll*time.Duration(m.probeFactor) {
-		m.probing = true
+	if m.job == jobIdle && m.pending == "" && s.ScreenPoll > 0 && !now.Before(m.retryAt) && now.Sub(m.lastSaved) >= s.ScreenPoll*time.Duration(m.probeFactor) && now.Sub(m.lastProbe) >= s.ScreenPoll*time.Duration(m.probeFactor) {
+		m.job = jobProbe
+		m.flying = ""
 		add(ActionProbe, "", "")
 	}
 	return actions
 }
-func (m *Machine) backoffProbe() {
-	if m.probeFactor < 1 {
+func (m *Machine) normalizeProbeFactor() {
+	switch {
+	case m.probeFactor >= 8:
+		m.probeFactor = 8
+	case m.probeFactor >= 4:
+		m.probeFactor = 4
+	case m.probeFactor >= 2:
+		m.probeFactor = 2
+	default:
 		m.probeFactor = 1
 	}
+}
+func (m *Machine) backoffProbe() {
+	m.normalizeProbeFactor()
 	if m.probeFactor < 8 {
 		m.probeFactor *= 2
 	}

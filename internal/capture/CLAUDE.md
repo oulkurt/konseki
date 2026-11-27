@@ -20,14 +20,15 @@ machine_test.go: 用人工时间验证采集决策。
 macos.go: 绑定窗口、位图、JPEG 与 Vision 原语。screen_darwin.go 编排资源生命周期。文字识别先把图画进 IOSurface 像素缓冲。Vision 直接接收 CGImage 会持续增加 RSS。
 native_darwin_test.go: 用合成图和 Vision 样本验证原生管线与性能；KONSEKI_OCR_SOAK=1 时跑同一帧识别 300 次的 RSS 门槛。
 testdata/timeline-empty-zh-Hans-light.png: Vision 中英文识别测试图。
-ocrqueue.go: 限制 OCR 排队容量并按会话抽样。
+ocrqueue.go: 限制 OCR 排队容量、按会话抽样并通过共享执行许可串行化识别。
 ocrqueue_test.go: 验证 OCR 队列溢出、超时和抽样。
 perms.go: 汇总平台权限和前台窗口。诊断时尝试抓取一帧。
 pool_darwin.go: 将后台 Objective-C 调用绑定线程和自动释放池。
 pool_test.go: 检查自动释放池的创建边界。
 runner_behavior_test.go: 验证采集停止、清空残留、超额触发和 OCR 抽样。
 runner_test.go: 用假依赖验证采集、识别和会话落盘。
-runner.go: 协调采集生命周期、键鼠计数与异步抓帧。清空后的首次启动跳过会话恢复。
+runner.go: 协调采集生命周期、共享 OCR 许可、设置同步与状态快照。清空后的首次启动跳过会话恢复。
+runner_state.go: 执行采集循环、动作派发、异步抓帧、会话关闭落盘与快照持久化。
 timeline.go: 按注入时钟读取快照并聚合时间轴。
 screen_darwin.go: 提供受保护 Screen 的 macOS 后端。它编排帧、权限、图像编码和 OCR 的生命周期。
 screen_linux.go: 提供 Linux 采集接口桩。不执行实际采集。

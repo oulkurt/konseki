@@ -7,8 +7,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -16,7 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"konseki/internal/capture"
 	"konseki/internal/config"
+	"konseki/internal/llm"
 	"konseki/internal/providers"
 	"konseki/locales"
 
@@ -31,7 +36,7 @@ func configureProvider(t *testing.T, a *app, pc config.ProviderConfig) {
 	}
 	a.cfgNow = a.cfg.Get()
 	a.tab, a.settingsTab = 1, 1
-	a.openProvider = providerKey(pc)
+	a.openProvider = providerKey(a.cfgNow.Providers[0])
 }
 
 func TestProviderFetchModelsButtonWritesList(t *testing.T) {
@@ -121,7 +126,7 @@ func TestOAuthProviderPanelHidesKeyAndShowsExpiry(t *testing.T) {
 	}
 }
 
-func TestGeminiOAuthProviderOffersFetch(t *testing.T) {
+func TestGeminiOAuthProviderHidesUnsupportedFetch(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	configureProvider(t, a, config.ProviderConfig{
@@ -131,8 +136,8 @@ func TestGeminiOAuthProviderOffersFetch(t *testing.T) {
 	msg := locales.In("zh-Hans")
 	tt := ui.NewTester(a.view, 780, 3000)
 	tt.SetLocale("zh-Hans")
-	if _, ok := tt.Find(msg.ModelsFetch()); !ok {
-		t.Fatalf("Gemini 订阅缺少拉取按钮：%q", tt.Texts())
+	if _, ok := tt.Find(msg.ModelsFetch()); ok {
+		t.Fatalf("Gemini 订阅显示了拉取按钮：%q", tt.Texts())
 	}
 }
 
@@ -377,8 +382,8 @@ func TestImportRowsShowCredentialKind(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	a.tab, a.settingsTab = 1, 1
-	a.detectStarted, a.detectDone = true, true
-	a.detected = []providers.Credential{
+	a.credScan.phase = scanDone
+	a.credScan.detected = []providers.Credential{
 		{Source: "one", Label: "local credential", Kind: "oauth"},
 		{Source: "two", Label: "second credential", Kind: "api_key"},
 	}
@@ -500,5 +505,70 @@ func TestProviderFetchWithoutModel(t *testing.T) {
 	}
 	if !tt.HasText(msg.ModelsFetchSuccess(2)) {
 		t.Fatalf("没有显示拉取结果：%q", tt.Texts())
+	}
+}
+
+func TestSummaryGenerationFollowsCheckedProviderModels(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	var sent []string
+	a.llmc.HTTP.Transport = errorTestTransport(func(r *http.Request) (*http.Response, error) {
+		var payload struct {
+			Model string `json:"model"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			return nil, err
+		}
+		sent = append(sent, payload.Model)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"{\"headline\":\"test\",\"summary\":\"test summary\"}"}}]}`)),
+		}, nil
+	})
+	configureProvider(t, a, config.ProviderConfig{
+		Preset: "custom", ChatBase: "https://relay.test/v1", DefaultModel: "beta",
+		DiscoveredModels: []string{"alpha", "beta"}, EnabledModels: []string{"alpha", "beta"},
+	})
+	pc := a.cfgNow.Providers[0]
+	a.setSummaryModel(providerKey(pc), "alpha")
+	start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.Local)
+	blocks := []capture.Block{{Start: start, End: start.Add(10 * time.Minute), App: "Dummy", Samples: 1}}
+	const day = "2026-10-01"
+	generate := func() {
+		t.Helper()
+		if a.gen == nil {
+			t.Fatal("no generator for a checked model")
+		}
+		if _, err := a.gen.GenerateDay(context.Background(), blocks, nil, day, time.Hour, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	generate()
+	a.toggleProviderModel(0, pc, providerModelList(pc), "alpha", false)
+	generate()
+	if !slices.Equal(sent, []string{"alpha", "beta"}) || a.cfg.Get().Summary.Model != "beta" {
+		t.Errorf("requests used %v, persisted model = %q", sent, a.cfg.Get().Summary.Model)
+	}
+	previous := a.gen
+	pc = a.cfgNow.Providers[0]
+	a.toggleProviderModel(0, pc, providerModelList(pc), "beta", false)
+	if got := a.cfg.Get().Summary.Model; got != "" {
+		t.Errorf("current selection after unchecking everything = %q", got)
+	}
+	reopened, err := config.Open(a.appDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := reopened.Get().Summary.Model; got != "" {
+		t.Errorf("persisted model after unchecking everything = %q", got)
+	}
+	if a.gen != nil || !errors.Is(a.summary.err, llm.ErrNoModel) {
+		t.Errorf("generator after unchecking everything = %v, error = %v", a.gen, a.summary.err)
+	} else {
+		a.runSummaryForDay(day, blocks, true)
+	}
+	if _, err := previous.GenerateDay(context.Background(), blocks, nil, day, time.Hour, true); err == nil || len(sent) != 2 {
+		t.Fatalf("a stale generator could send a request: models %v, error %v", sent, err)
 	}
 }

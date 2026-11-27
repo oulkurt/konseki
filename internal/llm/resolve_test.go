@@ -8,6 +8,8 @@ package llm
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -16,7 +18,7 @@ import (
 )
 
 func TestResolveCodexOAuthUsesSubscriptionResponses(t *testing.T) {
-	r, err := Resolve(config.ProviderConfig{Preset: "openai", Auth: "oauth", DefaultModel: "gpt-5.2"}, true)
+	r, err := Resolve(config.ProviderConfig{Preset: "openai", Auth: "oauth", AccountID: "dummy-account", DefaultModel: "gpt-5.2"}, true)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -28,6 +30,9 @@ func TestResolveCodexOAuthUsesSubscriptionResponses(t *testing.T) {
 	}
 	if r.AuthKind != "oauth" {
 		t.Errorf("AuthKind = %q", r.AuthKind)
+	}
+	if r.Headers["ChatGPT-Account-ID"] != "dummy-account" {
+		t.Errorf("account header = %q", r.Headers["ChatGPT-Account-ID"])
 	}
 	if r.CallBase() != codexSubscriptionBase {
 		t.Errorf("CallBase = %q", r.CallBase())
@@ -213,5 +218,31 @@ func TestResolveWithoutDiscoveredKeepsUnion(t *testing.T) {
 	}
 	if !slices.Equal(empty.Models, preset.Models) {
 		t.Fatalf("空勾选的 Models = %v，期望预设全集 %v", empty.Models, preset.Models)
+	}
+}
+
+func TestUpgradePreservesOpenAIChatOverride(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(`{"version":1,"providers":[{"preset":"openai","chatBase":"https://relay.test/v2/chat/completions?api-version=dummy","defaultModel":"test-model"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := config.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc := store.Get().Providers[0]
+	for _, tc := range []struct {
+		override string
+		kind     Kind
+		base     string
+	}{
+		{"", OpenAICompatible, "https://relay.test/v2/chat/completions?api-version=dummy"},
+		{"https://responses.test/v1", OpenAIResponses, "https://responses.test/v1"},
+	} {
+		pc.ResponsesBase = tc.override
+		r, err := Resolve(pc, true)
+		if err != nil || r.Kind != tc.kind || r.CallBase() != tc.base {
+			t.Fatalf("override %q: got %s %s, %v, want %s %s", tc.override, r.Kind, r.CallBase(), err, tc.kind, tc.base)
+		}
 	}
 }

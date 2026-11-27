@@ -11,6 +11,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"os"
@@ -23,11 +24,42 @@ import (
 	"konseki/internal/summary"
 )
 
-const usage = "用法: live launch|seed|shot|click|wait|perf|tree|act|key [参数]"
+const (
+	usage          = "用法: live launch|seed|shot|click|wait|perf|tree|act|key [参数]"
+	launchTimeout  = 15 * time.Second
+	maxChildStderr = 8192
+)
+
+func readBoundedFile(path string, maxBytes int) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	buf := make([]byte, maxBytes+1)
+	n, _ := io.ReadFull(f, buf)
+	truncated := n > maxBytes
+	if truncated {
+		n = maxBytes
+	}
+	s := strings.TrimSpace(string(buf[:n]))
+	if truncated && s != "" {
+		return s + "...(truncated)"
+	}
+	return s
+}
 
 // seedHome 写入今天的三段摘要。时间轴有内容可粉碎，危险区的清除按钮也能点。
 // 只写摘要，不写采集数据，所以不需要屏幕录制权限。
 func seedHome(home string) error {
+	if home == "" {
+		return errors.New("缺少 home")
+	}
+	var err error
+	home, err = filepath.Abs(home)
+	if err != nil {
+		return err
+	}
 	st, err := summary.NewStore(home)
 	if err != nil {
 		return err
@@ -50,6 +82,11 @@ func seedHome(home string) error {
 func prepareHome(home, lang string, recorder bool) error {
 	if home == "" {
 		return errors.New("缺少 home")
+	}
+	var err error
+	home, err = filepath.Abs(home)
+	if err != nil {
+		return err
 	}
 	if lang != "zh-Hans" && lang != "en" {
 		return errors.New("无效语言")
@@ -104,8 +141,20 @@ func launchCommand(bin, home, sock string, recorder bool) *exec.Cmd {
 }
 
 func launch(bin, home, sock, lang string, recorder, seed bool) error {
+	return launchWithTimeout(bin, home, sock, lang, recorder, seed, launchTimeout)
+}
+
+func launchWithTimeout(bin, home, sock, lang string, recorder, seed bool, waitTimeout time.Duration) error {
 	if bin == "" || sock == "" {
 		return errors.New("必须指定 bin 和 sock")
+	}
+	if home == "" {
+		return errors.New("缺少 home")
+	}
+	var err error
+	home, err = filepath.Abs(home)
+	if err != nil {
+		return err
 	}
 	if socketBusy(sock) {
 		return fmt.Errorf("%s 上已有程序在监听，换一个套接字路径", sock)
@@ -113,30 +162,56 @@ func launch(bin, home, sock, lang string, recorder, seed bool) error {
 	if err := prepareHome(home, lang, recorder); err != nil {
 		return err
 	}
+	stderrPath := filepath.Join(home, "stderr.log")
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		_ = os.Remove(filepath.Join(home, "config.json"))
+		_ = os.RemoveAll(filepath.Join(home, "summaries"))
+		_ = os.Remove(stderrPath)
+	}()
 	if seed {
 		if err := seedHome(home); err != nil {
 			return err
 		}
 	}
+	errFile, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
 	cmd := launchCommand(bin, home, sock, recorder)
-	if err := cmd.Start(); err != nil {
+	cmd.Stderr = errFile
+	cmd.WaitDelay = time.Second
+	err = cmd.Start()
+	_ = errFile.Close()
+	if err != nil {
 		return err
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	deadline := time.NewTimer(15 * time.Second)
+	deadline := time.NewTimer(waitTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case err := <-done:
+			if detail := readBoundedFile(stderrPath, maxChildStderr); detail != "" {
+				return fmt.Errorf("进程提前退出: %v: %s", err, detail)
+			}
 			return fmt.Errorf("进程提前退出: %v", err)
 		case <-deadline.C:
 			_ = cmd.Process.Kill()
+			<-done
+			if detail := readBoundedFile(stderrPath, maxChildStderr); detail != "" {
+				return fmt.Errorf("等待套接字超时: %s", detail)
+			}
 			return errors.New("等待套接字超时")
 		case <-ticker.C:
 			if socketBusy(sock) {
+				committed = true
 				fmt.Println(cmd.Process.Pid)
 				return nil
 			}
@@ -243,15 +318,23 @@ func run(args []string) error {
 	if err := f.Parse(args[1:]); err != nil {
 		return err
 	}
+	absHome := *home
+	if absHome != "" {
+		var err error
+		absHome, err = filepath.Abs(absHome)
+		if err != nil {
+			return err
+		}
+	}
 	switch args[0] {
 	case "launch":
-		return launch(*bin, *home, *sock, *lang, *rec, *seed)
+		return launch(*bin, absHome, *sock, *lang, *rec, *seed)
 	case "seed":
 		// 给正在运行的 App 补数据，同一次会话里可以反复清除。
-		if *home == "" {
+		if absHome == "" {
 			return errors.New("必须指定 home")
 		}
-		return seedHome(*home)
+		return seedHome(absHome)
 	case "perf":
 		if *pid <= 0 || *secs <= 0 {
 			return errors.New("必须指定正数 pid 和 secs")
@@ -267,7 +350,8 @@ func run(args []string) error {
 		if (args[0] == "click" || args[0] == "key") && f.NArg() != 1 {
 			return errors.New("必须指定一个 key")
 		}
-		if args[0] == "act" && (f.NArg() == 1) == (*id != "") {
+		hasID := *id != ""
+		if args[0] == "act" && !((hasID && f.NArg() == 0) || (!hasID && f.NArg() == 1)) {
 			return errors.New("act 要么给一个 key，要么给 -id")
 		}
 		if args[0] == "wait" && *timeout <= 0 {
@@ -285,7 +369,7 @@ func run(args []string) error {
 			return c.call("act", map[string]any{"key": f.Arg(0), "action": "press"}, nil)
 		case "act":
 			p := map[string]any{"action": *action, "text": *text}
-			if *id != "" {
+			if hasID {
 				p["id"] = *id
 			} else {
 				p["key"] = f.Arg(0)
@@ -294,40 +378,32 @@ func run(args []string) error {
 		case "key":
 			return c.call("input", map[string]any{"events": []map[string]any{{"type": "key", "key": f.Arg(0)}}}, nil)
 		case "tree":
-			var result struct {
-				Windows []struct {
-					ID int `json:"id"`
-				} `json:"windows"`
-			}
-			if err := c.call("windows", nil, &result); err != nil {
+			wins, err := c.windows()
+			if err != nil {
 				return err
 			}
-			for _, w := range result.Windows {
+			for _, id := range wins {
 				var t json.RawMessage
-				if err := c.call("tree", map[string]any{"window": w.ID}, &t); err != nil {
+				if err := c.call("tree", map[string]any{"window": id}, &t); err != nil {
 					return err
 				}
 				fmt.Println(string(t))
 			}
 			return nil
 		case "shot":
-			var result struct {
-				Windows []struct {
-					ID int `json:"id"`
-				} `json:"windows"`
-			}
-			if err := c.call("windows", nil, &result); err != nil {
+			wins, err := c.windows()
+			if err != nil {
 				return err
 			}
 			if err := os.MkdirAll(*out, 0o755); err != nil {
 				return err
 			}
-			for _, w := range result.Windows {
-				b, err := c.capture(w.ID)
+			for _, id := range wins {
+				b, err := c.capture(id)
 				if err != nil {
 					return err
 				}
-				if err = os.WriteFile(filepath.Join(*out, fmt.Sprintf("window-%d.png", w.ID)), b, 0o644); err != nil {
+				if err = os.WriteFile(filepath.Join(*out, fmt.Sprintf("window-%d.png", id)), b, 0o644); err != nil {
 					return err
 				}
 			}

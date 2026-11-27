@@ -206,7 +206,7 @@ func scanTestCredentials(t testing.TB, a *app, creds []providers.Credential) {
 	queued := make(chan func(), 1)
 	a.post = func(f func()) { queued <- f }
 	a.scanCredentials = func() []providers.Credential { return creds }
-	a.detectStarted, a.detectDone = false, false
+	a.credScan = credScanState{}
 	a.startCredentialScan()
 	select {
 	case f := <-queued:

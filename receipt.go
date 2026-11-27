@@ -24,25 +24,45 @@ func (a *app) renderTimelinePage(c *ui.Context, pal palette, inset float32) {
 		ui.Column(c).FillWidth().Padding(0, 22, 12, 22).Gap(12).Children(func() {
 			ui.Row(c).FillWidth().Padding(0, 6).DragWindow().Children(func() { ui.Text(c, "痕跡 Konseki").FontSize(11.5).Bold().TextColor(pal.textSecondary) })
 			a.renderTabs(c, pal)
-			if a.err != nil {
-				ui.Text(c, locales.In(c.Locale()).ShellReadError()+errorText(c.Locale(), a.err)).TextColor(c.Theme().Danger)
+			if err := a.bannerError(); err != nil {
+				ui.Text(c, locales.In(c.Locale()).ShellReadError()+errorText(c.Locale(), err)).TextColor(c.Theme().Danger)
+			}
+			if a.summary.phase == summaryFailed && (a.summary.dayKey == "" || a.summary.dayKey == a.dayKey()) {
+				if text := a.summary.errorText(c.Locale()); text != "" {
+					ui.Text(c, text).FontSize(12).TextColor(c.Theme().Danger)
+				}
+			} else if a.bannerError() == nil && a.summaryReadErr != nil {
+				ui.Text(c, locales.In(c.Locale()).ShellReadError()+errorText(c.Locale(), a.summaryReadErr)).FontSize(12).TextColor(c.Theme().Danger)
 			}
 		})
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPrinter(c, paperWidth) })
-		if a.shred.pending {
+		if a.shred.active() {
 			a.renderShred(c, paperWidth)
 		} else {
-			ui.Scroll(c).TrackScroll(&a.scrollState).FillWidth().Grow(1).Clip().Children(func() {
-				ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, paperWidth) })
-			})
+			a.renderPaperScroll(c, paperWidth)
 		}
 	})
 }
 
-// showReceiptAt 供最近会话定位对应的摘要或待摘要条目。
+func (a *app) renderPaperScroll(c *ui.Context, paperWidth float32) {
+	ui.Scroll(c).TrackScroll(&a.scrollState).FillWidth().Grow(1).Clip().Children(func() {
+		ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() { a.renderPaper(c, paperWidth) })
+	})
+}
+
 func (a *app) showReceiptAt(day, at time.Time) {
+	if a.clear.running() {
+		return
+	}
+	a.stopShred()
 	a.tab = 0
-	a.dayFilter = day.In(time.Local).Format("2006-01-02")
+	targetDay := day.In(time.Local).Format("2006-01-02")
+	if targetDay == a.todayKey() {
+		a.dayFilter = ""
+	} else {
+		a.dayFilter = targetDay
+	}
+	a.scrollState.Y = 0
 	a.lastLoad = time.Time{}
 	a.refresh()
 	a.receiptTarget = ""
@@ -61,12 +81,14 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 	if err != nil {
 		selected = now
 	}
+	todayKey := now.Format("2006-01-02")
+	yesterdayKey := now.AddDate(0, 0, -1).Format("2006-01-02")
 	dayName := func(d time.Time) string {
 		key := d.Format("2006-01-02")
-		if key == now.Format("2006-01-02") {
+		if key == todayKey {
 			return msg.ReceiptToday()
 		}
-		if key == now.AddDate(0, 0, -1).Format("2006-01-02") {
+		if key == yesterdayKey {
 			return msg.ReceiptYesterday()
 		}
 		return i18n.FormatDate(c.Locale(), d, i18n.DateOptions{Skeleton: "MMMEd"})
@@ -76,19 +98,26 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 			p.Fill(ui.Rect{X: r.X + 6, Y: r.Y + 3, W: r.W - 12, H: 1}, ui.Hex("#3A3A40"), 0)
 		}).Children(func() {
 			menu := func(m *ui.Menu) {
+				if a.clear.running() {
+					return
+				}
 				for i := 0; i < 7; i++ {
 					d := now.AddDate(0, 0, -i)
 					key := d.Format("2006-01-02")
 					if m.Item(dayName(d)).Checked(a.dayKey() == key).Chosen() {
 						a.stopShred()
-						a.dayFilter = key
+						if key == todayKey {
+							a.dayFilter = ""
+						} else {
+							a.dayFilter = key
+						}
 						a.scrollState.Y = 0
 						a.lastLoad = time.Time{}
 						a.refresh()
 					}
 				}
 			}
-			ui.ButtonBase(c.Key("receipt-day")).Padding(5, 6).Radius(6).PopoverMenuButton(menu).Children(func() { ui.Text(c, dayName(selected)+" ⌄").Bold().FontSize(13).TextColor(ui.Hex("#F4F4F5")) })
+			ui.ButtonBase(c.Key("receipt-day")).Padding(5, 6).Radius(6).Disabled(a.clear.running()).PopoverMenuButton(menu).Children(func() { ui.Text(c, dayName(selected)+" ⌄").Bold().FontSize(13).TextColor(ui.Hex("#F4F4F5")) })
 			ui.Text(c, i18n.FormatDate(c.Locale(), selected, i18n.DateOptions{Skeleton: "MMMEd"})).FontSize(11).TextColor(ui.Hex("#A1A1AA"))
 			ui.Spacer(c)
 			color, label := ui.Hex("#71717A"), msg.ReceiptOff()
@@ -102,13 +131,17 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 			case capture.PhaseBlocked:
 				color, label = ui.Hex("#EF4444"), msg.ReceiptBlocked()
 			}
-			btn := ui.ButtonBase(c.Key("receipt-recorder")).Gap(6).Padding(5, 6).AlignItems(ui.Center).Label(label).Disabled(a.clearRunning)
+			btn := ui.ButtonBase(c.Key("receipt-recorder")).Gap(6).Padding(5, 6).AlignItems(ui.Center).Label(label).Disabled(a.clear.running())
 			btn.Children(func() {
 				ui.Box(c).Size(7, 7).Radius(4).Background(color)
 				ui.Text(c, label).FontSize(11).TextColor(ui.Hex("#D4D4D8"))
 			})
 			if btn.Clicked() && a.runner != nil {
-				a.setRecorderEnabled(a.status.Phase == capture.PhaseOff)
+				if a.status.Phase == capture.PhasePaused {
+					a.pauseRecorder(time.Time{})
+				} else {
+					a.setRecorderEnabled(a.status.Phase == capture.PhaseOff)
+				}
 			}
 		})
 		ui.Box(c).FillWidth().Height(8).Margin(-4, 0, 0, 0).Draw(func(p *ui.Painter, r ui.Rect) {
@@ -120,68 +153,116 @@ func (a *app) renderPrinter(c *ui.Context, width float32) {
 
 const printDuration = 600 * time.Millisecond
 
-// printReveal 返回新条目已经印出的高度。新条目从累计行下面展开，累计行和旧条目不用整体位移。
-// 出现的那一帧还没有新布局，高度给 0，旧条目原地不动；下一帧量出新条目的真实高度再展开。
-// 先估一个距离再修正，估错的那一帧旧条目会闪一下。
-func (a *app) printReveal(c *ui.Context) (float32, bool) {
-	if a.printRevision != a.receiptRevision {
-		a.printRevision = a.receiptRevision
-		a.printStart = c.Now()
-		a.printHeight = -1
+func (a *app) printRevealBounds(c *ui.Context) (float32, bool) {
+	pr := &a.printReveal
+	if pr.revision != a.receiptRevision {
+		if c.Preferences().ReduceMotion || a.paperFeed.day != a.dayKey() {
+			pr.syncTo(a.receiptRevision)
+			return 0, false
+		}
+		pr.revision = a.receiptRevision
+		pr.phase = animMeasuring
+		pr.start = c.Now()
+		pr.height = 0
+		c.AnimationFrame()
+		return 0, true
 	}
-	if a.printStart.IsZero() || c.Preferences().ReduceMotion {
+	if c.Preferences().ReduceMotion {
+		pr.phase = animIdle
+		pr.start = time.Time{}
 		return 0, false
 	}
-	if a.printHeight < 0 {
-		if !c.Now().After(a.printStart) {
+	switch pr.phase {
+	case animIdle:
+		return 0, false
+	case animMeasuring:
+		if !c.Now().After(pr.start) {
 			c.AnimationFrame()
 			return 0, true
 		}
-		a.printHeight = a.printHandle.Bounds(c).H
-	}
-	progress := float64(c.Now().Sub(a.printStart)) / float64(printDuration)
-	if progress >= 1 {
-		a.printStart = time.Time{}
+		h := pr.handle.Bounds(c).H
+		if h <= 0 {
+			if c.Now().Sub(pr.start) >= printDuration {
+				pr.phase = animIdle
+				pr.start = time.Time{}
+				return 0, false
+			}
+			c.AnimationFrame()
+			return 0, true
+		}
+		pr.height = h
+		pr.phase = animRunning
+		pr.start = c.Now()
+		c.AnimationFrame()
+		return 0, true
+	case animRunning:
+		progress := float64(c.Now().Sub(pr.start)) / float64(printDuration)
+		if progress >= 1 {
+			pr.phase = animIdle
+			pr.start = time.Time{}
+			return 0, false
+		}
+		c.AnimationFrame()
+		return pr.height * float32(1-math.Pow(1-progress, 3)), true
+	default:
+		pr.phase = animIdle
 		return 0, false
 	}
-	c.AnimationFrame()
-	return a.printHeight * float32(1-math.Pow(1-progress, 3)), true
 }
 
 func (a *app) renderPaper(c *ui.Context, width float32) {
 	day := a.dayKey()
-	if a.feedDay != day {
-		a.feedDay = day
-		// 换一天是整张纸重新送出，不算印出新条目。
-		a.printRevision = a.receiptRevision
-		a.printStart = time.Time{}
-		a.feedStart = c.Now()
-		a.feedDistance = -1
-	}
-	// 句柄记的是上一次布局的纸：换天时是旧的一天，清除后是被清掉的那张。
-	// 换纸这一帧先把纸藏起来，下一帧量出新纸的高度，再从那一帧开始送纸。
-	if a.feedDistance < 0 && c.Now().After(a.feedStart) {
-		if h := a.paperHandle.Bounds(c).H; h > 0 {
-			a.feedDistance = h
-			a.feedStart = c.Now()
+	pf := &a.paperFeed
+	if pf.day != day {
+		pf.day = day
+		a.printReveal.syncTo(a.receiptRevision)
+		if c.Preferences().ReduceMotion {
+			pf.phase = animIdle
+			pf.start = time.Time{}
+		} else {
+			pf.phase = animMeasuring
+			pf.start = c.Now()
 		}
 	}
-	distance := a.feedDistance
-	if distance < 0 {
-		distance = 10000
+	if c.Preferences().ReduceMotion {
+		pf.phase = animIdle
+		pf.start = time.Time{}
 	}
-	elapsed := c.Now().Sub(a.feedStart)
 	offset := float32(0)
-	if !c.Preferences().ReduceMotion && elapsed < 900*time.Millisecond {
-		progress := max(float64(0), float64(elapsed)/float64(900*time.Millisecond))
-		offset = -distance * float32(math.Pow(1-progress, 3))
-		c.AnimationFrame()
+	switch pf.phase {
+	case animMeasuring:
+		if c.Now().After(pf.start) {
+			if h := pf.handle.Bounds(c).H; h > 0 {
+				pf.distance = h
+				pf.start = c.Now()
+				pf.phase = animRunning
+				offset = -pf.distance
+				c.AnimationFrame()
+			} else if c.Now().Sub(pf.start) >= 900*time.Millisecond {
+				pf.phase = animIdle
+			} else {
+				offset = -10000
+				c.AnimationFrame()
+			}
+		} else {
+			offset = -10000
+			c.AnimationFrame()
+		}
+	case animRunning:
+		elapsed := c.Now().Sub(pf.start)
+		if elapsed >= 900*time.Millisecond {
+			pf.phase = animIdle
+		} else {
+			progress := max(float64(0), float64(elapsed)/float64(900*time.Millisecond))
+			offset = -pf.distance * float32(math.Pow(1-progress, 3))
+			c.AnimationFrame()
+		}
 	}
 	paper := ui.Hex("#FFFDF7")
 	if c.Theme().Dark {
 		paper = ui.Hex("#ECE8DF")
 	}
-	ui.Column(c).Width(width).Bind(&a.paperHandle).Translate(0, offset).Children(func() {
+	ui.Column(c).Width(width).Bind(&pf.handle).Translate(0, offset).Children(func() {
 		ui.Column(c).FillWidth().Background(paper).Padding(20, 22, 16, 22).Gap(9).Children(func() { a.renderReceiptContents(c) })
 		receiptZigzag(c, paper)
 	})

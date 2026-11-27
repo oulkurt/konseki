@@ -82,36 +82,36 @@ func TestRunnerCountsPersistRestoreAndClosed(t *testing.T) {
 	r.counts.snapshot = countBucket{keys: 4, clicks: 2, valid: true}
 	r.lastPath = "old.jpg"
 	r.lastW, r.lastH = 1, 1
-	res := captureResult{job: captureJob{session: "s", store: r.st, storage: r.storage, at: clock.Now()}, frame: &Frame{W: 1, H: 1}, duplicate: true}
+	res := captureResult{job: captureJob{session: "s", store: r.st, storage: r.storage, at: clock.Now()}, frame: &Frame{W: 1, H: 1}, outcome: outcomeDuplicate}
 	errWrite := errors.New("写入失败")
 	r.deps.appendSnapshot = func(*Store, Snapshot) error { return errWrite }
 	r.mu.Lock()
-	err = r.persist(res)
+	_, err = r.persist(&res)
 	r.mu.Unlock()
 	if !errors.Is(err, errWrite) || r.counts.snapshot.keys != 4 {
 		t.Fatalf("失败未回补: %v %+v", err, r.counts.snapshot)
 	}
 	r.lastPath = ""
 	r.mu.Lock()
-	err = r.persist(res)
+	saved, err := r.persist(&res)
 	r.mu.Unlock()
-	if err != nil || r.counts.snapshot.keys != 4 {
+	if err != nil || saved || r.counts.snapshot.keys != 4 {
 		t.Fatal("跳过重复帧未回补")
 	}
 	r.lastPath = "old.jpg"
 	var got Snapshot
 	r.deps.appendSnapshot = func(_ *Store, s Snapshot) error { got = s; return nil }
 	r.mu.Lock()
-	err = r.persist(res)
+	saved, err = r.persist(&res)
 	r.mu.Unlock()
-	if err != nil || got.Keys == nil || *got.Keys != 4 || *got.Clicks != 2 {
+	if err != nil || !saved || got.Keys == nil || *got.Keys != 4 || *got.Clicks != 2 {
 		t.Fatalf("快照计数: %+v %v", got, err)
 	}
 	r.session = nil
 	r.mu.Lock()
-	err = r.persist(res)
+	saved, err = r.persist(&res)
 	r.mu.Unlock()
-	if err != nil || got.Keys != nil || got.Clicks != nil {
+	if err != nil || !saved || got.Keys != nil || got.Clicks != nil {
 		t.Fatalf("关闭会话的快照带有计数: %+v", got)
 	}
 }
@@ -227,5 +227,100 @@ func TestRunnerStatusCopiesCountPointers(t *testing.T) {
 	*snapshot.Clicks = 99
 	if *r.session.Keys != 3 || *r.session.Clicks != 2 {
 		t.Fatal("状态副本共享计数指针")
+	}
+}
+
+func TestRunnerStopStartIsolatesInputCounts(t *testing.T) {
+	d, clock, sys := fakeDependencies()
+	source := &fakeTotals{ok: true}
+	d.totals = source
+	cfg := Settings{Root: t.TempDir(), Idle: time.Minute, Heartbeat: time.Hour, InputCounts: true}
+	r, err := newRunner(cfg, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	source.set(InputTotals{Keys: 10, Clicks: 5})
+	clock.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.counts.have && r.counts.last.Keys == 10 })
+	sys.mu.Lock()
+	sys.key = clock.Now()
+	sys.mu.Unlock()
+	source.set(InputTotals{Keys: 15, Clicks: 8})
+	clock.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.counts.session.keys == 5 })
+	r.Stop()
+	rows := r.RecentSessions(1)
+	if len(rows) != 1 || rows[0].Keys == nil || *rows[0].Keys != 5 || *rows[0].Clicks != 3 {
+		t.Fatalf("首段会话计数错误: %+v", rows)
+	}
+
+	source.set(InputTotals{Keys: 100, Clicks: 50})
+	r.Start()
+	defer r.Stop()
+	clock.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.counts.have && r.counts.last.Keys == 100 })
+	sys.mu.Lock()
+	sys.key = clock.Now()
+	sys.mu.Unlock()
+	source.set(InputTotals{Keys: 103, Clicks: 52})
+	clock.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.counts.session.keys == 3 })
+	r.Stop()
+	rows = r.RecentSessions(2)
+	if len(rows) != 2 || rows[0].Keys == nil || *rows[0].Keys != 3 || *rows[0].Clicks != 2 {
+		t.Fatalf("重启后带入停机期间输入增量: %+v", rows)
+	}
+}
+
+func TestRunnerDeferredSessionSnapshotCounts(t *testing.T) {
+	d, clock, sys := fakeDependencies()
+	screen := &blockingScreen{started: make(chan struct{}), release: make(chan struct{})}
+	d.screen = screen
+	source := &fakeTotals{ok: true}
+	d.totals = source
+	r, err := newRunner(Settings{Root: t.TempDir(), Idle: 500 * time.Millisecond, TypingPause: 250 * time.Millisecond, Debounce: time.Millisecond, Heartbeat: time.Hour, InputCounts: true}, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Start()
+	defer r.Stop()
+	source.set(InputTotals{Keys: 10, Clicks: 4})
+	clock.advance(250 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return r.counts.have && r.counts.last.Keys == 10 })
+
+	sys.mu.Lock()
+	sys.key = clock.Now()
+	sys.mu.Unlock()
+	source.set(InputTotals{Keys: 13, Clicks: 6})
+	clock.advance(250 * time.Millisecond)
+	eventually(t, func() bool { return r.Status().Session != nil })
+
+	clock.advance(300 * time.Millisecond)
+	<-screen.started
+
+	clock.advance(600 * time.Millisecond)
+	eventually(t, func() bool { r.mu.Lock(); defer r.mu.Unlock(); return len(r.closed) == 1 })
+	if st := r.Status(); st.Session != nil || st.Phase != PhaseWaiting {
+		t.Fatalf("关闭会话后状态仍暴露已关闭会话: %+v", st)
+	}
+
+	close(screen.release)
+	day := clock.Now().Format("2006-01-02")
+	eventually(t, func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.machine.job == jobIdle && len(r.closed) == 0
+	})
+	rows, err := r.Snapshots(day)
+	if err != nil || len(rows) != 1 || rows[0].Keys == nil || *rows[0].Keys != 3 || *rows[0].Clicks != 2 {
+		t.Fatalf("延迟关闭会话的末张快照丢失键鼠计数: %+v %v", rows, err)
+	}
+	sessions := r.RecentSessions(1)
+	if len(sessions) != 1 || sessions[0].Snapshots != 1 || len(sessions[0].Apps) != 1 || sessions[0].Apps[0] != "App" {
+		t.Fatalf("延迟关闭会话未汇总快照或应用: %+v", sessions)
+	}
+	if u := r.Status().Usage; u.Snapshots != 1 {
+		t.Fatalf("快照计数未递增: %+v", u)
 	}
 }

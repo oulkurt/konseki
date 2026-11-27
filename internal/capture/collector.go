@@ -6,20 +6,22 @@
  */
 package capture
 
-import "time"
+import (
+	"context"
+	"sync"
+	"time"
+)
 
-// 平台无关的接口定义。
-//
-// 采集器只依赖这三个能力：抓帧、OCR、看前台窗口。
-// 每个平台各自实现，主循环完全不关心底下是 CGDisplayCreateImage
-// 还是 BitBlt 还是 PipeWire。
-
-// Frame 包含平台原生帧或测试用 RGBA 像素。
 type Frame struct {
-	W, H   int
-	RGBA   []byte
-	Blank  bool
-	native uintptr
+	W, H     int
+	RGBA     []byte
+	Blank    bool
+	native   uintptr
+	nativeMu sync.Mutex
+}
+
+func (f *Frame) Close() {
+	releaseFrame(f)
 }
 
 // Screen 是一个平台的屏幕采集实现。
@@ -65,6 +67,10 @@ type OCREngine interface {
 	// Recognize 识别一帧里的文字，返回文本和行数。
 	// 应当能处理中英日混排。
 	Recognize(f *Frame, languages []string) (text string, lines int, err error)
+}
+
+type cancelableOCR interface {
+	RecognizeContext(ctx context.Context, f *Frame, languages []string) (string, int, error)
 }
 
 // InputSource 返回距最近一次输入的时间。

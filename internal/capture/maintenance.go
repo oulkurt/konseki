@@ -20,7 +20,7 @@ func defaultMaintenanceOps() maintenanceOps {
 }
 
 // 调用方持有 lifecycle；停止采集不等待，清空数据必须等待。
-func (r *Runner) startMaintenance(stop <-chan struct{}, enforce <-chan struct{}) {
+func (r *Runner) startMaintenance(stop <-chan struct{}, enforce <-chan struct{}, runGen uint64) {
 	pending := r.maintenanceDone[:0]
 	for _, done := range r.maintenanceDone {
 		select {
@@ -31,7 +31,7 @@ func (r *Runner) startMaintenance(stop <-chan struct{}, enforce <-chan struct{})
 	}
 	done := make(chan struct{})
 	r.maintenanceDone = append(pending, done)
-	go r.maintenance(stop, done, enforce)
+	go r.maintenance(stop, done, enforce, runGen)
 }
 func (r *Runner) waitMaintenance() {
 	for _, done := range r.maintenanceDone {
@@ -40,7 +40,7 @@ func (r *Runner) waitMaintenance() {
 	r.maintenanceDone = nil
 }
 
-func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce <-chan struct{}) {
+func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce <-chan struct{}, runGen uint64) {
 	defer close(done)
 	ops := defaultMaintenanceOps()
 	if r.deps.maintenanceOps != nil {
@@ -59,6 +59,11 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 			return true
 		default:
 			return false
+		}
+	}
+	reportErr := func(err error) {
+		if !stopped() {
+			r.setErrorForRun(runGen, err)
 		}
 	}
 	clock, ok := r.deps.clock.(maintenanceClock)
@@ -82,43 +87,60 @@ func (r *Runner) maintenance(stop <-chan struct{}, done chan<- struct{}, enforce
 		case <-stop:
 			return
 		case <-initial:
+			initial = nil
+			stopInitial()
 			st, cfg := settings()
-			r.setError(ops.rescan(st))
+			reportErr(ops.rescan(st))
 			if stopped() {
 				return
 			}
 			_, err := ops.prune(st, cfg.RetentionDays, r.deps.clock.Now())
-			r.setError(err)
+			reportErr(err)
 			if stopped() {
 				return
 			}
 			_, err = ops.degrade(st, r.deps.clock.Now())
-			r.setError(err)
+			reportErr(err)
 			if stopped() {
 				return
 			}
-			r.setError(enforceLimit(st, cfg))
+			reportErr(enforceLimit(st, cfg))
+			if stopped() {
+				return
+			}
 			fiveC, stopFive = clock.Ticker(5 * time.Minute)
 			halfC, stopHalf = clock.Ticker(30 * time.Minute)
 			sixC, stopSix = clock.Ticker(6 * time.Hour)
 		case <-fiveC:
-			st, cfg := settings()
-			r.setError(enforceLimit(st, cfg))
-		case <-halfC:
-			st, _ := settings()
-			_, err := ops.degrade(st, r.deps.clock.Now())
-			r.setError(err)
 			if stopped() {
 				return
 			}
-			r.setError(ops.rescan(st))
+			st, cfg := settings()
+			reportErr(enforceLimit(st, cfg))
+		case <-halfC:
+			if stopped() {
+				return
+			}
+			st, _ := settings()
+			_, err := ops.degrade(st, r.deps.clock.Now())
+			reportErr(err)
+			if stopped() {
+				return
+			}
+			reportErr(ops.rescan(st))
 		case <-sixC:
+			if stopped() {
+				return
+			}
 			st, cfg := settings()
 			_, err := ops.prune(st, cfg.RetentionDays, r.deps.clock.Now())
-			r.setError(err)
+			reportErr(err)
 		case <-enforce:
+			if stopped() {
+				return
+			}
 			st, cfg := settings()
-			r.setError(enforceLimit(st, cfg))
+			reportErr(enforceLimit(st, cfg))
 		}
 	}
 }

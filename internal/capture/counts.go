@@ -27,8 +27,8 @@ type inputCounts struct {
 // invalidate 在开关变化或读数失败时中断当前区间。
 func (c *inputCounts) invalidate() {
 	c.have = false
-	c.snapshot.valid = false
-	c.session.valid = false
+	c.snapshot = countBucket{}
+	c.session = countBucket{}
 }
 
 // open 在会话打开时清空两个桶。开着计数且已有上一拍读数，区间才从开头被覆盖，桶才有效。
@@ -45,7 +45,12 @@ func (c *inputCounts) observe(enabled, ok bool, cur InputTotals, private, active
 		c.private = private
 		return
 	}
-	if c.have && !private && !c.private && active && cur.Keys >= c.last.Keys && cur.Clicks >= c.last.Clicks {
+	if c.have && (cur.Keys < c.last.Keys || cur.Clicks < c.last.Clicks) {
+		c.invalidate()
+		c.last, c.have, c.private = cur, true, private
+		return
+	}
+	if c.have && !private && !c.private && active {
 		keys, clicks := int(cur.Keys-c.last.Keys), int(cur.Clicks-c.last.Clicks)
 		if cur.Secure || c.last.Secure {
 			keys = 0

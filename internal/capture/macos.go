@@ -9,7 +9,9 @@
 package capture
 
 import (
+	"context"
 	"errors"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -49,11 +51,20 @@ var (
 	destFin func(dest uintptr) uint8
 )
 
-func initRuntime() {
-	lib, err := purego.Dlopen("/usr/lib/libobjc.A.dylib", purego.RTLD_GLOBAL|purego.RTLD_NOW)
+func dlopenChecked(path string, mode int) uintptr {
+	lib, err := purego.Dlopen(path, mode)
 	if err != nil {
-		panic(err)
+		panic(path + ": " + err.Error())
 	}
+	if lib == 0 {
+		panic(path + ": dlopen returned 0")
+	}
+	return lib
+}
+
+func initRuntime() {
+	lib := dlopenChecked("/usr/lib/libobjc.A.dylib", purego.RTLD_GLOBAL|purego.RTLD_NOW)
+	var err error
 	msgSend, err = purego.Dlsym(lib, "objc_msgSend")
 	if err != nil {
 		panic(err)
@@ -64,14 +75,9 @@ func initRuntime() {
 		"/System/Library/Frameworks/AppKit.framework/AppKit",
 		"/System/Library/Frameworks/Vision.framework/Vision",
 	} {
-		if _, err := purego.Dlopen(fw, purego.RTLD_GLOBAL|purego.RTLD_NOW); err != nil {
-			panic(fw + ": " + err.Error())
-		}
+		dlopenChecked(fw, purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	}
-	cg, err := purego.Dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
-	if err != nil {
-		panic(err)
-	}
+	cg := dlopenChecked("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", purego.RTLD_NOW)
 	purego.RegisterLibFunc(&cgListFn, cg, "CGWindowListCopyWindowInfo")
 	purego.RegisterLibFunc(&dispFn, cg, "CGMainDisplayID")
 	purego.RegisterLibFunc(&imgFn, cg, "CGDisplayCreateImage")
@@ -85,16 +91,10 @@ func initRuntime() {
 	mustReg(cg, "CGContextDrawImage", &cgContextDraw)
 	mustReg(cg, "CGContextSetInterpolationQuality", &cgContextQuality)
 
-	cf, err := purego.Dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_GLOBAL|purego.RTLD_NOW)
-	if err != nil {
-		panic(err)
-	}
+	cf := dlopenChecked("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	mustReg(cf, "CFRetain", &cfRetain)
 
-	cv, err := purego.Dlopen("/System/Library/Frameworks/CoreVideo.framework/CoreVideo", purego.RTLD_GLOBAL|purego.RTLD_NOW)
-	if err != nil {
-		panic(err)
-	}
+	cv := dlopenChecked("/System/Library/Frameworks/CoreVideo.framework/CoreVideo", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	mustReg(cv, "CVPixelBufferCreate", &cvCreate)
 	mustReg(cv, "CVPixelBufferLockBaseAddress", &cvLock)
 	mustReg(cv, "CVPixelBufferUnlockBaseAddress", &cvUnlock)
@@ -102,19 +102,15 @@ func initRuntime() {
 	mustReg(cv, "CVPixelBufferGetBytesPerRow", &cvBytesPerRow)
 	cvSurfaceKey = nativeGlobal(cv, "kCVPixelBufferIOSurfacePropertiesKey")
 
-	io, err := purego.Dlopen("/System/Library/Frameworks/ImageIO.framework/ImageIO", purego.RTLD_GLOBAL|purego.RTLD_NOW)
-	if err != nil {
-		panic(err)
-	}
+	io := dlopenChecked("/System/Library/Frameworks/ImageIO.framework/ImageIO", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 	mustReg(io, "CGImageDestinationCreateWithData", &destNew)
 	mustReg(io, "CGImageDestinationAddImage", &destAdd)
 	mustReg(io, "CGImageDestinationFinalize", &destFin)
 }
 
-// O 发一条 ObjC 消息。指针参数经 uintptr 转换，靠 go:uintptrescapes 保活。
-//
 //go:uintptrescapes
 func O(obj uintptr, sel string, args ...uintptr) uintptr {
+	initPlatform()
 	s := objc.SEL(objc.RegisterName(sel))
 	var a [10]uintptr
 	a[0], a[1] = obj, uintptr(s)
@@ -265,13 +261,13 @@ func isBlank(img uintptr) bool {
 	return avg < 0.05 || avg > 0.98
 }
 
-func downscaleTo(img uintptr, limit int) uintptr {
+func downscaleTo(img uintptr, limit int) (uintptr, bool) {
 	w, h := cgGetW(img), cgGetH(img)
 	if w <= 0 || h <= 0 {
-		return 0
+		return 0, false
 	}
 	if w <= limit && h <= limit {
-		return img
+		return img, false
 	}
 	if w >= h {
 		h = max(1, h*limit/w)
@@ -281,7 +277,7 @@ func downscaleTo(img uintptr, limit int) uintptr {
 		h = limit
 	}
 	_, scaled := bitmap(img, w, h, true)
-	return scaled
+	return scaled, scaled != 0
 }
 
 // writeJPEGData 把 CGImage 编码成内存里的 JPEG NSData。
@@ -316,11 +312,53 @@ func writeJPEGData(img uintptr, quality float64) uintptr {
 // 生产帧来自 CGDisplayCreateImage，本机测不了它的内存类型，所以一律走像素缓冲。
 // 这条路在同一张图反复识别和每次新图两种情况下 RSS 都不涨。
 func ocrImage(data uintptr, langs []string) (string, int, error) {
+	return ocrImageContext(context.Background(), data, langs)
+}
+
+func ocrImageContext(ctx context.Context, data uintptr, langs []string) (string, int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", 0, err
+	}
 	if data == 0 {
 		return "", 0, errors.New("Vision 识别初始化失败")
 	}
 	req := O(O(cls("VNRecognizeTextRequest"), "alloc"), "init")
-	defer O(req, "release")
+	var (
+		reqMu    sync.Mutex
+		reqAlive = true
+		done     = make(chan struct{})
+		cancelWG sync.WaitGroup
+	)
+	if ctx.Done() != nil {
+		cancelWG.Add(1)
+		go func() {
+			defer cancelWG.Done()
+			select {
+			case <-ctx.Done():
+				withPool(func() {
+					reqMu.Lock()
+					if reqAlive && req != 0 {
+						O(req, "cancel")
+					}
+					reqMu.Unlock()
+				})
+			case <-done:
+			}
+		}()
+	}
+	defer func() {
+		reqMu.Lock()
+		reqAlive = false
+		reqMu.Unlock()
+		close(done)
+		cancelWG.Wait()
+		if req != 0 {
+			O(req, "release")
+		}
+	}()
 	O(req, "setRecognitionLevel:", 0) // accurate
 	O(req, "setUsesLanguageCorrection:", 1)
 	// 显式指定语言：不指定时 Vision 对中英混排的识别会明显退化
@@ -343,7 +381,13 @@ func ocrImage(data uintptr, langs []string) (string, int, error) {
 	}
 	defer O(handler, "release")
 	if !objcBool(O(handler, "performRequests:error:", O(cls("NSArray"), "arrayWithObject:", req), 0)) {
+		if err := ctx.Err(); err != nil {
+			return "", 0, err
+		}
 		return "", 0, errors.New("Vision 识别失败")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", 0, err
 	}
 
 	results := O(req, "results")

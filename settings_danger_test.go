@@ -32,7 +32,7 @@ func TestClearRunningDisablesRecorderControls(t *testing.T) {
 		t.Fatal("录制未启动")
 	}
 
-	a.clearRunning = true
+	a.clear.phase = clearRunning
 	tt := ui.NewTester(a.view, 760, 1400)
 	if err := tt.Click("等待中"); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestDangerCancelPreservesData(t *testing.T) {
 	if err := tt.Click("取消"); err != nil {
 		t.Fatal(err)
 	}
-	if a.clearRunning || len(a.sums.Days()) != 1 {
+	if a.clear.running() || len(a.sums.Days()) != 1 {
 		t.Fatal("取消后删除了数据")
 	}
 }
@@ -97,7 +97,7 @@ func TestDangerDisabledWithoutData(t *testing.T) {
 	a.refresh()
 	tt := ui.NewTester(a.view, 760, 2600)
 	_ = tt.Click("清除全部活动数据")
-	if a.clearConfirm || tt.HasText("删除全部活动数据？") {
+	if a.clear.confirm || tt.HasText("删除全部活动数据？") {
 		t.Fatal("没有数据时清除按钮仍能打开确认框")
 	}
 	if err := a.sums.Upsert(summary.Entry{ID: "old", Day: "2026-11-04"}); err != nil {
@@ -131,11 +131,11 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	if err := tt.Click("全部删除"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.clearRunning {
+	if !a.clear.running() {
 		t.Fatal("清除没有启动")
 	}
 	a.checkLegacy(locales.In("zh-Hans"))
-	if !a.legacyChecked {
+	if a.legacy.phase == legacyUnchecked {
 		t.Fatal("缓存未预热")
 	}
 	a.clearActivity()
@@ -145,8 +145,8 @@ func TestDangerConfirmClearsOnce(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
-	if a.clearErr != nil || a.clearRunning || len(a.sums.Days()) != 0 {
-		t.Fatalf("清除未完成: %v", a.clearErr)
+	if a.clear.err != nil || a.clear.running() || len(a.sums.Days()) != 0 {
+		t.Fatalf("清除未完成: %v", a.clear.err)
 	}
 	select {
 	case <-posted:
@@ -177,8 +177,8 @@ func TestClearFailureStaysInSettings(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
-	if a.clearErr == nil || a.tab != 1 || a.shred.pending {
-		t.Fatalf("失败后状态错误：tab=%d error=%v shred=%v", a.tab, a.clearErr, a.shred.pending)
+	if a.clear.err == nil || a.tab != 1 || a.shred.active() {
+		t.Fatalf("失败后状态错误：tab=%d error=%v shred=%v", a.tab, a.clear.err, a.shred.active())
 	}
 }
 
@@ -242,7 +242,7 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 		t.Fatalf("夹具: %v %v", files, err)
 	}
 	a.checkLegacy(locales.In("zh-Hans"))
-	if !a.legacyChecked || len(a.legacyFiles) != 3 {
+	if a.legacy.phase == legacyUnchecked || len(a.legacy.files) != 3 {
 		t.Fatal("旧文件缓存未预热")
 	}
 	old := summary.Entry{ID: "old", Day: "2026-11-04", Headline: "private"}
@@ -251,9 +251,9 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	}
 	done := make(chan struct{})
 	canceled := false
-	a.sumDone = done
-	a.sumRunning = true
-	a.sumCancel = func() { canceled = true }
+	a.summary.done = done
+	a.summary.phase = summaryRunning
+	a.summary.cancel = func() { canceled = true }
 	a.receipt = ReceiptDay{Lines: []ReceiptLine{{ID: "old"}}}
 	a.lastLoad = time.Now()
 	posted := make(chan func(), 1)
@@ -278,16 +278,16 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("清除超时")
 	}
-	if a.legacyChecked || len(a.legacyFiles) != 0 {
+	if a.legacy.phase != legacyUnchecked || len(a.legacy.files) != 0 {
 		t.Fatal("旧文件缓存未刷新")
 	}
-	if a.clearErr != nil {
-		t.Fatal(a.clearErr)
+	if a.clear.err != nil {
+		t.Fatal(a.clear.err)
 	}
 	if len(a.receipt.Lines) != 0 || !a.lastLoad.IsZero() {
 		t.Fatalf("清除后小票或刷新节流未清空: %#v, %v", a.receipt, a.lastLoad)
 	}
-	if len(a.clearReceipt.Lines) != 1 || a.clearReceipt.Lines[0].ID != "old" {
+	if len(a.shred.receipt.Lines) != 1 || a.shred.receipt.Lines[0].ID != "old" {
 		t.Fatal("未保留确认时的小票")
 	}
 	if got := a.sums.Days(); len(got) != 0 {
@@ -309,10 +309,63 @@ func TestClearActivityWaitsForFinalSummaryWrite(t *testing.T) {
 func TestRefreshDoesNotReadDuringClear(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
-	a.clearRunning = true
+	a.clear.phase = clearRunning
 	a.receipt = ReceiptDay{Lines: []ReceiptLine{{ID: "保留"}}}
 	a.refresh()
 	if !a.lastLoad.IsZero() || len(a.receipt.Lines) != 1 || a.receipt.Lines[0].ID != "保留" {
 		t.Fatal("清除期间刷新了磁盘缓存")
+	}
+}
+
+func TestClearPartialLegacyFailureKeepsRetryEnabled(t *testing.T) {
+	a, cleanup := newTestApp(t)
+	defer cleanup()
+	legacyDir := a.legacyDir()
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(legacyDir, os.DirFS(filepath.Join("internal", "skill", "testdata", "legacy"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(legacyDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(legacyDir, 0o755) })
+
+	a.tab = 1
+	jobs := make(chan func(), 2)
+	a.post = func(f func()) { jobs <- f }
+	a.clearActivity()
+	select {
+	case f := <-jobs:
+		f()
+	case <-time.After(10 * time.Second):
+		t.Fatal("首次清除超时")
+	}
+	if a.clear.phase != clearFailed || a.clear.err == nil {
+		t.Fatalf("期望清除失败，实际: %+v", a.clear)
+	}
+	if err := os.Chmod(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	tt := ui.NewTester(a.view, 760, 2600)
+	if err := tt.Click("清除全部活动数据"); err != nil {
+		t.Fatal(err)
+	}
+	if !a.clear.confirm {
+		t.Fatal("部分清除失败后无法重新打开确认对话框")
+	}
+	if err := tt.Click("全部删除"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case f := <-jobs:
+		f()
+	case <-time.After(10 * time.Second):
+		t.Fatal("重试清除超时")
+	}
+	if a.clear.err != nil || a.clear.phase != clearIdle {
+		t.Fatalf("重试清除失败: %+v", a.clear)
 	}
 }

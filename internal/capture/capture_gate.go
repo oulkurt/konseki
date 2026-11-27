@@ -8,6 +8,7 @@ package capture
 
 var (
 	screenBackend               = newPlatformScreen
+	liveFrontBackend            = platformLiveFront
 	requestScreenBackend        = platformRequestScreenPermission
 	requestAccessibilityBackend = platformRequestAccessibility
 )
@@ -15,6 +16,13 @@ var (
 type guardedScreen struct{ Screen }
 
 func newScreen() Screen { return guardedScreen{screenBackend()} }
+
+func (s guardedScreen) FrontWindow() (string, string, int) {
+	if !realCaptureAllowed() {
+		return "", "", 0
+	}
+	return s.Screen.FrontWindow()
+}
 
 func (s guardedScreen) Grab() *Frame {
 	if !realCaptureAllowed() {
@@ -43,4 +51,11 @@ func RequestAccessibility() PermState {
 		return PermDenied
 	}
 	return requestAccessibilityBackend()
+}
+
+func (nativeObservations) LiveFront() Front {
+	if !realCaptureAllowed() {
+		return Front{}
+	}
+	return liveFrontBackend()
 }

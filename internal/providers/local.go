@@ -7,6 +7,7 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -31,9 +32,12 @@ import (
 func detectLocal() []Credential {
 	var out []Credential
 
-	// Claude Code：macOS 读钥匙串，其他系统读文件。
 	if runtime.GOOS == "darwin" {
-		out = append(out, claudeFromKeychain()...)
+		creds := claudeFromKeychain()
+		if len(creds) == 0 {
+			creds = claudeFromFile()
+		}
+		out = append(out, creds...)
 	} else {
 		out = append(out, claudeFromFile()...)
 	}
@@ -52,7 +56,9 @@ func detectLocal() []Credential {
 // -w 只输出密码（这里的密码就是一份 JSON），不打印元数据。
 // 做成变量是为了让测试换掉它：测试绝不能把开发者本机的真实令牌读进进程。
 var readClaudeKeychain = func() ([]byte, error) {
-	return exec.Command("security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "security", "find-generic-password", "-s", "Claude Code-credentials", "-w").Output()
 }
 
 func claudeFromKeychain() []Credential {
@@ -94,7 +100,7 @@ func claudeFromJSON(b []byte) []Credential {
 	cred := Credential{Source: "claude", Label: "Claude Code", Kind: "oauth"}
 	cred.AccessToken = stringField(oauth, "accessToken")
 	cred.RefreshToken = stringField(oauth, "refreshToken")
-	cred.ExpiresAt = parseTime(stringField(oauth, "expiresAt"))
+	cred.ExpiresAt = timeField(oauth, "expiresAt")
 
 	if cred.AccessToken == "" && cred.RefreshToken == "" {
 		return nil
@@ -253,9 +259,24 @@ func CodexModels() []string {
 	return out
 }
 
+func timeField(m map[string]any, key string) time.Time {
+	switch v := m[key].(type) {
+	case string:
+		return parseTime(v)
+	case float64:
+		if v <= 0 {
+			return time.Time{}
+		}
+		return parseTime(strconv.FormatInt(int64(v), 10))
+	default:
+		return time.Time{}
+	}
+}
+
 // parseTime 尽力解析时间字符串：支持 RFC3339 和纯 Unix 秒。
 // 解析不了就返回零值，绝不为坏数据 panic。
 func parseTime(s string) time.Time {
+	s = strings.TrimSpace(s)
 	if s == "" {
 		return time.Time{}
 	}
@@ -265,8 +286,11 @@ func parseTime(s string) time.Time {
 		}
 	}
 	// 有些客户端存的是秒级 Unix 时间戳。
-	if sec, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return time.Unix(sec, 0)
+	if val, err := strconv.ParseInt(s, 10, 64); err == nil && val > 0 {
+		if val >= 1e12 {
+			return time.UnixMilli(val)
+		}
+		return time.Unix(val, 0)
 	}
 	return time.Time{}
 }

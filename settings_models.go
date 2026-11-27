@@ -26,10 +26,11 @@ import (
 
 func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
+	selectedKey := resolveSummaryProviderKey(a.cfgNow.Summary.ProviderID, a.cfgNow.Providers)
 	a.settingsCard(c, pal, func() {
 		provider := a.cfgNow.Summary.ProviderID
 		for _, pc := range a.cfgNow.Providers {
-			if pc.Preset == a.cfgNow.Summary.ProviderID {
+			if providerKey(pc) == selectedKey {
 				provider = providerDisplayName(pc)
 				break
 			}
@@ -43,18 +44,19 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 				renderSelectPill(c, "summary-model", label, 130, pal.textPrimary, pal, func(m *ui.Menu) {
 					for _, pc := range a.cfgNow.Providers {
 						models := providerModelChoices(pc)
-						if len(models) == 0 && pc.DefaultModel != "" {
+						if len(models) == 0 && pc.AllowsModel(pc.DefaultModel) {
 							models = []string{pc.DefaultModel}
 						}
+						key := providerKey(pc)
 						for _, model := range models {
-							if m.Item(providerDisplayName(pc) + " · " + model).Checked(a.cfgNow.Summary.ProviderID == pc.Preset && a.cfgNow.Summary.Model == model).Chosen() {
-								a.setSummaryModel(pc.Preset, model)
+							checked := selectedKey != "" && key == selectedKey && a.cfgNow.Summary.Model == model
+							if m.Item(providerDisplayName(pc) + " · " + model).Checked(checked).Chosen() {
+								a.setSummaryModel(key, model)
 							}
 						}
 					}
 				})
 			})
-			// 档位单独成行。菜单只显示「中」时，中文界面里看不出它是推理档位。
 			a.settingsRow(c, msg.ModelsEffort(), msg.ModelsEffortHelp(), pal, func() {
 				efforts := []struct{ key, label string }{{"off", msg.ModelsEffortOff()}, {"low", msg.ModelsEffortLow()}, {"medium", msg.ModelsEffortMedium()}, {"high", msg.ModelsEffortHigh()}, {"max", msg.ModelsEffortMax()}}
 				effortLabel := msg.ModelsEffort()
@@ -81,7 +83,10 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 			a.settingsRow(c, msg.ModelsRedact(), msg.ModelsRedactHelp(), pal, func() {
 				on := a.cfgNow.Redact.Enabled
 				if renderPillSwitch(c, "summary-redact", &on, pal) {
-					a.cfg.Update(func(cfg *config.Config) { cfg.Redact.Enabled = on })
+					if err := a.cfg.Update(func(cfg *config.Config) { cfg.Redact.Enabled = on }); err != nil {
+						a.err = err
+						return
+					}
 					a.cfgNow = a.cfg.Get()
 					a.rebuildGenerator()
 				}
@@ -98,7 +103,10 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 					a.settingsRow(c, item.label, item.help, pal, func() {
 						v := item.value
 						if renderPillSwitch(c, item.key, &v, pal) {
-							a.cfg.Update(func(cfg *config.Config) { item.set(cfg, v) })
+							if err := a.cfg.Update(func(cfg *config.Config) { item.set(cfg, v) }); err != nil {
+								a.err = err
+								return
+							}
 							a.cfgNow = a.cfg.Get()
 							a.rebuildGenerator()
 						}
@@ -109,8 +117,6 @@ func (a *app) renderModelsSettings(c *ui.Context, pal palette) {
 	})
 }
 
-// renderAutoSummaryRow 绘制自动摘要开关。记录页和模型页各放一个，key 区分两处。
-// 说明写出实际间隔，用户能看出活动多久发给模型一次。
 func (a *app) renderAutoSummaryRow(c *ui.Context, pal palette, key string) {
 	msg := locales.In(c.Locale())
 	minutes := int(summaryInterval(a.cfgNow.Summary) / time.Minute)
@@ -119,6 +125,7 @@ func (a *app) renderAutoSummaryRow(c *ui.Context, pal palette, key string) {
 		if renderPillSwitch(c, key, &on, pal) {
 			if err := a.cfg.Update(func(cfg *config.Config) { cfg.Summary.Auto = on }); err != nil {
 				a.err = err
+				return
 			}
 			a.cfgNow = a.cfg.Get()
 		}
@@ -127,6 +134,7 @@ func (a *app) renderAutoSummaryRow(c *ui.Context, pal palette, key string) {
 
 func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 	msg := locales.In(c.Locale())
+	removeIdx := -1
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(10).Children(func() {
 			ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
@@ -138,13 +146,16 @@ func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 			if len(a.cfgNow.Providers) == 0 {
 				ui.Text(c, msg.ModelsEmpty()).FontSize(12).TextColor(pal.textSecondary)
 			}
-			// 「移除」在循环中途把列表改短，所以每轮重新读长度。
-			// range 只在开头取一次长度，移除第一个以后会越界。
-			for idx := 0; idx < len(a.cfgNow.Providers); idx++ {
-				a.renderModelsProvider(c, pal, idx)
+			for idx := range a.cfgNow.Providers {
+				if a.renderModelsProvider(c, pal, idx) {
+					removeIdx = idx
+				}
 			}
 		})
 	})
+	if removeIdx >= 0 {
+		a.removeProvider(removeIdx)
+	}
 	ui.Modal(c, &a.addProviderOpen, func() {
 		ui.Column(c).Width(500).MaxWidth(700).Padding(18).Gap(10).Children(func() {
 			headingText(c, msg.ModelsAdd()).SingleLine()
@@ -180,12 +191,16 @@ func (a *app) renderModelsProviders(c *ui.Context, pal palette) {
 			})
 			if ui.Button(c, msg.ModelsClose()).Clicked() {
 				a.addProviderOpen = false
+				a.providerSearch = ""
 			}
 		})
 	})
+	if a.wasAddOpen && !a.addProviderOpen {
+		a.providerSearch = ""
+	}
+	a.wasAddOpen = a.addProviderOpen
 }
 
-// providerDisplayName 依次取用户起的名字、预设名、预设 ID。
 func providerDisplayName(pc config.ProviderConfig) string {
 	if pc.Label != "" {
 		return pc.Label
@@ -196,8 +211,6 @@ func providerDisplayName(pc config.ProviderConfig) string {
 	return pc.Preset
 }
 
-// providerModelPreview 是可用模型默认显示的条数。
-// 一次拉取可能带回几十个模型，全铺开会把面板撑得比整页还长。
 const providerModelPreview = 8
 
 // expiryDateLayout 是订阅到期日期的显示格式。固定 ISO 顺序，两种语言都不歧义。
@@ -288,7 +301,7 @@ func providerModelList(pc config.ProviderConfig) []string {
 	resolved := providerModelChoices(pc)
 	out := make([]string, 0, len(pc.DiscoveredModels)+len(resolved))
 	seen := make(map[string]bool, len(pc.DiscoveredModels)+len(resolved))
-	for _, list := range [][]string{pc.DiscoveredModels, resolved} {
+	for _, list := range [][]string{pc.DiscoveredModels, resolved, {pc.DefaultModel}} {
 		for _, id := range list {
 			if id != "" && !seen[id] {
 				seen[id] = true
@@ -307,7 +320,7 @@ func hasModelSelection(pc config.ProviderConfig) bool {
 
 // providerModelChecked 报告一枚模型在勾选列表里是否打勾。
 func providerModelChecked(pc config.ProviderConfig, id string) bool {
-	return !hasModelSelection(pc) || slices.Contains(pc.EnabledModels, id)
+	return pc.AllowsModel(id)
 }
 
 // providerEnabledModels 把勾选状态展开成完整列表，顺序跟随 choices。
@@ -317,13 +330,9 @@ func providerEnabledModels(pc config.ProviderConfig, choices []string) []string 
 	if !hasModelSelection(pc) {
 		return slices.Clone(choices)
 	}
-	enabled := make(map[string]bool, len(pc.EnabledModels))
-	for _, id := range pc.EnabledModels {
-		enabled[id] = true
-	}
 	out := make([]string, 0, len(choices))
 	for _, id := range choices {
-		if enabled[id] {
+		if pc.AllowsModel(id) {
 			out = append(out, id)
 		}
 	}
@@ -340,20 +349,22 @@ func providerKeysURL(pc config.ProviderConfig, preset providers.Preset) string {
 	return preset.KeysURL
 }
 
-func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
+func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) bool {
 	msg := locales.In(c.Locale())
 	pc := a.cfgNow.Providers[idx]
 	preset, _ := providers.ByID(pc.Preset)
 	name := providerDisplayName(pc)
 	oauth := pc.Auth == "oauth"
 	key := providerKey(pc)
-	ui.Column(c).FillWidth().Gap(6).Children(func() {
+	removed := false
+	selectedKey := resolveSummaryProviderKey(a.cfgNow.Summary.ProviderID, a.cfgNow.Providers)
+	ui.Column(c.Key("provider-row-" + key)).FillWidth().Gap(6).Children(func() {
 		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 			headingText(c, name).Grow(1).SingleLine().Tooltip(name).TextColor(pal.textPrimary)
-			if ui.Button(c.Key("provider-default-"+pc.Preset), msg.ModelsDefault()).Disabled(a.cfgNow.Summary.ProviderID == pc.Preset).Clicked() {
+			if ui.Button(c.Key("provider-default-"+providerKey(pc)), msg.ModelsDefault()).Disabled(selectedKey == key).Clicked() {
 				a.setDefaultProvider(pc)
 			}
-			if ui.Button(c.Key("provider-configure-"+pc.Preset), msg.ModelsConfigure()).Clicked() {
+			if ui.Button(c.Key("provider-configure-"+providerKey(pc)), msg.ModelsConfigure()).Clicked() {
 				if a.openProvider == key {
 					a.openProvider = ""
 				} else {
@@ -391,24 +402,26 @@ func (a *app) renderModelsProvider(c *ui.Context, pal palette, idx int) {
 				providerSectionTitle(c, msg.ModelsSectionActions(), pal)
 				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 					if !oauth {
+						testing := a.providerTest.phase == testRunning && a.providerTest.providerID == key
 						label := msg.ModelsTest()
-						if a.testing {
+						if testing {
 							label = msg.ModelsTesting()
 						}
-						if ui.Button(c.Key("provider-test-"+pc.Preset), label).Disabled(a.testing).Clicked() {
+						if ui.Button(c.Key("provider-test-"+providerKey(pc)), label).Disabled(testing).Clicked() {
 							a.testConnection(idx)
 						}
 					}
-					if ui.Button(c.Key("provider-remove-"+pc.Preset), msg.ModelsRemove()).Clicked() {
-						a.removeProvider(idx)
+					if ui.Button(c.Key("provider-remove-"+providerKey(pc)), msg.ModelsRemove()).Clicked() {
+						removed = true
 					}
 				})
 				if !oauth {
-					a.renderProviderTestResult(c, pal)
+					a.renderProviderTestResult(c, pal, key)
 				}
 			})
 		})
 	})
+	return removed
 }
 
 // renderProviderSubscription 绘制订阅凭据。OAuth 没有 key 可填，
@@ -426,30 +439,34 @@ func (a *app) renderProviderSubscription(c *ui.Context, pal palette, idx int, pc
 		}
 	})
 	ui.Text(c, msg.ModelsEndpointSubscription()).FontSize(11.5).TextColor(pal.textSecondary).LineHeight(1.35)
+	key := providerKey(pc)
+	testing := a.providerTest.phase == testRunning && a.providerTest.providerID == key
 	label := msg.ModelsTest()
-	if a.testing {
+	if testing {
 		label = msg.ModelsTesting()
 	}
 	ui.Row(c).Children(func() {
-		if ui.Button(c.Key("provider-test-"+pc.Preset), label).Disabled(a.testing).Clicked() {
+		if ui.Button(c.Key("provider-test-"+providerKey(pc)), label).Disabled(testing).Clicked() {
 			a.testConnection(idx)
 		}
 	})
-	a.renderProviderTestResult(c, pal)
+	a.renderProviderTestResult(c, pal, key)
 }
 
 // renderProviderKey 绘制按量计费的密钥输入。KeyHint 和取 key 的链接
 // 都是预设里的死数据，这里把它们接上。
 func (a *app) renderProviderKey(c *ui.Context, pal palette, idx int, pc config.ProviderConfig, preset providers.Preset, msg locales.Messages) {
 	ui.Text(c, msg.ModelsKey()).FontSize(12).TextColor(pal.textPrimary)
-	keyIn := ui.TextInput(c.Key("key-"+pc.Preset), &a.apiKeyDraft).FillWidth().Password().Label(msg.ModelsKey())
-	a.syncProviderDraft(idx, keyIn.Focused(), &a.apiKeyDraft, pc.APIKey, func(p *config.ProviderConfig, v string) { p.APIKey = v })
+	keyIn := ui.TextInput(c.Key("key-"+providerKey(pc)), &a.apiKeyDraft).FillWidth().Password().Label(msg.ModelsKey())
+	if a.syncProviderDraft(idx, keyIn.Focused(), &a.apiKeyDraft, pc.APIKey, func(p *config.ProviderConfig, v string) { p.APIKey = v }) {
+		a.rebuildGenerator()
+	}
 	if preset.KeyHint != "" {
 		ui.Text(c, preset.KeyHint).FontSize(11.5).TextColor(pal.textSecondary).LineHeight(1.35)
 	}
 	if url := providerKeysURL(pc, preset); url != "" {
 		ui.Row(c).Children(func() {
-			if ui.Button(c.Key("provider-keys-"+pc.Preset), msg.ModelsGetKey()).Clicked() && a.openExternal != nil {
+			if ui.Button(c.Key("provider-keys-"+providerKey(pc)), msg.ModelsGetKey()).Clicked() && a.openExternal != nil {
 				if err := a.openExternal(url); err != nil {
 					a.err = err
 				}
@@ -467,7 +484,7 @@ func (a *app) renderProviderEndpoint(c *ui.Context, pal palette, idx int, pc con
 			ui.Row(c).FillWidth().Gap(6).Wrap().Children(func() {
 				for _, ep := range eps {
 					active := pc.Region == ep.ID || (pc.Region == "" && ep.ID == eps[0].ID)
-					btn := ui.Button(c.Key("provider-region-"+pc.Preset+"-"+ep.ID), ep.Name)
+					btn := ui.Button(c.Key("provider-region-"+providerKey(pc)+"-"+ep.ID), ep.Name)
 					if active {
 						btn.Background(pal.switchOn).TextColor(ui.Hex("#FFFFFF"))
 					}
@@ -486,14 +503,18 @@ func (a *app) renderProviderEndpoint(c *ui.Context, pal palette, idx int, pc con
 			})
 		}
 		ui.Text(c, msg.ModelsURL()).FontSize(12).TextColor(pal.textPrimary)
-		baseIn := ui.TextInput(c.Key("base-"+pc.Preset), &a.baseURLDraft).FillWidth().
+		baseIn := ui.TextInput(c.Key("base-"+providerKey(pc)), &a.baseURLDraft).FillWidth().
 			Placeholder(preset.Endpoint).Label(msg.ModelsURL())
-		a.syncProviderDraft(idx, baseIn.Focused(), &a.baseURLDraft, pc.ChatBase, func(p *config.ProviderConfig, v string) { p.ChatBase = v })
+		if a.syncProviderDraft(idx, baseIn.Focused(), &a.baseURLDraft, pc.ChatBase, func(p *config.ProviderConfig, v string) { p.ChatBase = v }) {
+			a.rebuildGenerator()
+		}
 		if preset.Responses != "" {
 			ui.Text(c, msg.ModelsResponsesURL()).FontSize(12).TextColor(pal.textPrimary)
-			resIn := ui.TextInput(c.Key("responses-"+pc.Preset), &a.responsesDraft).FillWidth().
+			resIn := ui.TextInput(c.Key("responses-"+providerKey(pc)), &a.responsesDraft).FillWidth().
 				Placeholder(preset.Responses).Label(msg.ModelsResponsesURL())
-			a.syncProviderDraft(idx, resIn.Focused(), &a.responsesDraft, pc.ResponsesBase, func(p *config.ProviderConfig, v string) { p.ResponsesBase = v })
+			if a.syncProviderDraft(idx, resIn.Focused(), &a.responsesDraft, pc.ResponsesBase, func(p *config.ProviderConfig, v string) { p.ResponsesBase = v }) {
+				a.rebuildGenerator()
+			}
 		}
 		if preset.EndpointHint != "" {
 			ui.Text(c, preset.EndpointHint).FontSize(11.5).TextColor(pal.textSecondary).LineHeight(1.35)
@@ -507,27 +528,28 @@ func (a *app) renderProviderModels(c *ui.Context, pal palette, idx int, pc confi
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
 		providerSectionTitle(c, msg.ModelsSectionModel(), pal)
 		ui.Text(c, msg.ModelsModel()).FontSize(12).TextColor(pal.textPrimary)
-		modelIn := ui.TextInput(c.Key("model-"+pc.Preset), &a.modelDraft).FillWidth().Label(msg.ModelsModel())
+		modelIn := ui.TextInput(c.Key("model-"+providerKey(pc)), &a.modelDraft).FillWidth().Label(msg.ModelsModel())
 		if a.syncProviderDraft(idx, modelIn.Focused(), &a.modelDraft, pc.DefaultModel, func(p *config.ProviderConfig, v string) { p.DefaultModel = v }) {
 			a.rebuildGenerator()
 		}
 		key := providerKey(pc)
-		// 订阅端点没有通用的 /models：Codex 导入时已带模型目录；
-		// Gemini CLI 的 Code Assist 有列表接口，仍可拉取。
-		showFetch := !preset.NoList && (!oauth || pc.Preset == "gemini-cli")
+		showFetch := !preset.NoList && !oauth
 		if showFetch {
 			label := msg.ModelsFetch()
-			if a.fetchingModels && a.fetchFor == key {
+			fetching := a.fetchState.phase == fetchRunning && a.fetchState.providerID == key
+			if fetching {
 				label = msg.ModelsFetching()
 			}
 			ui.Row(c).Children(func() {
-				if ui.Button(c.Key("provider-fetch-"+pc.Preset), label).Disabled(a.fetchingModels).Clicked() {
+				if ui.Button(c.Key("provider-fetch-"+providerKey(pc)), label).Disabled(fetching).Clicked() {
 					a.fetchModels(idx)
 				}
 			})
 		}
-		if a.fetchMsg != "" && a.fetchFor == key {
-			ui.Text(c, a.fetchMsg).FontSize(11.5).TextColor(pal.textSecondary).LineHeight(1.35)
+		if a.fetchState.providerID == key {
+			if text := a.fetchState.message(c.Locale()); text != "" {
+				ui.Text(c, text).FontSize(11.5).TextColor(pal.textSecondary).LineHeight(1.35)
+			}
 		}
 		// 没有 /models 可拉的家（NoList）靠预设和档位的列表，
 		// 有列表就显示，用户不必手打模型 id。
@@ -548,7 +570,7 @@ func (a *app) renderModelChoices(c *ui.Context, pal palette, idx int, pc config.
 		headingText(c, msg.ModelsAvailable()).FontSize(11.5).TextColor(pal.textSecondary).SingleLine()
 		ui.Spacer(c)
 		if !a.modelsAll && len(choices) > providerModelPreview {
-			if ui.Button(c.Key("provider-more-"+pc.Preset), msg.ModelsMore(len(choices)-providerModelPreview)).Clicked() {
+			if ui.Button(c.Key("provider-more-"+providerKey(pc)), msg.ModelsMore(len(choices)-providerModelPreview)).Clicked() {
 				a.modelsAll = true
 			}
 		}
@@ -556,7 +578,7 @@ func (a *app) renderModelChoices(c *ui.Context, pal palette, idx int, pc config.
 		if allChecked {
 			label = msg.ModelsDeselectAll()
 		}
-		if ui.Button(c.Key("provider-select-all-"+pc.Preset), label).Clicked() {
+		if ui.Button(c.Key("provider-select-all-"+providerKey(pc)), label).Clicked() {
 			a.selectProviderModels(idx, pc, choices, !allChecked)
 		}
 	})
@@ -579,7 +601,7 @@ func (a *app) renderModelChoice(c *ui.Context, pal palette, idx int, pc config.P
 	checked := providerModelChecked(pc, id)
 	row := ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Padding(3, 6).Radius(6)
 	row.Children(func() {
-		cb := ui.CheckboxBase(c.Key("provider-model-"+pc.Preset+"-"+id), &checked).Gap(7)
+		cb := ui.CheckboxBase(c.Key("provider-model-"+providerKey(pc)+"-"+id), &checked).Gap(7)
 		cb.Label(id)
 		cb.Children(func() {
 			box := ui.Box(c).Size(15, 15).Radius(4).Shrink(0)
@@ -603,7 +625,7 @@ func (a *app) renderModelChoice(c *ui.Context, pal palette, idx int, pc config.P
 			// 未勾选的模型不参与摘要，设成默认没有意义。
 		} else if id == pc.DefaultModel {
 			providerTag(c, msg.ModelsDefaultBadge(), pal)
-		} else if renderDefaultChoice(c, "provider-model-default-"+pc.Preset+"-"+id, msg.ModelsDefault()+" "+id, pal) {
+		} else if renderDefaultChoice(c, "provider-model-default-"+providerKey(pc)+"-"+id, msg.ModelsDefault()+" "+id, pal) {
 			a.saveProviderField(idx, func(p *config.ProviderConfig) { p.DefaultModel = id })
 			a.modelDraft = id
 			a.rebuildGenerator()
@@ -689,25 +711,33 @@ func (a *app) saveProviderModels(idx int, choices, enabled []string, preferred s
 			next = enabled[0]
 		}
 	}
-	a.saveProviderField(idx, func(p *config.ProviderConfig) {
-		if len(p.DiscoveredModels) == 0 {
-			p.DiscoveredModels = slices.Clone(choices)
-		}
+	previousSummary := a.cfgNow.Summary.Model
+	if !a.saveProviderField(idx, func(p *config.ProviderConfig) {
+		p.DiscoveredModels = slices.Clone(choices)
 		p.EnabledModels = slices.Clone(enabled)
 		p.DefaultModel = next
-	})
+	}) {
+		return
+	}
 	if next != pc.DefaultModel {
-		a.modelDraft = next
+		a.modelDraft = a.cfgNow.Providers[idx].DefaultModel
+	}
+	if next != pc.DefaultModel || previousSummary != a.cfgNow.Summary.Model {
+		a.summary.cancelActive()
 		a.rebuildGenerator()
 	}
 }
 
 // renderProviderTestResult 按当前语言显示最近一次连接测试的结果。
-func (a *app) renderProviderTestResult(c *ui.Context, pal palette) {
-	if a.testErr != nil {
-		ui.Text(c, errorText(c.Locale(), a.testErr)).FontSize(12).TextColor(pal.textSecondary)
-	} else if a.testModel != "" {
-		numText(c, locales.In(c.Locale()).ModelsTestSuccess(a.testModel, a.testLatency)).FontSize(12).TextColor(pal.textSecondary)
+func (a *app) renderProviderTestResult(c *ui.Context, pal palette, key string) {
+	state := a.providerTest
+	if state.providerID != key {
+		return
+	}
+	if state.phase == testFailed && state.err != nil {
+		ui.Text(c, errorText(c.Locale(), state.err)).FontSize(12).TextColor(pal.textSecondary)
+	} else if state.phase == testSucceeded && state.model != "" {
+		numText(c, locales.In(c.Locale()).ModelsTestSuccess(state.model, state.latency)).FontSize(12).TextColor(pal.textSecondary)
 	}
 }
 
@@ -724,8 +754,7 @@ func (a *app) syncProviderDraft(idx int, typing bool, draft *string, saved strin
 		return false
 	}
 	v := *draft
-	a.saveProviderField(idx, func(p *config.ProviderConfig) { set(p, v) })
-	return true
+	return a.saveProviderField(idx, func(p *config.ProviderConfig) { set(p, v) })
 }
 
 func (a *app) renderModelsImport(c *ui.Context, pal palette) {
@@ -733,21 +762,21 @@ func (a *app) renderModelsImport(c *ui.Context, pal palette) {
 	a.settingsCard(c, pal, func() {
 		ui.Column(c).FillWidth().Padding(14, 18).Gap(8).Children(func() {
 			headingText(c, msg.ModelsImport()).SingleLine().TextColor(pal.textPrimary)
-			if !a.detectDone {
+			if a.credScan.phase != scanDone {
 				ui.Text(c, msg.ModelsScanning()).FontSize(12).TextColor(pal.textSecondary)
 				return
 			}
-			if len(a.detected) == 0 {
+			if len(a.credScan.detected) == 0 {
 				ui.Text(c, msg.ModelsImportEmpty()).FontSize(12).TextColor(pal.textSecondary)
 			}
-			for _, cred := range a.detected {
+			for _, cred := range a.credScan.detected {
 				ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Grow(1).Children(func() {
 						ui.Text(c, cred.Label).FontSize(12.5).TextColor(pal.textPrimary).
 							SingleLine().Tooltip(cred.Label).Shrink(1)
 						providerTag(c, credentialKindLabel(cred.Kind, msg), pal)
 					})
-					if ui.Button(c.Key("import-"+cred.Source), msg.ModelsImportAction()).Clicked() {
+					if ui.Button(c.Key("import-"+cred.Source+"-"+cred.Kind), msg.ModelsImportAction()).Clicked() {
 						a.importCredential(cred)
 					}
 				})

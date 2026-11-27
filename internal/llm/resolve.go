@@ -77,29 +77,47 @@ func (r Resolved) CallBase() string {
 // 对有原生协议的厂商（Anthropic、DeepSeek、Kimi …）优先走原生，
 // 因为 thinking 和 prompt cache 在兼容层里常常被丢掉。
 func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
+	r, err := ResolveEndpoint(pc, preferAnthropic)
+	if err != nil {
+		return r, err
+	}
+	if r.Model == "" {
+		return r, fmt.Errorf("%s: %w", r.ProviderName, ErrNoModel)
+	}
+	return r, nil
+}
+
+func ResolveEndpoint(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 	preset, _ := providers.ByID(pc.Preset)
 
-	name := pc.Label
-	if name == "" {
-		name = preset.Name
-	}
-	if name == "" {
-		name = pc.Preset
-	}
+	name := firstNonEmpty(pc.Label, preset.Name, pc.Preset)
 
-	// 先找用户选的档位。档位里的端点可能只覆盖了一部分
-	// （比如某区域只给了 Chat 没给 Anthropic），缺的字段落回预设。
+	eps := providers.Endpoints(preset)
 	var region providers.Region
-	for _, r := range providers.Endpoints(preset) {
-		if r.ID == pc.Region {
-			region = r
-			break
+	var regionModels []string
+	matched := false
+	if pc.Region != "" {
+		for i, ep := range eps {
+			if ep.ID == pc.Region {
+				region = ep
+				matched = true
+				if i < len(preset.Regions) {
+					regionModels = preset.Regions[i].Models
+				}
+				break
+			}
 		}
 	}
-	if region.ID == "" && len(preset.Regions) > 0 {
-		// 没选或选了不存在的档位，用第一档。magpie 的约定是
-		// 第一个 region 就是预设的默认端点。
-		region = providers.Endpoints(preset)[0]
+	if !matched {
+		if pc.Region != "" && len(preset.Regions) > 0 && strings.TrimSpace(pc.ChatBase) == "" && strings.TrimSpace(pc.AnthropicBase) == "" && strings.TrimSpace(pc.ResponsesBase) == "" {
+			return Resolved{ProviderName: name}, fmt.Errorf("%s: unknown region %q: %w", name, pc.Region, ErrNoEndpoint)
+		}
+		if len(eps) > 0 {
+			region = eps[0]
+		}
+		if len(preset.Regions) > 0 {
+			regionModels = preset.Regions[0].Models
+		}
 	}
 
 	chatBase := firstNonEmpty(pc.ChatBase, region.Chat, preset.Chat)
@@ -109,31 +127,39 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 	r := Resolved{
 		ProviderName:      name,
 		SupportsAnthropic: anthropicBase != "",
-		AuthKind:          "apikey",
-	}
-	if pc.Auth == "oauth" {
-		r.AuthKind = "oauth"
-	}
-
-	if pc.DefaultModel != "" {
-		r.Model = pc.DefaultModel
-	} else {
-		r.Model = firstOf(preset.Models)
+		AuthKind:          firstNonEmpty(pc.Auth, "apikey"),
+		Model: firstNonEmpty(
+			pc.DefaultModel,
+			firstNonEmpty(regionModels...),
+			firstNonEmpty(pc.EnabledModels...),
+			firstNonEmpty(preset.Models...),
+		),
 	}
 
-	// 模型列表：档位的模型 + 用户勾选的，都没有才退到预设全集。
-	// 档位优先是因为某区域的模型列表才是那把 key 真能调的。
 	base := region.Models
 	if len(base) == 0 {
 		base = preset.Models
 	}
-	r.Models = candidateModels(base, pc.DiscoveredModels, pc.EnabledModels)
+	r.Models = candidateModels(base, pc)
+	if len(pc.DiscoveredModels) > 0 {
+		r.Model = pc.ModelSelection(pc.DefaultModel)
+	}
 
 	switch {
 	case pc.Preset == "openai" && pc.Auth == "oauth":
 		// ChatGPT/Codex 订阅的令牌只对专属端点有效，不能走公开 API 地址。
 		r.Kind = OpenAIResponses
 		r.BaseURL = codexSubscriptionBase
+		if pc.AccountID != "" {
+			r.Headers = map[string]string{"ChatGPT-Account-ID": pc.AccountID}
+		}
+	case pc.Preset == "openai" && strings.TrimSpace(pc.ResponsesBase) != "":
+		r.Kind = OpenAIResponses
+		r.BaseURL = responsesBase
+	case pc.Preset == "openai" && strings.TrimSpace(pc.ChatBase) != "" &&
+		strings.TrimRight(chatBase, "/") != strings.TrimRight(firstNonEmpty(region.Chat, preset.Chat), "/"):
+		r.Kind = OpenAICompatible
+		r.BaseURL = chatBase
 	case pc.Preset == "openai" && responsesBase != "":
 		r.Kind = OpenAIResponses
 		r.BaseURL = responsesBase
@@ -152,18 +178,14 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 		r.Kind = OpenAICompatible
 		r.BaseURL = chatBase
 	case anthropicBase != "":
-		// 只支持原生协议的供应商（Claude 官方）
 		r.Kind = AnthropicMessages
 		r.BaseURL = anthropicBase
 	default:
 		return r, fmt.Errorf("%s: %w", name, ErrNoEndpoint)
 	}
 
-	if r.Model == "" && pc.Preset == "gemini-cli" {
+	if r.Model == "" && pc.Preset == "gemini-cli" && len(pc.DiscoveredModels) == 0 {
 		r.Model = geminiCLIDefaultModel
-	}
-	if r.Model == "" {
-		return r, fmt.Errorf("%s: %w", name, ErrNoModel)
 	}
 
 	// Azure 的部署名是模型 id，但请求要用 api-key 头而不是 Bearer。
@@ -182,13 +204,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-func firstOf(vals []string) string {
-	if len(vals) > 0 {
-		return vals[0]
-	}
-	return ""
-}
-
 // candidateModels 合并候选模型，去重并保序。发现清单把语义分成两种模式：
 //
 //   - 有发现清单：清单是这家真实的全集，EnabledModels 是用户的勾选。
@@ -196,34 +211,20 @@ func firstOf(vals []string) string {
 //     用户唯一的表达，不能由预设把取消过的模型又顶回来。
 //   - 没有发现清单（旧配置或还没拉取过）：保持并集。空 EnabledModels
 //     表示「全用预设给的」，这是旧配置的约定，不能读成「一个都不用」。
-func candidateModels(base, discovered, enabled []string) []string {
-	enabledSet := make(map[string]bool, len(enabled))
-	for _, m := range enabled {
-		enabledSet[m] = true
-	}
-	managed := len(discovered) > 0
-	pool := base
-	if managed {
-		pool = append(append([]string{}, base...), discovered...)
-	}
-	seen := make(map[string]bool, len(pool)+len(enabled))
-	out := make([]string, 0, len(pool))
-	add := func(m string) {
-		if m != "" && !seen[m] {
-			seen[m] = true
-			out = append(out, m)
+func candidateModels(base []string, pc config.ProviderConfig) []string {
+	seen := make(map[string]bool)
+	var out []string
+	for _, list := range [][]string{base, pc.DiscoveredModels, pc.EnabledModels} {
+		for _, m := range list {
+			m = strings.TrimSpace(m)
+			if pc.AllowsModel(m) && !seen[m] {
+				seen[m] = true
+				out = append(out, m)
+			}
 		}
 	}
-	for _, m := range pool {
-		if managed && !enabledSet[m] {
-			continue
-		}
-		add(m)
-	}
-	if !managed {
-		for _, m := range enabled {
-			add(m)
-		}
+	if len(pc.DiscoveredModels) > 0 && pc.AllowsModel(pc.DefaultModel) && !seen[pc.DefaultModel] {
+		out = append(out, pc.DefaultModel)
 	}
 	return out
 }

@@ -67,13 +67,14 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 					a.err = errors.New(user[0])
 					want = msg.ShellReadError() + errorText(lang, a.err)
 				case "clear-error":
-					a.clearErr = clearCountError(2)
+					a.clear.phase = clearFailed
+					a.clear.err = clearCountError(2)
 					want = msg.RecorderDeleteFailed(2)
 				case "confirmation":
-					a.clearConfirm = true
+					a.clear.confirm = true
 					want = msg.RecorderClearTitle()
 				case "clearing":
-					a.clearRunning = true
+					a.clear.phase = clearRunning
 					want = msg.RecorderClearing()
 				case "permission-granted":
 					a.status.Perms = capture.Perms{Screen: capture.PermGranted, Accessibility: capture.PermGranted}
@@ -92,18 +93,17 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 					want = msg.RecorderRecent()
 				case "agent-legacy", "agent-errors":
 					a.settingsTab = 2
-					a.legacyChecked = true
 					if state == "agent-legacy" {
-						a.legacyFiles = []string{"legacy"}
+						a.legacy = legacyState{phase: legacyReady, files: []string{"legacy"}}
 						want = msg.GeneralAgentLegacy()
 					} else {
 						a.linkErr = errors.New(user[0])
-						a.legacyErr = errors.New(user[0])
+						a.legacy = legacyState{phase: legacyFailed, err: errors.New(user[0])}
 						want = msg.GeneralAgentLinkError(errorText(lang, a.linkErr))
 					}
 				case "provider-edit", "provider-oauth", "provider-search", "import", "scanning", "provider-result":
 					a.settingsTab = 1
-					a.detectStarted, a.detectDone = true, true
+					a.credScan.phase = scanDone
 					switch state {
 					case "provider-edit", "provider-result":
 						pc := config.ProviderConfig{Preset: "custom", Label: user[3], DefaultModel: user[4]}
@@ -111,11 +111,11 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 							t.Fatal(err)
 						}
 						a.cfgNow = a.cfg.Get()
-						a.openProvider = providerKey(pc)
+						a.openProvider = providerKey(a.cfgNow.Providers[0])
 						want = msg.ModelsKey()
 						if state == "provider-result" {
-							a.testModel, a.testLatency = user[4], 12
-							want = msg.ModelsTestSuccess(a.testModel, a.testLatency)
+							a.providerTest = providerTestState{phase: testSucceeded, providerID: a.openProvider, model: user[4], latency: 12}
+							want = msg.ModelsTestSuccess(a.providerTest.model, a.providerTest.latency)
 						}
 					case "provider-oauth":
 						pc := config.ProviderConfig{
@@ -130,7 +130,7 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 							t.Fatal(err)
 						}
 						a.cfgNow = a.cfg.Get()
-						a.openProvider = providerKey(pc)
+						a.openProvider = providerKey(a.cfgNow.Providers[0])
 						want = msg.ModelsAuthSubscription()
 					case "provider-search":
 						a.addProviderOpen = true
@@ -141,10 +141,10 @@ func TestDynamicSettingsLanguages(t *testing.T) {
 							user = append(user, p.Name, p.Note)
 						}
 					case "import":
-						a.detected = []providers.Credential{{Source: "test", Label: user[2]}}
+						a.credScan.detected = []providers.Credential{{Source: "test", Label: user[2]}}
 						want = msg.ModelsImportAction()
 					case "scanning":
-						a.detectDone = false
+						a.credScan.phase = scanRunning
 						want = msg.ModelsScanning()
 					}
 				}
@@ -184,18 +184,17 @@ func TestShredLanguages(t *testing.T) {
 			a, cleanup := newTestApp(t)
 			defer cleanup()
 			a.lastLoad = time.Now().Add(time.Hour)
-			a.clearReceipt = a.receipt
-			a.shred.pending = true
+			a.shred.arm(a.receipt)
 			tt := ui.NewTester(a.view, 780, 1000)
 			tt.SetLocale(lang)
 			for _, duration := range []time.Duration{17 * time.Millisecond, 650 * time.Millisecond, 100 * time.Millisecond} {
 				tt.Advance(duration)
-				if !a.shred.pending {
+				if !a.shred.active() {
 					t.Fatal("碎纸过早结束")
 				}
 				checkPageLanguage(t, tt, a, lang)
 			}
-			if !a.shred.feedStarted || a.shred.mask == nil {
+			if a.shred.phase != shredFalling || a.shred.mask == nil {
 				t.Fatal("未进入碎纸阶段")
 			}
 		})

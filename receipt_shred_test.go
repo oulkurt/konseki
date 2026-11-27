@@ -60,18 +60,18 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 	a, cleanup := newTestApp(t)
 	defer cleanup()
 	shotDay(t, a)
-	a.clearReceipt = a.receipt
+	snap := a.receipt
 	a.receipt = ReceiptDay{}
 	a.dayFilter = ""
 	a.lastLoad = time.Now().Add(time.Hour)
 	tt := ui.NewTester(a.view, 780, 900)
-	a.shred.pending = true
+	a.shred.arm(snap)
 	tt.Advance(17 * time.Millisecond)
-	if !a.shred.pending || a.shred.feedStarted {
+	if !a.shred.active() || a.shred.phase != shredRetracting {
 		t.Fatal("未从收回阶段开始")
 	}
 	tt.Advance(650 * time.Millisecond)
-	if !a.shred.feedStarted {
+	if a.shred.phase != shredFalling {
 		t.Fatal("收回后未开始碎纸")
 	}
 	if a.shred.height <= 0 || a.shred.mask == nil {
@@ -83,20 +83,19 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 	}
 	a.shred.physics.elapsed = float32((shredFeedDuration + shredFallDuration).Seconds())
 	tt.Advance(20 * time.Millisecond)
-	if a.shred.pending || len(a.clearReceipt.Lines) != 0 {
+	if a.shred.active() || len(a.shred.receipt.Lines) != 0 {
 		t.Fatal("碎纸未自动结束并释放旧小票")
 	}
 	if !tt.HasText("今天还没有记录") {
 		t.Fatalf("碎纸结束后未送出空白小票: %v", tt.Texts())
 	}
 
-	// 动画中途切换日期应立即停止动画并释放旧小票。
 	shotDay(t, a)
-	a.clearReceipt = a.receipt
+	snap = a.receipt
 	a.receipt = ReceiptDay{}
 	a.dayFilter = ""
 	a.lastLoad = time.Now().Add(time.Hour)
-	a.shred.pending = true
+	a.shred.arm(snap)
 	tt.Advance(17 * time.Millisecond)
 	if err := tt.Click("今天 ⌄"); err != nil {
 		t.Fatal(err)
@@ -104,13 +103,13 @@ func TestShredStagesAndReducedMotion(t *testing.T) {
 	if err := tt.Click("昨天"); err != nil {
 		t.Fatal(err)
 	}
-	if a.shred.pending || len(a.clearReceipt.Lines) != 0 {
+	if a.shred.active() || len(a.shred.receipt.Lines) != 0 {
 		t.Fatal("切换日期未中止粉碎动画")
 	}
 
-	a.shred.pending = true
+	a.shred.arm(snap)
 	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
-	if a.shred.pending {
+	if a.shred.active() {
 		t.Fatal("减少动态效果时未立即结束")
 	}
 }

@@ -32,13 +32,19 @@ type Cleared struct {
 	Failed          int
 }
 
-// Storage 管采集目录的用量和清理。采集循环写入，维护任务清理，两者可能同时运行；
-// Storage 只处理已落盘的 .jpg 和按日期命名的 JSONL，不碰 summaries、config 和 secrets。
+type degradeKey struct {
+	path string
+	size int64
+	tier int
+}
+
 type Storage struct {
 	root        string
 	maintenance sync.Mutex
 	mu          sync.Mutex
 	usage       Usage
+	scanned     bool
+	skipDegrade map[degradeKey]struct{}
 }
 
 func NewStorage(root string) *Storage { return &Storage{root: root} }
@@ -91,27 +97,39 @@ func (s *Storage) rescan() error {
 	}
 	s.mu.Lock()
 	s.usage = u
+	s.scanned = true
 	s.mu.Unlock()
 	return nil
 }
 
-// Account 在采集写入一张新截图后调用，delta 是新文件的字节数。
-// Storage 把它记成多一张截图，不必等下一次 Rescan。
 func (s *Storage) Account(delta int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.usage.Bytes += delta
+	if s.usage.Bytes < 0 {
+		s.usage.Bytes = 0
+	}
 	s.usage.Shots++
+	if s.usage.Shots < 0 {
+		s.usage.Shots = 0
+	}
 }
 
-// CountSession 在采集写入一条会话关闭记录后调用，会话数不必等下一次 Rescan。
+func (s *Storage) CountSnapshot() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.usage.Snapshots++
+}
+
 func (s *Storage) CountSession() { s.mu.Lock(); defer s.mu.Unlock(); s.usage.Sessions++ }
 
-// Enforce 在用量超过 maxBytes 时从最旧的截图删起，删到 maxBytes 的 90% 以内。快照行保留。
 func (s *Storage) Enforce(maxBytes int64) (int64, error) {
 	s.maintenance.Lock()
 	defer s.maintenance.Unlock()
-	if s.Usage().Bytes <= maxBytes {
+	s.mu.Lock()
+	scanned, cachedBytes := s.scanned, s.usage.Bytes
+	s.mu.Unlock()
+	if scanned && cachedBytes <= maxBytes {
 		return 0, nil
 	}
 	shots, err := s.shots()
@@ -123,7 +141,19 @@ func (s *Storage) Enforce(maxBytes int64) (int64, error) {
 		total += shot.size
 	}
 	if total <= maxBytes {
+		s.mu.Lock()
+		s.usage.Bytes = total
+		s.usage.Shots = len(shots)
+		s.scanned = true
+		s.mu.Unlock()
 		return 0, nil
+	}
+	if !scanned {
+		s.mu.Lock()
+		s.usage.Bytes = total
+		s.usage.Shots = len(shots)
+		s.scanned = true
+		s.mu.Unlock()
 	}
 	sort.Slice(shots, func(i, j int) bool { return shots[i].when.Before(shots[j].when) })
 	target := (maxBytes / 10 * 9) + (maxBytes % 10 * 9 / 10)
@@ -146,14 +176,18 @@ func (s *Storage) Enforce(maxBytes int64) (int64, error) {
 		total -= shot.size
 		s.mu.Lock()
 		s.usage.Bytes -= shot.size
+		if s.usage.Bytes < 0 {
+			s.usage.Bytes = 0
+		}
 		s.usage.Shots--
+		if s.usage.Shots < 0 {
+			s.usage.Shots = 0
+		}
 		s.mu.Unlock()
 	}
 	return freed, nil
 }
 
-// Degrade 把超过 1 天的截图重编码成 warm，超过 7 天的重编码成 cold。只看文件当前的尺寸和
-// 文件名里的时间，重复执行结果不变。
 func (s *Storage) Degrade(now time.Time) (int, error) {
 	s.maintenance.Lock()
 	defer s.maintenance.Unlock()
@@ -163,6 +197,7 @@ func (s *Storage) Degrade(now time.Time) (int, error) {
 	}
 	counts := [2]int{}
 	done := 0
+	var firstErr error
 	for _, shot := range shots {
 		age := now.Sub(shot.when)
 		tier, w, h, q := 0, 1280, 720, 40
@@ -174,28 +209,43 @@ func (s *Storage) Degrade(now time.Time) (int, error) {
 		if counts[tier] >= 500 {
 			continue
 		}
+		key := degradeKey{path: shot.path, size: shot.size, tier: tier}
+		if _, skip := s.skipDegrade[key]; skip {
+			continue
+		}
 		changed, size, err := resizeShot(shot, w, h, q)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return done, err
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
 		}
-		if changed {
-			counts[tier]++
-			done++
-			s.mu.Lock()
-			s.usage.Bytes += size - shot.size
-			s.mu.Unlock()
+		if !changed {
+			if s.skipDegrade == nil {
+				s.skipDegrade = make(map[degradeKey]struct{})
+			}
+			s.skipDegrade[key] = struct{}{}
+			continue
 		}
+		counts[tier]++
+		done++
+		s.mu.Lock()
+		s.usage.Bytes += size - shot.size
+		if s.usage.Bytes < 0 {
+			s.usage.Bytes = 0
+		}
+		s.mu.Unlock()
 	}
-	return done, nil
+	return done, firstErr
 }
 
-// ClearAll 删掉全部快照行、OCR、会话和截图。调用方负责先停下采集循环。
 func (s *Storage) ClearAll() (Cleared, error) {
 	s.maintenance.Lock()
 	defer s.maintenance.Unlock()
+	s.skipDegrade = nil
 	if err := s.rescan(); err != nil {
 		return Cleared{}, err
 	}
@@ -248,7 +298,6 @@ func removeEntries(path string) int {
 	return failed
 }
 
-// Prune 删掉早于 keepDays 天的整天数据，keepDays 不大于 0 表示永久保留。
 func (s *Storage) Prune(keepDays int, now time.Time) (int, error) {
 	s.maintenance.Lock()
 	defer s.maintenance.Unlock()
@@ -257,6 +306,7 @@ func (s *Storage) Prune(keepDays int, now time.Time) (int, error) {
 	}
 	cutoff := now.In(time.Local).AddDate(0, 0, -keepDays).Format("2006-01-02")
 	removed := map[string]bool{}
+	var opErr error
 	for _, dir := range []string{"", "ocr", "sessions", "shots"} {
 		path := filepath.Join(s.root, dir)
 		ents, err := os.ReadDir(path)
@@ -264,7 +314,8 @@ func (s *Storage) Prune(keepDays int, now time.Time) (int, error) {
 			continue
 		}
 		if err != nil {
-			return len(removed), err
+			opErr = err
+			break
 		}
 		for _, e := range ents {
 			name := e.Name()
@@ -285,12 +336,19 @@ func (s *Storage) Prune(keepDays int, now time.Time) (int, error) {
 				continue
 			}
 			if err := os.RemoveAll(filepath.Join(path, name)); err != nil {
-				return len(removed), err
+				opErr = err
+				break
 			}
 			removed[day] = true
 		}
+		if opErr != nil {
+			break
+		}
 	}
-	return len(removed), s.rescan()
+	if scanErr := s.rescan(); opErr == nil {
+		opErr = scanErr
+	}
+	return len(removed), opErr
 }
 
 type shotFile struct {

@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,7 +63,7 @@ func writeJSON(w http.ResponseWriter, body string) {
 	io.WriteString(w, body)
 }
 
-func TestCompleteResponsesOAuthRequestAndParse(t *testing.T) {
+func TestCompletePublicResponsesRequestAndParse(t *testing.T) {
 	client, base := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("方法 = %s，期望 POST", r.Method)
@@ -70,7 +71,7 @@ func TestCompleteResponsesOAuthRequestAndParse(t *testing.T) {
 		if r.URL.Path != "/v1/responses" {
 			t.Errorf("路径 = %s，期望 /v1/responses", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer oauth-token" {
+		if got := r.Header.Get("Authorization"); got != "Bearer dummy-api-key" {
 			t.Errorf("Authorization = %q", got)
 		}
 		if got := r.Header.Get("x-api-key"); got != "" {
@@ -85,6 +86,9 @@ func TestCompleteResponsesOAuthRequestAndParse(t *testing.T) {
 		}
 		if body["max_output_tokens"] != float64(512) {
 			t.Errorf("max_output_tokens = %v", body["max_output_tokens"])
+		}
+		if body["store"] != false {
+			t.Errorf("store = %v, want false", body["store"])
 		}
 		if body["stream"] != false {
 			t.Errorf("stream = %v，期望 false", body["stream"])
@@ -113,8 +117,7 @@ func TestCompleteResponsesOAuthRequestAndParse(t *testing.T) {
 	resp, err := client.Complete(context.Background(), Request{
 		Kind:      OpenAIResponses,
 		BaseURL:   base + "/v1",
-		APIKey:    "oauth-token",
-		AuthKind:  "oauth",
+		APIKey:    "dummy-api-key",
 		Model:     "gpt-5.2",
 		System:    "be brief",
 		Prompt:    "hello",
@@ -133,6 +136,75 @@ func TestCompleteResponsesOAuthRequestAndParse(t *testing.T) {
 	}
 	if resp.Usage.Input != 11 || resp.Usage.Output != 7 {
 		t.Errorf("Usage = %+v", resp.Usage)
+	}
+}
+
+func TestCompleteCodexSubscriptionResponses(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		terminal string
+		wantErr  error
+	}{
+		{"completed", "event: response.completed\ndata: {\"type\":\"response.completed\",\ndata: \"response\":{\"id\":\"resp_test\",\"model\":\"dummy-version\",\"usage\":{\"input_tokens\":11,\"output_tokens\":7,\"input_tokens_details\":{\"cached_tokens\":2}}}}\n\n", nil},
+		{"failed", "data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"message\":\"dummy upstream failure\"}}}\n\n", &APIError{}},
+		{"truncated", "", ErrInvalidResponse},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, base := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/backend-api/codex/responses" || r.Header.Get("Accept") != "text/event-stream" {
+					t.Errorf("request = %s %s Accept=%q", r.Method, r.URL.Path, r.Header.Get("Accept"))
+				}
+				if r.Header.Get("Authorization") != "Bearer dummy-subscription-token" || r.Header.Get("ChatGPT-Account-ID") != "dummy-account" {
+					t.Error("missing subscription headers")
+				}
+				body := decodeJSON(t, r)
+				instructions, _ := body["instructions"].(string)
+				if body["stream"] != true || body["store"] != false || !strings.Contains(instructions, "JSON object") {
+					t.Errorf("subscription request = %v", body)
+				}
+				if body["tool_choice"] != "auto" || body["parallel_tool_calls"] != false || body["tools"] == nil {
+					t.Errorf("subscription tool options = %v", body)
+				}
+				if _, ok := body["text"]; ok {
+					t.Error("subscription request contains the public JSON format")
+				}
+				if _, ok := body["max_output_tokens"]; ok {
+					t.Error("subscription request contains max_output_tokens")
+				}
+				input := sliceField(t, body, "input")[0].(map[string]any)
+				if input["type"] != "message" || input["role"] != "user" {
+					t.Errorf("subscription input = %v", input)
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				io.WriteString(w, ": keepalive\n\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"hidden\"}\n\n")
+				io.WriteString(w, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hel\"}\n\n")
+				io.WriteString(w, "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]}}\n\n")
+				io.WriteString(w, tc.terminal)
+			})
+			resp, err := client.Complete(context.Background(), Request{
+				Kind: OpenAIResponses, AuthKind: "oauth", BaseURL: base + "/backend-api/codex",
+				Model: "dummy", Prompt: "hello", APIKey: "dummy-subscription-token", MaxTokens: 512, JSON: true,
+				Header: map[string]string{"ChatGPT-Account-ID": "dummy-account"},
+			})
+			switch tc.wantErr {
+			case nil:
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.Text != "hello" || resp.Model != "dummy-version" || resp.Usage != (Usage{Input: 11, Output: 7, Cached: 2}) {
+					t.Fatalf("response = %+v", resp)
+				}
+			case ErrInvalidResponse:
+				if !errors.Is(err, ErrInvalidResponse) {
+					t.Fatalf("error = %v, want ErrInvalidResponse", err)
+				}
+			default:
+				var api *APIError
+				if !errors.As(err, &api) || api.Body != "dummy upstream failure" {
+					t.Fatalf("error = %v, want upstream API error", err)
+				}
+			}
+		})
 	}
 }
 
@@ -197,11 +269,19 @@ func TestCompleteGeminiOAuthRequestAndParse(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("方法 = %s，期望 POST", r.Method)
 		}
+		if r.URL.Path == "/v1internal:loadCodeAssist" {
+			metadata := objField(t, decodeJSON(t, r), "metadata")
+			if metadata["pluginType"] != "GEMINI" || r.Header.Get("Authorization") != "Bearer fake-google-token" {
+				t.Errorf("Code Assist setup = %v", metadata)
+			}
+			writeJSON(w, `{"cloudaicompanionProject":"dummy-project","currentTier":{"id":"standard-tier"}}`)
+			return
+		}
 		if r.URL.Path != "/v1internal:generateContent" {
 			t.Errorf("路径 = %s", r.URL.Path)
 		}
-		if got := r.URL.Query().Get("model"); got != "gemini-2.5-pro" {
-			t.Errorf("model 查询参数 = %q", got)
+		if r.URL.RawQuery != "" {
+			t.Errorf("unexpected query: %q", r.URL.RawQuery)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer fake-google-token" {
 			t.Errorf("Authorization = %q", got)
@@ -209,7 +289,14 @@ func TestCompleteGeminiOAuthRequestAndParse(t *testing.T) {
 		if got := r.Header.Get("x-api-key"); got != "" {
 			t.Errorf("OAuth 请求不该带 x-api-key，得到 %q", got)
 		}
-		body := decodeJSON(t, r)
+		envelope := decodeJSON(t, r)
+		if envelope["model"] != "gemini-2.5-pro" || envelope["project"] != "dummy-project" || envelope["user_prompt_id"] == nil {
+			t.Errorf("Code Assist request = %v", envelope)
+		}
+		body := objField(t, envelope, "request")
+		if body == nil {
+			return
+		}
 		for _, banned := range []string{"reasoning", "thinking"} {
 			if _, ok := body[banned]; ok {
 				t.Errorf("Gemini 不该下发 %q", banned)
@@ -235,7 +322,7 @@ func TestCompleteGeminiOAuthRequestAndParse(t *testing.T) {
 		if gen["responseMimeType"] != "application/json" {
 			t.Errorf("responseMimeType = %v", gen["responseMimeType"])
 		}
-		writeJSON(w, `{"candidates":[{"content":{"parts":[{"text":"a"},{"text":"b"}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3},"modelVersion":"gemini-2.5-pro"}`)
+		writeJSON(w, `{"traceId":"dummy-trace","response":{"candidates":[{"content":{"parts":[{"text":"analysis","thought":true},{"text":"a"},{"text":"b"}]}}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":3},"modelVersion":"gemini-2.5-pro"}}`)
 	})
 
 	resp, err := client.Complete(context.Background(), Request{
@@ -266,7 +353,11 @@ func TestCompleteGeminiOAuthRequestAndParse(t *testing.T) {
 
 func TestCompleteGeminiOmitsEmptySystem(t *testing.T) {
 	client, base := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		body := decodeJSON(t, r)
+		if r.URL.Path == "/v1internal:loadCodeAssist" {
+			writeJSON(w, `{"cloudaicompanionProject":"dummy-project"}`)
+			return
+		}
+		body := objField(t, decodeJSON(t, r), "request")
 		if _, ok := body["systemInstruction"]; ok {
 			t.Errorf("空系统提示不该下发: %v", body["systemInstruction"])
 		}
@@ -274,7 +365,7 @@ func TestCompleteGeminiOmitsEmptySystem(t *testing.T) {
 		if _, ok := gen["responseMimeType"]; ok {
 			t.Errorf("非 JSON 输出时不该下发 responseMimeType: %v", gen)
 		}
-		writeJSON(w, `{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}`)
+		writeJSON(w, `{"response":{"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}}`)
 	})
 	_, err := client.Complete(context.Background(), Request{Kind: GeminiGenerate, BaseURL: base + "/v1internal", Model: "m", Prompt: "p"})
 	if err != nil {
@@ -285,6 +376,10 @@ func TestCompleteGeminiOmitsEmptySystem(t *testing.T) {
 func TestCompleteGeminiErrors(t *testing.T) {
 	t.Run("error body", func(t *testing.T) {
 		client, base := testClient(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1internal:loadCodeAssist" {
+				writeJSON(w, `{"cloudaicompanionProject":"dummy-project"}`)
+				return
+			}
 			writeJSON(w, `{"error":{"message":"quota"}}`)
 		})
 		_, err := client.Complete(context.Background(), Request{Kind: GeminiGenerate, BaseURL: base + "/v1internal", Model: "m", Prompt: "p"})
@@ -295,7 +390,11 @@ func TestCompleteGeminiErrors(t *testing.T) {
 	})
 	t.Run("empty candidates", func(t *testing.T) {
 		client, base := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, `{"candidates":[]}`)
+			if r.URL.Path == "/v1internal:loadCodeAssist" {
+				writeJSON(w, `{"cloudaicompanionProject":"dummy-project"}`)
+				return
+			}
+			writeJSON(w, `{"response":{"candidates":[]}}`)
 		})
 		_, err := client.Complete(context.Background(), Request{Kind: GeminiGenerate, BaseURL: base + "/v1internal", Model: "m", Prompt: "p"})
 		if !errors.Is(err, ErrEmptyResponse) {
@@ -374,40 +473,6 @@ func TestListModelsOpenAIFormat(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != "m1" || ids[1] != "m2" {
 		t.Fatalf("ids = %v", ids)
-	}
-}
-
-func TestListModelsGeminiFormat(t *testing.T) {
-	client, base := testClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1internal/models" {
-			t.Errorf("路径 = %s", r.URL.Path)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer fake-google-token" {
-			t.Errorf("Authorization = %q", got)
-		}
-		writeJSON(w, `{"models":[
-			{"name":"models/gemini-2.5-pro","supportedGenerationMethods":["generateContent","countTokens"]},
-			{"name":"models/text-embedding-004","supportedGenerationMethods":["embedContent"]},
-			{"name":"models/gemini-2.5-flash"}
-		]}`)
-	})
-	ids, err := client.ListModels(context.Background(), Request{
-		Kind:     GeminiGenerate,
-		BaseURL:  base + "/v1internal",
-		APIKey:   "fake-google-token",
-		AuthKind: "oauth",
-	})
-	if err != nil {
-		t.Fatalf("ListModels: %v", err)
-	}
-	want := []string{"gemini-2.5-pro", "gemini-2.5-flash"}
-	if len(ids) != len(want) {
-		t.Fatalf("ids = %v，期望 %v", ids, want)
-	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("ids = %v，期望 %v", ids, want)
-		}
 	}
 }
 

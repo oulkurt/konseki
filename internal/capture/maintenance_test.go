@@ -44,7 +44,7 @@ func TestMaintenanceSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	stop, done, enforce := make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
-	go r.maintenance(stop, done, enforce)
+	go r.maintenance(stop, done, enforce, 0)
 	defer func() { close(stop); <-done }()
 	waitAlarms(t, c, 1)
 	c.advance(59 * time.Second)
@@ -81,7 +81,7 @@ func TestMaintenanceCoalescesEnforce(t *testing.T) {
 	}
 	stop, done := make(chan struct{}), make(chan struct{})
 	r.enforce = make(chan struct{}, 1)
-	go r.maintenance(stop, done, r.enforce)
+	go r.maintenance(stop, done, r.enforce, 0)
 	defer func() { close(stop); <-done }()
 	waitAlarms(t, c, 1)
 	r.mu.Lock()

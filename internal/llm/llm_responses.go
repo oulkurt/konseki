@@ -1,14 +1,17 @@
 /*
  * [INPUT]: 依赖 llm.go 的 Request、Response、post 与错误种类。
- * [OUTPUT]: 提供 OpenAI Responses 协议的非流式调用。
+ * [OUTPUT]: 提供公开 OpenAI Responses JSON 与 Codex 订阅 SSE 调用。
  * [POS]: llm 包的协议分支；ChatGPT/Codex 订阅与 OpenAI 新版端点走这里。
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
  */
 package llm
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"strings"
 )
 
@@ -24,9 +27,19 @@ type responsesRequest struct {
 	Reasoning       *responsesReasoning `json:"reasoning,omitempty"`
 	Text            *responsesText      `json:"text,omitempty"`
 	Stream          bool                `json:"stream"`
+	Store           bool                `json:"store"`
+}
+
+type codexResponsesRequest struct {
+	responsesRequest
+	Tools             []json.RawMessage `json:"tools"`
+	ToolChoice        string            `json:"tool_choice"`
+	ParallelToolCalls bool              `json:"parallel_tool_calls"`
+	Include           []string          `json:"include"`
 }
 
 type responsesInput struct {
+	Type    string             `json:"type,omitempty"`
 	Role    string             `json:"role"`
 	Content []responsesContent `json:"content"`
 }
@@ -48,20 +61,66 @@ type responsesFormat struct {
 	Type string `json:"type"`
 }
 
+type responsesItem struct {
+	Type    string             `json:"type"`
+	Content []responsesContent `json:"content"`
+}
+
+func (i responsesItem) appendText(out *strings.Builder) {
+	if i.Type != "message" {
+		return
+	}
+	for _, c := range i.Content {
+		if c.Type == "output_text" {
+			out.WriteString(c.Text)
+		}
+	}
+}
+
+type providerError struct {
+	Message string `json:"message"`
+}
+
 type responsesResponse struct {
-	Model  string `json:"model"`
-	Output []struct {
-		Type    string             `json:"type"`
-		Content []responsesContent `json:"content"`
-	} `json:"output"`
-	Usage struct {
+	Model  string          `json:"model"`
+	Output []responsesItem `json:"output"`
+	Usage  struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
+		InputDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"input_tokens_details"`
 	} `json:"usage"`
-	Error *struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error"`
+	Error             *providerError `json:"error"`
+	IncompleteDetails struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
+}
+
+func (r responsesResponse) result(fallback string) (*Response, error) {
+	if r.Error != nil && r.Error.Message != "" {
+		return nil, &APIError{Body: r.Error.Message}
+	}
+	var text strings.Builder
+	for _, item := range r.Output {
+		item.appendText(&text)
+	}
+	output := text.String()
+	if output == "" {
+		output = fallback
+	}
+	if strings.TrimSpace(output) == "" {
+		return nil, ErrEmptyResponse
+	}
+	return &Response{
+		Text:  output,
+		Model: r.Model,
+		Usage: Usage{
+			Input:  r.Usage.InputTokens,
+			Output: r.Usage.OutputTokens,
+			Cached: r.Usage.InputDetails.CachedTokens,
+		},
+	}, nil
 }
 
 func (c *Client) completeResponses(ctx context.Context, req Request) (*Response, error) {
@@ -86,36 +145,97 @@ func (c *Client) completeResponses(ctx context.Context, req Request) (*Response,
 		body.Text = &responsesText{Format: responsesFormat{Type: "json_object"}}
 	}
 
-	raw, err := c.post(ctx, endpoint(req.BaseURL, "responses"), req, body)
+	url := endpoint(req.BaseURL, "responses")
+	if req.AuthKind == "oauth" {
+		body.Input[0].Type = "message"
+		body.Instructions = firstNonEmpty(body.Instructions, "Respond to the user request.")
+		body.MaxOutputTokens = 0
+		body.Stream = true
+		if req.JSON {
+			body.Instructions += "\nReturn only a JSON object."
+			body.Text = nil
+		}
+		stream, err := c.postResponse(ctx, url, req, codexResponsesRequest{
+			responsesRequest: body,
+			Tools:            []json.RawMessage{},
+			ToolChoice:       "auto",
+			Include:          []string{},
+		}, "text/event-stream")
+		if err != nil {
+			return nil, err
+		}
+		defer stream.Close()
+		return readResponsesStream(stream)
+	}
+
+	raw, err := c.post(ctx, url, req, body)
 	if err != nil {
 		return nil, err
 	}
-
 	var out responsesResponse
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, &RequestError{Kind: ErrInvalidResponse, Cause: err}
 	}
-	if out.Error != nil && out.Error.Message != "" {
-		return nil, &APIError{Body: out.Error.Message}
-	}
-	// reasoning item 也带 content，但它的块类型不是 output_text，直接跳过。
-	var sb strings.Builder
-	for _, item := range out.Output {
-		for _, blk := range item.Content {
-			if blk.Type == "output_text" {
-				sb.WriteString(blk.Text)
+	return out.result("")
+}
+
+type responsesEvent struct {
+	Type     string            `json:"type"`
+	Delta    string            `json:"delta"`
+	Item     responsesItem     `json:"item"`
+	Response responsesResponse `json:"response"`
+	Message  string            `json:"message"`
+	Error    *providerError    `json:"error"`
+}
+
+func readResponsesStream(stream io.Reader) (*Response, error) {
+	sc := bufio.NewScanner(stream)
+	sc.Buffer(make([]byte, 64<<10), 32<<20)
+	var data, items, deltas strings.Builder
+	for sc.Scan() {
+		line := sc.Text()
+		if value, ok := strings.CutPrefix(line, "data:"); ok {
+			if data.Len() > 0 {
+				data.WriteByte('\n')
 			}
+			data.WriteString(strings.TrimPrefix(value, " "))
+			continue
+		}
+		if line != "" || data.Len() == 0 {
+			continue
+		}
+		payload := data.String()
+		data.Reset()
+		if payload == "[DONE]" {
+			break
+		}
+		var event responsesEvent
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			return nil, &RequestError{Kind: ErrInvalidResponse, Cause: err}
+		}
+		switch event.Type {
+		case "response.output_text.delta":
+			deltas.WriteString(event.Delta)
+		case "response.output_item.done":
+			event.Item.appendText(&items)
+		case "response.completed":
+			fallback := items.String()
+			if fallback == "" {
+				fallback = deltas.String()
+			}
+			return event.Response.result(fallback)
+		case "response.failed", "response.incomplete", "error":
+			message := event.Message
+			if event.Response.Error != nil {
+				message = event.Response.Error.Message
+			} else if event.Error != nil {
+				message = event.Error.Message
+			}
+			return nil, &APIError{Body: firstNonEmpty(message, event.Response.IncompleteDetails.Reason, event.Type)}
 		}
 	}
-	if strings.TrimSpace(sb.String()) == "" {
-		return nil, ErrEmptyResponse
+	if err := sc.Err(); err != nil {
+		return nil, err
 	}
-	return &Response{
-		Text:  sb.String(),
-		Model: out.Model,
-		Usage: Usage{
-			Input:  out.Usage.InputTokens,
-			Output: out.Usage.OutputTokens,
-		},
-	}, nil
+	return nil, fmt.Errorf("%w: stream ended before response.completed", ErrInvalidResponse)
 }

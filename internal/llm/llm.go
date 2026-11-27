@@ -99,11 +99,12 @@ type Client struct {
 
 // 错误种类供界面选择文案；错误文字只供日志使用。
 var (
-	ErrNoEndpoint      = errors.New("没有配置接口地址")
-	ErrNoModel         = errors.New("还没有选模型")
-	ErrInvalidResponse = errors.New("解析模型响应失败")
-	ErrEmptyResponse   = errors.New("模型没有返回任何内容")
-	ErrConnection      = errors.New("连不上模型接口")
+	ErrNoEndpoint              = errors.New("没有配置接口地址")
+	ErrModelListingUnavailable = errors.New("此端点不支持拉取模型列表")
+	ErrNoModel                 = errors.New("还没有选模型")
+	ErrInvalidResponse         = errors.New("解析模型响应失败")
+	ErrEmptyResponse           = errors.New("模型没有返回任何内容")
+	ErrConnection              = errors.New("连不上模型接口")
 )
 
 // RequestError 保留错误种类与外部原因。
@@ -159,7 +160,7 @@ func (e *APIError) Retryable() bool {
 	return e.Status == 429 || e.Status >= 500
 }
 
-// Complete 发起一次非流式调用。
+// Complete 等待模型返回完整结果。
 func (c *Client) Complete(ctx context.Context, req Request) (*Response, error) {
 	switch req.Kind {
 	case AnthropicMessages:
@@ -221,25 +222,7 @@ func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, er
 	if strings.TrimSpace(req.BaseURL) == "" {
 		return nil, ErrNoEndpoint
 	}
-	body := openAIRequest{
-		Model:     req.Model,
-		MaxTokens: orDefault(req.MaxTokens, 4096),
-		Stream:    false,
-	}
-	if req.System != "" {
-		body.Messages = append(body.Messages, openAIMessage{Role: "system", Content: req.System})
-	}
-	body.Messages = append(body.Messages, openAIMessage{Role: "user", Content: req.Prompt})
-	if req.Temperature > 0 {
-		t := req.Temperature
-		body.Temperature = &t
-	}
-	if req.Thinking != "" && req.Thinking != "off" {
-		body.ReasoningEffort = req.Thinking
-	}
-	if req.JSON {
-		body.ResponseFormat = &responseFormat{Type: "json_object"}
-	}
+	body := buildOpenAIRequest(req, false)
 
 	raw, err := c.post(ctx, endpoint(req.BaseURL, "chat/completions"), req, body)
 	if err != nil {
@@ -265,6 +248,29 @@ func (c *Client) completeOpenAI(ctx context.Context, req Request) (*Response, er
 			Cached: out.Usage.PromptTokensDetails.CachedTokens,
 		},
 	}, nil
+}
+
+func buildOpenAIRequest(req Request, stream bool) openAIRequest {
+	body := openAIRequest{
+		Model:     req.Model,
+		MaxTokens: orDefault(req.MaxTokens, 4096),
+		Stream:    stream,
+	}
+	if req.System != "" {
+		body.Messages = append(body.Messages, openAIMessage{Role: "system", Content: req.System})
+	}
+	body.Messages = append(body.Messages, openAIMessage{Role: "user", Content: req.Prompt})
+	if req.Temperature > 0 {
+		t := req.Temperature
+		body.Temperature = &t
+	}
+	if req.Thinking != "" && req.Thinking != "off" {
+		body.ReasoningEffort = req.Thinking
+	}
+	if req.JSON {
+		body.ResponseFormat = &responseFormat{Type: "json_object"}
+	}
+	return body
 }
 
 // ---------- Anthropic Messages ----------
@@ -324,18 +330,15 @@ func (c *Client) completeAnthropic(ctx context.Context, req Request) (*Response,
 	}
 	// Anthropic 的 thinking 和 temperature 互斥，而且 budget 必须小于
 	// max_tokens。给的是 max_tokens 的一半，够推理又不至于把答案挤掉。
-	if req.Thinking != "" && req.Thinking != "off" {
-		budget := maxTok / 2
-		if lvl := ThinkingBudget(req.Thinking); lvl > 0 && lvl < budget {
-			budget = lvl
+	if budget := ThinkingBudget(req.Thinking); budget > 0 && maxTok/2 > 1024 {
+		if maxTok/2 < budget {
+			budget = maxTok / 2
 		}
-		if budget > 1024 {
-			body.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
-			body.Temperature = nil
-		}
+		body.Thinking = &anthropicThinking{Type: "enabled", BudgetTokens: budget}
+		body.Temperature = nil
 	}
 
-	raw, err := c.post(ctx, endpoint(req.BaseURL, "messages"), req, body)
+	raw, err := c.post(ctx, endpoint(req.BaseURL, "v1/messages"), req, body)
 	if err != nil {
 		return nil, err
 	}
@@ -384,17 +387,47 @@ func ThinkingBudget(level string) int {
 
 // ---------- 公共 ----------
 
+func splitQuery(raw string) (string, string) {
+	raw = strings.TrimSpace(raw)
+	if i := strings.IndexByte(raw, '?'); i >= 0 {
+		return strings.TrimRight(raw[:i], "/"), raw[i:]
+	}
+	return strings.TrimRight(raw, "/"), ""
+}
+
 // endpoint 把 base 和路径拼起来，容忍两种常见写法：
 // base 已经是完整的 .../chat/completions（中转站常这么给），或者只到 /v1。
 func endpoint(base, path string) string {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	if strings.HasSuffix(base, "/"+path) {
-		return base
+	basePath, query := splitQuery(base)
+	path = strings.TrimLeft(path, "/")
+	if strings.HasSuffix(basePath, "/"+path) {
+		return basePath + query
 	}
-	return base + "/" + path
+	if strings.HasPrefix(path, "v1/") && strings.HasSuffix(basePath, "/v1") {
+		return basePath + "/" + strings.TrimPrefix(path, "v1/") + query
+	}
+	return basePath + "/" + path + query
+}
+
+func hasHeader(h map[string]string, key string) bool {
+	for k := range h {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) post(ctx context.Context, url string, req Request, body any) ([]byte, error) {
+	resp, err := c.postResponse(ctx, url, req, body, "application/json")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Close()
+	return io.ReadAll(io.LimitReader(resp, 32<<20))
+}
+
+func (c *Client) postResponse(ctx context.Context, url string, req Request, body any, accept string) (io.ReadCloser, error) {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -404,10 +437,8 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any) ([
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", accept)
 	setAuth(httpReq.Header, req)
-	for k, v := range req.Header {
-		httpReq.Header.Set(k, v)
-	}
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
@@ -416,39 +447,37 @@ func (c *Client) post(ctx context.Context, url string, req Request, body any) ([
 		}
 		return nil, &RequestError{Kind: ErrConnection, Cause: err}
 	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
-	if err != nil {
-		return nil, err
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+		if err != nil {
+			return nil, err
+		}
 		return nil, &APIError{Status: resp.StatusCode, Body: string(raw)}
 	}
-	return raw, nil
+	return resp.Body, nil
 }
 
 // setAuth 按凭据类型写鉴权头。
 // OAuth 订阅令牌只认 Authorization: Bearer；Anthropic 还要求 beta 头，
 // 缺了会被官方端点当成不支持的鉴权方式拒绝。
 func setAuth(h http.Header, req Request) {
-	if req.APIKey == "" {
-		return
-	}
-	if req.AuthKind == "oauth" {
-		h.Set("Authorization", "Bearer "+req.APIKey)
-		if req.Kind == AnthropicMessages {
-			h.Set("anthropic-version", "2023-06-01")
-			h.Set("anthropic-beta", "oauth-2025-04-20")
-		}
-		return
-	}
 	if req.Kind == AnthropicMessages {
-		h.Set("x-api-key", req.APIKey)
 		h.Set("anthropic-version", "2023-06-01")
-		return
+		if req.APIKey != "" {
+			if req.AuthKind == "oauth" {
+				h.Set("Authorization", "Bearer "+req.APIKey)
+				h.Set("anthropic-beta", "oauth-2025-04-20")
+			} else {
+				h.Set("x-api-key", req.APIKey)
+			}
+		}
+	} else if req.APIKey != "" && !hasHeader(req.Header, "api-key") {
+		h.Set("Authorization", "Bearer "+req.APIKey)
 	}
-	h.Set("Authorization", "Bearer "+req.APIKey)
+	for k, v := range req.Header {
+		h.Set(k, v)
+	}
 }
 
 // Stream 边收边给回调。onDelta 拿到的是增量文本。
@@ -459,20 +488,19 @@ func setAuth(h http.Header, req Request) {
 // 「边生成边显示摘要」时不用改结构。
 func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) (*Response, error) {
 	if req.Kind != "" && req.Kind != OpenAICompatible {
-		return c.Complete(ctx, req)
+		resp, err := c.Complete(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if onDelta != nil && resp.Text != "" {
+			onDelta(resp.Text)
+		}
+		return resp, nil
 	}
 	if strings.TrimSpace(req.BaseURL) == "" {
 		return nil, ErrNoEndpoint
 	}
-	body := openAIRequest{
-		Model:     req.Model,
-		MaxTokens: orDefault(req.MaxTokens, 4096),
-		Stream:    true,
-	}
-	if req.System != "" {
-		body.Messages = append(body.Messages, openAIMessage{Role: "system", Content: req.System})
-	}
-	body.Messages = append(body.Messages, openAIMessage{Role: "user", Content: req.Prompt})
+	body := buildOpenAIRequest(req, true)
 
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -484,14 +512,11 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	setAuth(httpReq.Header, req)
-	for k, v := range req.Header {
-		httpReq.Header.Set(k, v)
-	}
 
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, &RequestError{Kind: ErrConnection, Cause: ctx.Err()}
 		}
 		return nil, &RequestError{Kind: ErrConnection, Cause: err}
 	}
@@ -502,6 +527,8 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 	}
 
 	var sb strings.Builder
+	var nonData strings.Builder
+	var sawData bool
 	var usage Usage
 	var model string
 	sc := bufio.NewScanner(resp.Body)
@@ -509,8 +536,12 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if !strings.HasPrefix(line, "data:") {
+			if !sawData && line != "" && nonData.Len() < 64<<10 {
+				nonData.WriteString(line)
+			}
 			continue
 		}
+		sawData = true
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
 			break
@@ -523,12 +554,22 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage *struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
+				PromptTokens        int `json:"prompt_tokens"`
+				CompletionTokens    int `json:"completion_tokens"`
+				PromptTokensDetails struct {
+					CachedTokens int `json:"cached_tokens"`
+				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
+			Error *struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+			} `json:"error"`
 		}
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
 			continue // 心跳或厂商自定义事件，跳过
+		}
+		if chunk.Error != nil && chunk.Error.Message != "" {
+			return nil, &APIError{Body: chunk.Error.Message}
 		}
 		if chunk.Model != "" {
 			model = chunk.Model
@@ -536,18 +577,35 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 		if chunk.Usage != nil {
 			usage.Input = chunk.Usage.PromptTokens
 			usage.Output = chunk.Usage.CompletionTokens
+			usage.Cached = chunk.Usage.PromptTokensDetails.CachedTokens
 		}
-		for _, ch := range chunk.Choices {
-			if ch.Delta.Content != "" {
-				sb.WriteString(ch.Delta.Content)
+		if len(chunk.Choices) > 0 {
+			if delta := chunk.Choices[0].Delta.Content; delta != "" {
+				sb.WriteString(delta)
 				if onDelta != nil {
-					onDelta(ch.Delta.Content)
+					onDelta(delta)
 				}
 			}
 		}
 	}
-	if err := sc.Err(); err != nil && ctx.Err() == nil {
+	if err := ctx.Err(); err != nil {
+		return nil, &RequestError{Kind: ErrConnection, Cause: err}
+	}
+	if err := sc.Err(); err != nil {
 		return nil, err
+	}
+	if !sawData && nonData.Len() > 0 {
+		var errBody struct {
+			Error *struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal([]byte(nonData.String()), &errBody) == nil && errBody.Error != nil && errBody.Error.Message != "" {
+			return nil, &APIError{Body: errBody.Error.Message}
+		}
+	}
+	if sb.Len() == 0 {
+		return nil, ErrEmptyResponse
 	}
 	return &Response{Text: sb.String(), Usage: usage, Model: model}, nil
 }
@@ -556,20 +614,33 @@ func (c *Client) Stream(ctx context.Context, req Request, onDelta func(string)) 
 // 预设里已经有兜底列表了。
 //
 // 传整个 Request 而不是散参数：鉴权方式和协议都要参与，散开容易漏。
-// Gemini 与 OpenAI 的列表格式不同，按 Kind 分派。
+// Anthropic 和 OpenAI 兼容端点用各自的路径与鉴权头。
 func (c *Client) ListModels(ctx context.Context, req Request) ([]string, error) {
-	base := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
-	if base == "" {
+	if req.Kind == GeminiGenerate || (req.Kind == OpenAIResponses && req.AuthKind == "oauth") {
+		return nil, ErrModelListingUnavailable
+	}
+	basePath, query := splitQuery(req.BaseURL)
+	if basePath == "" {
 		return nil, ErrNoEndpoint
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint(base, "models"), nil)
+	targetPath := "models"
+	if req.Kind == AnthropicMessages {
+		for _, suffix := range []string{"/v1/messages", "/messages"} {
+			if strings.HasSuffix(basePath, suffix) {
+				basePath = strings.TrimSuffix(basePath, suffix)
+				break
+			}
+		}
+		targetPath = "v1/models"
+	} else {
+		basePath = strings.TrimSuffix(basePath, "/chat/completions")
+		basePath = strings.TrimSuffix(basePath, "/responses")
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint(basePath+query, targetPath), nil)
 	if err != nil {
 		return nil, err
 	}
 	setAuth(httpReq.Header, req)
-	for k, v := range req.Header {
-		httpReq.Header.Set(k, v)
-	}
 	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -581,9 +652,6 @@ func (c *Client) ListModels(ctx context.Context, req Request) ([]string, error) 
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, &APIError{Status: resp.StatusCode, Body: string(raw)}
-	}
-	if req.Kind == GeminiGenerate {
-		return parseGeminiModels(raw)
 	}
 	var out struct {
 		Data []struct {

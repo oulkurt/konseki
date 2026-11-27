@@ -7,14 +7,24 @@
 package config
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"konseki/internal/redact"
 )
+
+const CurrentVersion = 2
+
+var ErrUnsupportedVersion = errors.New("config: unsupported config version")
 
 // ProviderConfig 是一个用户配好的模型供应商。
 //
@@ -22,6 +32,7 @@ import (
 // 会变；用户选了什么、填了什么，必须能跨版本存活。所以这里只存
 // 「预设 id + 覆盖项 + 凭据」，读的时候再和预设合并。
 type ProviderConfig struct {
+	ID string `json:"id,omitempty"`
 	// Preset 是 internal/providers 里的预设 id，空表示用户自建的 custom。
 	Preset string `json:"preset"`
 	// Label 是用户给它起的名字，空则用预设的 Name。
@@ -45,7 +56,7 @@ type ProviderConfig struct {
 	AccessToken  string    `json:"-"`
 	RefreshToken string    `json:"-"`
 	AccountID    string    `json:"accountId,omitempty"`
-	ExpiresAt    time.Time `json:"expiresAt,omitempty"`
+	ExpiresAt    time.Time `json:"expiresAt,omitzero"`
 
 	// Region 是用户在这一家里选的档位 id。
 	//
@@ -159,7 +170,7 @@ type OCRConfig struct {
 
 func Default() Config {
 	return Config{
-		Version:  2,
+		Version:  CurrentVersion,
 		Language: "zh-Hans",
 		Recorder: Recorder{
 			Enabled:       true,
@@ -242,6 +253,7 @@ type wireOCR struct {
 }
 
 type wireProvider struct {
+	ID               *string    `json:"id,omitempty"`
 	Preset           *string    `json:"preset,omitempty"`
 	Label            *string    `json:"label,omitempty"`
 	ChatBase         *string    `json:"chatBase,omitempty"`
@@ -295,11 +307,18 @@ func parse(data []byte) (Config, bool, error) {
 	if err = json.Unmarshal(b, &c); err != nil {
 		return Config{}, false, err
 	}
-	legacy := w.Version == nil
+	legacy := (w.Version == nil && w.Recorder == nil) || (w.Version != nil && *w.Version == 1)
 	if legacy {
 		c.Language = "zh-Hans"
-		if w.Summary != nil && w.Summary.LegacyLanguage != nil && *w.Summary.LegacyLanguage == "en" {
+		if w.Language != nil && strings.HasPrefix(strings.ToLower(*w.Language), "en") {
 			c.Language = "en"
+		}
+		if w.Summary != nil && w.Summary.LegacyLanguage != nil {
+			if *w.Summary.LegacyLanguage == "en" {
+				c.Language = "en"
+			} else {
+				c.Language = "zh-Hans"
+			}
 		}
 		c.Recorder = Default().Recorder
 		if w.LegacyPaused != nil {
@@ -310,8 +329,38 @@ func parse(data []byte) (Config, bool, error) {
 			c.Recorder.RetentionDays = *w.LegacyRetention
 		}
 	}
-	normalize(&c)
+	normalize(&c, false)
 	return c, legacy, nil
+}
+
+func (p ProviderConfig) AllowsModel(model string) bool {
+	return model != "" && (len(p.DiscoveredModels) == 0 || slices.Contains(p.EnabledModels, model) ||
+		(model == p.DefaultModel && !slices.Contains(p.DiscoveredModels, model)))
+}
+
+func (p ProviderConfig) ModelSelection(model string) string {
+	if p.AllowsModel(model) {
+		return model
+	}
+	if p.AllowsModel(p.DefaultModel) {
+		return p.DefaultModel
+	}
+	for _, enabled := range p.EnabledModels {
+		if enabled != "" {
+			return enabled
+		}
+	}
+	return ""
+}
+
+func SummaryProviderIndex(id string, providers []ProviderConfig) int {
+	if id == "" {
+		return -1
+	}
+	if idx := slices.IndexFunc(providers, func(p ProviderConfig) bool { return p.ID == id }); idx >= 0 {
+		return idx
+	}
+	return slices.IndexFunc(providers, func(p ProviderConfig) bool { return p.Preset == id })
 }
 
 func clamp(n, lo, hi int) int {
@@ -343,8 +392,20 @@ func clean(in []string, fold bool) []string {
 	return out
 }
 
-func normalize(c *Config) {
-	c.Version = 2
+var providerIDSeq atomic.Uint64
+
+func NewProviderID() string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err == nil {
+		return "p-" + hex.EncodeToString(buf[:])
+	}
+	return fmt.Sprintf("p-%d-%d", time.Now().UnixNano(), providerIDSeq.Add(1))
+}
+
+func normalize(c *Config, randomNewIDs bool) {
+	if c.Version < CurrentVersion {
+		c.Version = CurrentVersion
+	}
 	if strings.HasPrefix(strings.ToLower(c.Language), "en") {
 		c.Language = "en"
 	} else {
@@ -369,4 +430,88 @@ func normalize(c *Config) {
 		r.OCR.Languages = Default().Recorder.OCR.Languages
 	}
 	r.SensitiveApps = clean(r.SensitiveApps, true)
+
+	used := make(map[string]bool, len(c.Providers))
+	for i := range c.Providers {
+		p := &c.Providers[i]
+		switch strings.ToLower(strings.TrimSpace(p.Auth)) {
+		case "api_key", "apikey":
+			p.Auth = "apikey"
+		case "oauth":
+			p.Auth = "oauth"
+		}
+		id := strings.TrimSpace(p.ID)
+		if id != "" && !used[id] {
+			p.ID = id
+			used[id] = true
+		} else {
+			p.ID = ""
+		}
+	}
+	for i := range c.Providers {
+		if c.Providers[i].ID == "" {
+			if randomNewIDs {
+				c.Providers[i].ID = nextRandomProviderID(used)
+			} else {
+				c.Providers[i].ID = nextProviderID(c.Providers[i], used)
+			}
+		}
+	}
+	if idx := SummaryProviderIndex(c.Summary.ProviderID, c.Providers); idx >= 0 {
+		p := c.Providers[idx]
+		if len(p.DiscoveredModels) > 0 {
+			c.Summary.Model = p.ModelSelection(c.Summary.Model)
+		}
+	}
+}
+
+func nextRandomProviderID(used map[string]bool) string {
+	for {
+		id := NewProviderID()
+		if !used[id] {
+			used[id] = true
+			return id
+		}
+	}
+}
+
+func nextProviderID(p ProviderConfig, used map[string]bool) string {
+	base := sanitizeProviderID(p.Preset)
+	label := sanitizeProviderID(p.Label)
+	if base == "" {
+		base = label
+	} else if label != "" && label != base {
+		base = base + "-" + label
+	}
+	if base == "" {
+		base = "provider"
+	}
+	if !used[base] {
+		used[base] = true
+		return base
+	}
+	for n := 2; ; n++ {
+		cand := fmt.Sprintf("%s-%d", base, n)
+		if !used[cand] {
+			used[cand] = true
+			return cand
+		}
+	}
+}
+
+func sanitizeProviderID(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	prevDash := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteByte(c)
+			prevDash = false
+		} else if !prevDash && b.Len() > 0 {
+			b.WriteByte('-')
+			prevDash = true
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
 }

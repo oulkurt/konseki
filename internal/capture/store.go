@@ -63,7 +63,12 @@ type OCRResult struct {
 	Status string `json:"status"`
 }
 
-type Store struct{ root string }
+var ErrReadOnly = errors.New("capture: read-only store")
+
+type Store struct {
+	root     string
+	readOnly bool
+}
 
 func NewStore(root string) (*Store, error) {
 	abs, err := filepath.Abs(root)
@@ -76,13 +81,12 @@ func NewStore(root string) (*Store, error) {
 	return &Store{root: abs}, nil
 }
 
-// OpenStore 只读打开采集目录，不建目录、不写文件。目录不存在时返回的 Store 读出来是空的。
 func OpenStore(root string) (*Store, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
-	return &Store{root: abs}, nil
+	return &Store{root: abs, readOnly: true}, nil
 }
 
 // Days 合并快照和会话文件的日期，最新的在前。
@@ -157,6 +161,9 @@ func readJSON[T any](path string) ([]T, error) {
 }
 
 func (s *Store) Append(v Snapshot) error {
+	if s.readOnly {
+		return ErrReadOnly
+	}
 	t, err := parseTS(v.TS)
 	if err != nil {
 		t = time.Now()
@@ -167,23 +174,33 @@ func (s *Store) ShotPath(t time.Time) string {
 	return filepath.Join(s.root, "shots", t.Format("20060102-150405")+".jpg")
 }
 
+const maxShotIDBuckets = 64
+
 var shotIDs struct {
 	sync.Mutex
-	timestamp string
-	used      map[uint16]struct{}
+	order []string
+	used  map[string]map[uint16]struct{}
 }
 
-// NewSnapshotID 生成形如 20261105-143502.120-1a2b 的快照 id，同一进程内同一毫秒不重复。
-// 截图路径由 ShotFile 从 id 推出，两者同源。
 func (s *Store) NewSnapshotID(t time.Time) string {
-	stamp := t.Format("20060102-150405.000")
+	stamp := t.In(time.Local).Format("20060102-150405.000")
 	shotIDs.Lock()
 	defer shotIDs.Unlock()
-	if shotIDs.timestamp != stamp {
-		shotIDs.timestamp = stamp
-		shotIDs.used = make(map[uint16]struct{})
+	if shotIDs.used == nil {
+		shotIDs.used = make(map[string]map[uint16]struct{})
 	}
-	if len(shotIDs.used) == 1<<16 {
+	bucket, ok := shotIDs.used[stamp]
+	if !ok {
+		if len(shotIDs.order) >= maxShotIDBuckets {
+			evict := shotIDs.order[0]
+			shotIDs.order = shotIDs.order[1:]
+			delete(shotIDs.used, evict)
+		}
+		bucket = make(map[uint16]struct{})
+		shotIDs.used[stamp] = bucket
+		shotIDs.order = append(shotIDs.order, stamp)
+	}
+	if len(bucket) == 1<<16 {
 		panic("capture: snapshot ID space exhausted")
 	}
 	for {
@@ -192,21 +209,25 @@ func (s *Store) NewSnapshotID(t time.Time) string {
 			panic(err)
 		}
 		value := binary.BigEndian.Uint16(b[:])
-		if _, exists := shotIDs.used[value]; !exists {
-			shotIDs.used[value] = struct{}{}
+		if _, exists := bucket[value]; !exists {
+			bucket[value] = struct{}{}
 			return fmt.Sprintf("%s-%04x", stamp, value)
 		}
 	}
 }
 
-// ShotFile 返回快照 id 对应的截图路径。文件名取自 id，日期目录取自 id 的日期段，
-// 拿到任何一张截图都能反查到它的快照行。
 func (s *Store) ShotFile(id string) string {
+	if len(id) <= 9 {
+		return ""
+	}
 	day := id[:4] + "-" + id[4:6] + "-" + id[6:8]
 	return filepath.Join(s.root, "shots", day, id[9:]+".jpg")
 }
 
 func (s *Store) AppendOCR(day string, r OCRResult) error {
+	if s.readOnly {
+		return ErrReadOnly
+	}
 	return appendJSON(filepath.Join(s.root, "ocr", day+".jsonl"), r)
 }
 
@@ -215,6 +236,9 @@ func (s *Store) ReadOCR(day string) ([]OCRResult, error) {
 }
 
 func (s *Store) AppendSession(v Session) error {
+	if s.readOnly {
+		return ErrReadOnly
+	}
 	return appendJSON(filepath.Join(s.root, "sessions", v.End.In(time.Local).Format("2006-01-02")+".jsonl"), v)
 }
 
@@ -264,6 +288,7 @@ func (s *Store) ReadDay(day string) ([]Snapshot, error) {
 			if r, ok := index[out[i].ID]; ok {
 				out[i].OCR = r.Text
 				out[i].OCRLine = r.Lines
+				out[i].OCRMs = r.Ms
 			}
 		}
 	}
