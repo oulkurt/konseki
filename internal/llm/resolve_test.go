@@ -18,7 +18,10 @@ import (
 )
 
 func TestResolveCodexOAuthUsesSubscriptionResponses(t *testing.T) {
-	r, err := Resolve(config.ProviderConfig{Preset: "openai", Auth: "oauth", AccountID: "dummy-account", DefaultModel: "gpt-5.2"}, true)
+	r, err := Resolve(config.ProviderConfig{
+		Preset: "openai", Auth: "oauth", AccountID: "dummy-account", DefaultModel: "gpt-5.2",
+		ResponsesBase: "https://relay.test/v1",
+	}, true)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -66,7 +69,7 @@ func TestResolveOpenAIResponsesOverride(t *testing.T) {
 }
 
 func TestResolveGeminiCLIOAuth(t *testing.T) {
-	r, err := Resolve(config.ProviderConfig{Preset: "gemini-cli", Auth: "oauth"}, true)
+	r, err := Resolve(config.ProviderConfig{Preset: "gemini-cli", Auth: "oauth", ResponsesBase: "https://relay.test/v1"}, true)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

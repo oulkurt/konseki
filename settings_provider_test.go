@@ -572,3 +572,64 @@ func TestSummaryGenerationFollowsCheckedProviderModels(t *testing.T) {
 		t.Fatalf("a stale generator could send a request: models %v, error %v", sent, err)
 	}
 }
+
+func TestResponsesAddressEditRoutesSummaryRequests(t *testing.T) {
+	for _, tc := range []struct {
+		preset, defaultURL string
+	}{
+		{"deepseek", "https://api.deepseek.com/anthropic/v1/messages"},
+		{"xai", "https://api.x.ai/v1/messages"},
+	} {
+		t.Run(tc.preset, func(t *testing.T) {
+			a, cleanup := newTestApp(t)
+			defer cleanup()
+			configureProvider(t, a, config.ProviderConfig{Preset: tc.preset, DefaultModel: "dummy-model"})
+			a.setDefaultProvider(a.cfgNow.Providers[0])
+			const override = "https://relay.test/custom/v1"
+			var sent []string
+			a.llmc.HTTP.Transport = errorTestTransport(func(r *http.Request) (*http.Response, error) {
+				sent = append(sent, r.URL.String())
+				body := `{"content":[{"type":"text","text":"{\"headline\":\"dummy\",\"summary\":\"dummy summary\"}"}]}`
+				if strings.HasSuffix(r.URL.Path, "/responses") {
+					body = `{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"headline\":\"dummy\",\"summary\":\"dummy summary\"}"}]}]}`
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})
+			generate := func() {
+				t.Helper()
+				if a.gen == nil {
+					t.Fatal("no summary generator")
+				}
+				start := time.Date(2026, 10, 1, 9, 0, 0, 0, time.Local)
+				blocks := []capture.Block{{Start: start, End: start.Add(10 * time.Minute), App: "Dummy", Samples: 1}}
+				if _, err := a.gen.GenerateDay(context.Background(), blocks, nil, "2026-10-01", time.Hour, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+			generate()
+			tt := ui.NewTester(a.view, 780, 3000)
+			label := locales.In("zh-Hans").ModelsResponsesURL()
+			bounds, ok := tt.Find(label)
+			if !ok {
+				t.Fatal("missing Responses address field")
+			}
+			tt.ClickAt(bounds.X+40, bounds.Y+28)
+			if !tt.Focused(label) {
+				t.Fatal("Responses address field did not receive focus")
+			}
+			tt.Type(override)
+			tt.Frame()
+			cfg, err := config.Read(a.appDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Providers[0].ResponsesBase; got != override {
+				t.Fatalf("saved Responses address = %q, want %q", got, override)
+			}
+			generate()
+			if want := []string{tc.defaultURL, override + "/responses"}; !slices.Equal(sent, want) {
+				t.Fatalf("request destinations = %v, want %v", sent, want)
+			}
+		})
+	}
+}

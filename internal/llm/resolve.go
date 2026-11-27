@@ -89,6 +89,10 @@ func Resolve(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 
 func ResolveEndpoint(pc config.ProviderConfig, preferAnthropic bool) (Resolved, error) {
 	preset, _ := providers.ByID(pc.Preset)
+	var responsesOverride string
+	if pc.Auth != "oauth" && preset.Responses != "" {
+		responsesOverride = strings.TrimSpace(pc.ResponsesBase)
+	}
 
 	name := firstNonEmpty(pc.Label, preset.Name, pc.Preset)
 
@@ -109,7 +113,7 @@ func ResolveEndpoint(pc config.ProviderConfig, preferAnthropic bool) (Resolved, 
 		}
 	}
 	if !matched {
-		if pc.Region != "" && len(preset.Regions) > 0 && strings.TrimSpace(pc.ChatBase) == "" && strings.TrimSpace(pc.AnthropicBase) == "" && strings.TrimSpace(pc.ResponsesBase) == "" {
+		if pc.Region != "" && len(preset.Regions) > 0 && strings.TrimSpace(pc.ChatBase) == "" && strings.TrimSpace(pc.AnthropicBase) == "" && responsesOverride == "" {
 			return Resolved{ProviderName: name}, fmt.Errorf("%s: unknown region %q: %w", name, pc.Region, ErrNoEndpoint)
 		}
 		if len(eps) > 0 {
@@ -122,7 +126,7 @@ func ResolveEndpoint(pc config.ProviderConfig, preferAnthropic bool) (Resolved, 
 
 	chatBase := firstNonEmpty(pc.ChatBase, region.Chat, preset.Chat)
 	anthropicBase := firstNonEmpty(pc.AnthropicBase, region.Anthropic, preset.Anthropic)
-	responsesBase := firstNonEmpty(pc.ResponsesBase, region.Responses, preset.Responses)
+	responsesBase := firstNonEmpty(region.Responses, preset.Responses)
 
 	r := Resolved{
 		ProviderName:      name,
@@ -153,9 +157,9 @@ func ResolveEndpoint(pc config.ProviderConfig, preferAnthropic bool) (Resolved, 
 		if pc.AccountID != "" {
 			r.Headers = map[string]string{"ChatGPT-Account-ID": pc.AccountID}
 		}
-	case pc.Preset == "openai" && strings.TrimSpace(pc.ResponsesBase) != "":
+	case responsesOverride != "":
 		r.Kind = OpenAIResponses
-		r.BaseURL = responsesBase
+		r.BaseURL = responsesOverride
 	case pc.Preset == "openai" && strings.TrimSpace(pc.ChatBase) != "" &&
 		strings.TrimRight(chatBase, "/") != strings.TrimRight(firstNonEmpty(region.Chat, preset.Chat), "/"):
 		r.Kind = OpenAICompatible

@@ -16,7 +16,7 @@ e2e 构建的许可策略默认拒绝，仅环境值 1 放行。guardedScreen �
 
 ## 模型端点与摘要选择
 
-- OpenAI 预设默认使用 Responses。旧配置里的自定义 `ChatBase` 继续走原地址的 Chat Completions。填写 `ResponsesBase` 会显式切换到该地址的 Responses。
+- 支持 Responses 的非 OAuth 供应商填写 `ResponsesBase` 后，应用会向该地址发送 Responses 请求。留空时保留供应商原来的协议选择。OpenAI 预设默认使用 Responses，除非已经配置自定义 `ChatBase`。
 - 公开 Responses 读取 JSON，并发送 `store: false`。Codex 订阅向专用端点请求 SSE，收到 `response.completed` 后才接受结果。 [Codex 请求构造](https://github.com/openai/codex/blob/rust-v0.115.0/codex-rs/core/src/client.rs#L695-L705) · [Codex SSE 解析](https://github.com/openai/codex/blob/afe555b9d3e95b4f58b247212565070f1555bc5d/codex-rs/codex-api/src/sse/responses.rs#L409-L518)
 - Gemini 订阅先用 `loadCodeAssist` 取得已完成设置的项目，再把模型与请求一起发给 `generateContent`，从 `response` 读取输出。Gemini CLI 在本地维护模型目录，订阅面板隐藏「拉取模型列表」。 [Gemini CLI Code Assist](https://github.com/google-gemini/gemini-cli/tree/60f8082b14ffa7f10b608270232f3f57b5abbec8/packages/core/src/code_assist) · [Gemini CLI 模型目录](https://github.com/google-gemini/gemini-cli/blob/60f8082b14ffa7f10b608270232f3f57b5abbec8/packages/core/src/config/models.ts)
 - 取消摘要当前使用的模型后，配置会优先选同一供应商中仍勾选的默认模型，否则选第一个勾选项。取消最后一个后清空已保存的摘要模型，并停止使用该供应商生成摘要。手动输入的新默认模型也可在模型列表中取消勾选。
